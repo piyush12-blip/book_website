@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bibliothèque — Warm Classic Library</title>
+  <meta name="description" content="Pixel-matched warm nostalgia classic book application homepage." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="bibliotheque" aria-label="Bibliothèque book reading application homepage">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Bibliothèque">Bibliothèque</a>
+
+      <nav class="nav" aria-label="Primary navigation">
+        <a href="#library">Library</a>
+        <a href="#reading-now">Reading Now</a>
+        <a href="#explore">Explore</a>
+        <a href="#profile">Profile</a>
+      </nav>
+
+      <div class="tools">
+        <button class="search" type="button" aria-label="Search" data-open-search>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.8 18.1a7.3 7.3 0 1 1 0-14.6 7.3 7.3 0 0 1 0 14.6Zm5.15-2.15L21 21"/></svg>
+        </button>
+        <button class="settings" type="button" aria-label="Open settings" data-open-settings>⚙</button>
+        <button class="user" type="button" aria-label="Open profile"></button>
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <section class="reading-list" id="library" aria-labelledby="reading-list-title">
+        <h1 id="reading-list-title">Your Reading List</h1>
+
+        <div class="mini-grid" aria-label="Your reading list books">
+          <article class="mini-book">
+            <div class="cover mini navy moon"><span>The<br>Silent<br>Hours</span><em></em></div>
+            <h2>The Silent Hours</h2><p>Eleanor Vance</p><i class="progress"><b style="width:28%"></b></i>
+          </article>
+          <article class="mini-book">
+            <div class="cover mini photo"><span>Wuthering<br>Heights</span></div>
+            <h2>Wuthering Heights</h2><p>Author Tleson</p><i class="progress"><b style="width:64%"></b></i>
+          </article>
+          <article class="mini-book">
+            <div class="cover mini teal"><span>Moby<br>Dick</span></div>
+            <h2>Moby Dick</h2><p>Mary Cohs</p><i class="progress"><b style="width:48%"></b></i>
+          </article>
+
+          <article class="mini-book">
+            <div class="cover mini ivory"><span>The Siant<br>Hours</span><em></em></div>
+            <h2>The Silent Hours</h2><p>Elesnor Vence</p><i class="progress"><b style="width:20%"></b></i>
+          </article>
+          <article class="mini-book">
+            <div class="cover mini green"><span>De<br>Romans</span></div>
+            <h2>Wuthering Heights</h2><p>Cout Wama</p><i class="progress"><b style="width:35%"></b></i>
+          </article>
+          <article class="mini-book">
+            <div class="cover mini tan"><span>Morley Frans</span><em></em></div>
+            <h2>The Louin</h2><p>Alisen Risston</p><i class="progress"><b style="width:72%"></b></i>
+          </article>
+
+          <article class="mini-book clipped">
+            <div class="cover mini midnight"><span>The<br>Midssnet</span></div>
+            <h2>The Midnight</h2><p>Matt Haig</p><i class="progress"><b style="width:25%"></b></i>
+          </article>
+          <article class="mini-book clipped">
+            <div class="cover mini grey"><span>Womering<br>Heights</span></div>
+            <h2>Womering Heights</h2><p>Author Tleson</p><i class="progress"><b style="width:52%"></b></i>
+          </article>
+          <article class="mini-book clipped">
+            <div class="cover mini cream"><span></span></div>
+            <h2>Quiet Paper</h2><p>Marrow Finch</p><i class="progress"><b style="width:40%"></b></i>
+          </article>
+        </div>
+      </section>
+
+      <section class="featured" id="explore" aria-labelledby="featured-title">
+        <div class="section-head">
+          <h2 id="featured-title">Featured Authors</h2>
+          <div class="arrows" aria-label="Carousel controls">
+            <button type="button" aria-label="Previous featured books">‹</button>
+            <button type="button" aria-label="Next featured books">›</button>
+          </div>
+        </div>
+
+        <div class="featured-grid" aria-label="Featured author books">
+          <article class="feature-card">
+            <div class="cover feature burgundy"><span>Echoes<br>of the<br>Past</span><small>Eleanor Vance</small></div>
+            <h3>Echoes of the Past</h3><p>Eleanor Vance</p><div class="stars" aria-label="Five stars">★★★★★</div>
+          </article>
+          <article class="feature-card">
+            <div class="cover feature blue"><span>The<br>Midnight<br>Library</span><small>Matt Haig</small><em class="house"></em></div>
+            <h3>The Midnight Library</h3><p>Matt Haig</p><div class="stars">★★★★<i>★</i></div>
+          </article>
+          <article class="feature-card">
+            <div class="cover feature ochre"><span>The<br>Furwarrtinenal<br>Diszoduction</span><small>Llarmy Karsona</small></div>
+            <h3>The Livns Visiam</h3><p>Henna Vance</p><div class="stars">★★★★</div>
+          </article>
+          <article class="feature-card lower">
+            <div class="cover feature sage"><span>The<br>Unravmish<br>Book</span></div>
+            <h3>The Unravmish Book</h3><p>Orla Finne</p><div class="stars">★★★★</div>
+          </article>
+          <article class="feature-card lower">
+            <div class="cover feature brown"><span>Isleath of<br>Sphoniat</span></div>
+            <h3>Isleath of Sphoniat</h3><p>J. Harrow</p><div class="stars">★★★★</div>
+          </article>
+          <article class="feature-card lower">
+            <div class="cover feature rust"><span>The<br>Trearnbook</span></div>
+            <h3>The Trearnbook</h3><p>Mara Solen</p><div class="stars">★★★★★</div>
+          </article>
+        </div>
+      </section>
+
+      <aside class="sidebar" id="reading-now" aria-label="Recently read and reading stats">
+        <section class="recent">
+          <h2>Recently Read</h2>
+          <article class="recent-item">
+            <div class="cover recent-cover burgundy"><span>Echoes<br>of the<br>Past</span></div>
+            <h3>The Silent of the Hours</h3>
+          </article>
+          <article class="recent-item">
+            <div class="cover recent-cover olive"><span>The Parish<br>Esu Faces</span></div>
+            <h3>The Echoes of the Past</h3>
+          </article>
+        </section>
+
+        <section class="stats">
+          <h2>Reading Stats</h2>
+          <dl>
+            <div><dt>329</dt><dd>Reader reviews</dd></div>
+            <div><dt>363</dt><dd>Readings</dd></div>
+            <div><dt>65</dt><dd>Reatings</dd></div>
+          </dl>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <section class="app-section library-section" id="library-view" aria-labelledby="library-view-title">
+    <div class="section-shell"><a class="view-return" href="#explore" data-view="home">← Back to explore</a></div>
+    <div class="section-shell library-manager">
+      <div class="section-intro compact">
+        <p class="kicker">Your shelves</p>
+        <h2 id="library-view-title">Saved and liked books.</h2>
+        <p>Your main page stays intentionally small. This is the deeper shelf for everything you save, like, and continue reading.</p>
+      </div>
+      <div class="shelf-tabs" role="tablist" aria-label="Library shelves">
+        <button type="button" class="active" data-shelf="saved">Saved</button>
+        <button type="button" data-shelf="liked">Liked</button>
+        <button type="button" data-shelf="progress">In progress</button>
+      </div>
+      <div class="library-results" aria-live="polite"></div>
+    </div>
+  </section>
+
+
+
+
+  <section class="app-section explore-section" id="explore-view" aria-labelledby="explore-view-title">
+    <div class="section-shell"><a class="view-return" href="#explore" data-view="home">← Back to front page</a></div>
+    <div class="section-shell explore-shell">
+      <div class="explore-hero">
+        <div>
+          <p class="kicker">Explore</p>
+          <h2 id="explore-view-title">Discover by taste, author, and mood.</h2>
+          <p>The explore room is intentionally separate from the homepage so discovery can be scrollable without disturbing the clean three-column front page.</p>
+        </div>
+        <div class="explore-summary" aria-live="polite"></div>
+      </div>
+      <div class="explore-controls" aria-label="Explore filters">
+        <button type="button" class="active" data-explore-filter="for-you">For you</button>
+        <button type="button" data-explore-filter="categories">Categories</button>
+        <button type="button" data-explore-filter="authors">Authors</button>
+        <button type="button" data-explore-filter="moods">Moods</button>
+        <button type="button" data-explore-filter="new">New finds</button>
+      </div>
+      <div class="explore-content" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section class="app-section search-section" id="search" aria-labelledby="search-title">
+    <div class="section-shell"><a class="view-return" href="#library" data-view="home">← Back to library</a></div>
+    <div class="section-shell two-column">
+      <div class="section-intro">
+        <p class="kicker">Find a volume</p>
+        <h2 id="search-title">Search the quiet shelves.</h2>
+        <p>Designed as a calm library desk rather than a loud marketplace. Filter by title, author, mood, or progress without breaking the classic editorial tone.</p>
+      </div>
+      <form class="search-board" role="search" aria-label="Book search">
+        <label for="book-search">Search library</label>
+        <div class="search-input-row">
+          <input id="book-search" type="search" placeholder="Try “Echoes”, “mystery”, or “rainy classics”" />
+          <button class="warm-button" type="submit">Search</button>
+        </div>
+        <div class="filter-row" aria-label="Search filters">
+          <button type="button">All books</button>
+          <button type="button">Unread</button>
+          <button type="button">In progress</button>
+          <button type="button">Finished</button>
+        </div>
+        <div class="search-results" aria-label="Suggested search results">
+          <a href="#book-detail"><span class="result-cover burgundy"></span><strong>Echoes of the Past</strong><em>Eleanor Vance</em></a>
+          <a href="#book-detail"><span class="result-cover blue"></span><strong>The Midnight Library</strong><em>Matt Haig</em></a>
+          <a href="#book-detail"><span class="result-cover sage"></span><strong>The Unravmish Book</strong><em>Orla Finne</em></a>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="app-section detail-section" id="book-detail" aria-labelledby="detail-title">
+    <div class="section-shell"><a class="view-return" href="#library" data-view="home">← Back to library</a></div>
+    <div class="section-shell detail-grid">
+      <aside class="detail-cover-wrap">
+        <div class="cover detail-cover burgundy"><span>Echoes<br>of the<br>Past</span><small>Eleanor Vance</small></div>
+        <a class="warm-button block" href="#reader">Continue Reading</a>
+      </aside>
+      <article class="detail-copy">
+        <p class="kicker">Book details</p>
+        <h2 id="detail-title">Echoes of the Past</h2>
+        <p class="author-line">Eleanor Vance · Historical fiction · 428 pages</p>
+        <div class="detail-stars">★★★★★ <small>4.8 · 329 reader reviews</small></div>
+        <p class="lead">A hushed, atmospheric novel of inherited memory, family secrets, and the strange way old houses preserve the voices of those who leave them.</p>
+        <div class="synopsis-box">
+          <h3>Synopsis</h3>
+          <p>Archivist Clara Vale returns to Thornfield House to catalogue her grandmother’s library. In the margins of a weathered atlas, she finds three handwritten clues that unravel a disappearance everyone in the family agreed never to name.</p>
+        </div>
+        <dl class="meta-list">
+          <div><dt>Progress</dt><dd>64%</dd></div>
+          <div><dt>Last opened</dt><dd>Chapter I</dd></div>
+          <div><dt>Mood</dt><dd>Quiet mystery</dd></div>
+        </dl>
+      </article>
+    </div>
+  </section>
+
+  <section class="app-section reader-section" id="reader" aria-labelledby="reader-title">
+    <div class="section-shell"><a class="view-return" href="#book-detail" data-view="book-detail">← Back to book details</a></div>
+    <div class="section-shell reader-grid">
+      <aside class="chapter-list">
+        <p class="kicker">Contents</p>
+        <a class="active" href="#reader">I. The Locked Alcove</a>
+        <a href="#reader">II. A Note in Sepia</a>
+        <a href="#reader">III. The Orchard Path</a>
+        <a href="#reader">IV. Letters Unsent</a>
+      </aside>
+      <article class="reader-paper">
+        <div class="reader-tools"><button type="button">Aa</button><span>Page 126</span><button type="button">Bookmark</button></div>
+        <p class="kicker">Echoes of the Past</p>
+        <h2 id="reader-title">The Locked Alcove</h2>
+        <div class="reading-prose">
+          <p><span class="dropcap">T</span>he rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was. Clara watched Thornfield gather itself from the mist: first the chimneys, then the slate roof, then the high windows reflecting a sky the colour of pewter.</p>
+          <p>Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall.</p>
+          <blockquote>Some rooms are not silent because they are empty, but because every object inside them remembers what was said.</blockquote>
+        </div>
+        <div class="reader-bottom"><button type="button">Previous</button><i><b style="width:42%"></b></i><button type="button">Next Chapter</button></div>
+      </article>
+    </div>
+  </section>
+
+  <section class="app-section profile-section" id="profile" aria-labelledby="profile-title">
+    <div class="section-shell"><a class="view-return" href="#library" data-view="home">← Back to library</a></div>
+    <div class="section-shell profile-grid">
+      <aside class="profile-card">
+        <div class="profile-avatar">EV</div>
+        <p class="kicker">Reader profile</p>
+        <h2 id="profile-title">Eleanor Vance</h2>
+        <p>Collector of quiet mysteries, annotated classics, and novels that smell faintly of rain.</p>
+      </aside>
+      <div class="dashboard-panel">
+        <p class="kicker">Personal library</p>
+        <h2>Dashboard</h2>
+        <div class="dash-stats">
+          <article><span>Books finished</span><strong>47</strong></article>
+          <article><span>Reading hours</span><strong>363</strong></article>
+          <article><span>Notes saved</span><strong>129</strong></article>
+        </div>
+        <div class="annotation-panel">
+          <h3>Recent annotations</h3>
+          <p>“The atlas clue functions like a second key, but emotionally rather than mechanically.”</p>
+          <p>“Beautiful restraint in the chapter ending. No reveal, only a change in temperature.”</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+
+  <section class="app-section settings-section" id="settings" aria-labelledby="settings-title">
+    <div class="section-shell"><a class="view-return" href="#/explore" data-view="home">← Back to front page</a></div>
+    <div class="section-shell settings-shell">
+      <div class="section-intro compact">
+        <p class="kicker">Settings</p>
+        <h2 id="settings-title">Reading comfort and sync.</h2>
+        <p>Global appearance, reader defaults, account-style local sync, and portable backup controls.</p>
+      </div>
+      <div class="settings-grid">
+        <section class="settings-card">
+          <h3>System theme</h3>
+          <p>Choose the full application theme. System follows your device preference.</p>
+          <div class="setting-buttons" data-setting="app-theme">
+            <button type="button" data-action="app-theme" data-theme-choice="system">System</button>
+            <button type="button" data-action="app-theme" data-theme-choice="day">Day</button>
+            <button type="button" data-action="app-theme" data-theme-choice="night">Night</button>
+          </div>
+        </section>
+        <section class="settings-card">
+          <h3>Reader defaults</h3>
+          <p>These defaults are also available inside the reading page.</p>
+          <div class="setting-row"><label>Font size <input type="range" min="15" max="24" id="setting-font"></label><output id="setting-font-out"></output></div>
+          <div class="setting-row"><label>Line height <select id="setting-line"><option value="1.7">Tight</option><option value="2">Classic</option><option value="2.25">Open</option></select></label></div>
+        </section>
+        <section class="settings-card">
+          <h3>Account sync</h3>
+          <p>This downloadable prototype has no backend, so sync is implemented as a professional local account + export/import flow. Later we connect the same state to real auth.</p>
+          <div class="setting-row"><input id="account-name" placeholder="Reader name or email" /></div>
+          <div class="setting-buttons"><button type="button" data-action="signin-local">Sign in locally</button><button type="button" data-action="signout-local">Sign out</button></div>
+          <small id="account-status"></small>
+        </section>
+        <section class="settings-card">
+          <h3>Portable backup</h3>
+          <p>Export your saved books, likes, notes, progress, and settings. Import restores the same state on another browser.</p>
+          <div class="setting-buttons"><button type="button" data-action="export-state">Export sync file</button><label class="import-label">Import sync file<input type="file" id="import-state" accept="application/json"></label></div>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

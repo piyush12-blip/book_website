@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="630" viewBox="0 0 420 630">
+<defs><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 .12"/></feComponentTransfer></filter></defs>
+<rect width="420" height="630" fill="#9c6f4e"/><rect x="0" width="62" height="630" fill="rgba(0,0,0,.16)"/><rect x="76" width="1.5" height="630" fill="rgba(255,244,220,.18)"/><rect x="34" y="34" width="352" height="562" fill="none" stroke="#e8c989" stroke-opacity=".35"/>
+<line x1="168" x2="252" y1="146" y2="146" stroke="#e8c989" stroke-width="2" opacity=".75"/>
+<text x="50%" y="230" text-anchor="middle" font-family="Georgia,serif" font-size="42" font-weight="700" fill="#e8c989" letter-spacing="-1"><tspan x="50%" dy="0">The</tspan><tspan x="50%" dy="42">Livns</tspan><tspan x="50%" dy="42">Visiam</tspan></text>
+<text x="50%" y="548" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="22" fill="#e8c989" opacity=".92">Henna Vance</text><rect width="420" height="630" filter="url(#grain)" opacity=".45"/></svg>
