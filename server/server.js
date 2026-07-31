@@ -287,16 +287,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             }
         }
 
-        const epubUrl = await findEpubUrl(cleanQuery);
-        
-        if (epubUrl) {
-            const chapters = await extractChaptersFromUrl(epubUrl);
-            if (chapters.length > 0) {
-                return res.json({ chapters, epubUrl, type: 'book' });
-            }
-        }
-
-        // ── Check Local Downloads directory for manually downloaded EPUB ──
+        // 1. Check Local Downloads directory FIRST for instant loading (<1ms)
         try {
             const fs = require('fs');
             const path = require('path');
@@ -329,7 +320,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 }
                 
                 if (localEpubFile) {
-                    console.log(`[CHAPTERS] Found local downloaded EPUB matching "${cleanQuery}": ${localEpubFile}`);
+                    console.log(`[CHAPTERS] Instant local EPUB match for "${cleanQuery}": ${localEpubFile}`);
                     const { extractChaptersFromFile } = require('./epubParser');
                     const chapters = await extractChaptersFromFile(localEpubFile);
                     if (chapters.length > 0) {
@@ -339,6 +330,21 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             }
         } catch(e) {
             console.error('[CHAPTERS] Error checking local downloads:', e.message);
+        }
+
+        // 2. Fast check public domain archives (Gutenberg / Standard Ebooks) for classic non-iTunes books
+        if (!id.startsWith('itunes-')) {
+            try {
+                const epubUrl = await findEpubUrl(cleanQuery);
+                if (epubUrl) {
+                    const chapters = await extractChaptersFromUrl(epubUrl);
+                    if (chapters.length > 0) {
+                        return res.json({ chapters, epubUrl, type: 'book' });
+                    }
+                }
+            } catch(e) {
+                console.warn(`[CHAPTERS] Public domain check skipped/failed: ${e.message}`);
+            }
         }
 
         // Fallback for modern copyrighted novels
