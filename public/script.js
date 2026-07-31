@@ -148,7 +148,7 @@ function renderReader(){
   const selected=chapters[idx]||{title:'Preview Chapter',content:['The reader opens with a quiet page and remembers every setting you choose.'],quote:'A good reading room disappears around the book.'};
 
   let backdoorCardHTML = '';
-  if (b.isFallback || b.id.startsWith('itunes-')) {
+  if (b.isFallback) {
       const realTitle = b.title || 'Book';
       const realAuthor = b.author || 'Author';
       backdoorCardHTML = `
@@ -179,21 +179,22 @@ function renderReader(){
         <style>@keyframes spin { 100% { transform:rotate(360deg); } }</style>
       `;
       
-      // Start/restart polling for downloaded file
+      // Start polling ONCE for downloaded file
       if(!window._activePollers) window._activePollers = {};
       if(!window._activePollers[b.id]){
         const doPoll = async () => {
             try {
                 const checkRes = await fetch(`/api/check-local?q=${encodeURIComponent(realTitle + ' ' + realAuthor)}`);
                 const checkData = await checkRes.json();
-                if (checkData.found) {
+                if (checkData.found && checkData.chapters && checkData.chapters.length) {
                     clearInterval(window._activePollers[b.id]);
                     delete window._activePollers[b.id];
                     b.chapters = checkData.chapters;
                     b.isFallback = false;
-                    const statusEl = document.getElementById('polling-status');
-                    if (statusEl) statusEl.innerHTML = "✅ Download detected! Loading book...";
-                    setTimeout(() => loadStolenChapters(b.id, realTitle, realAuthor, b.genre), 800);
+                    b.isLocal = true;
+                    saveState();
+                    renderAll();
+                    toast('✅ Download detected! Loaded ' + b.chapters.length + ' chapters.');
                 }
             } catch(e) { /* ignore */ }
         };
@@ -245,7 +246,13 @@ async function loadStolenChapters(id, title, author, genre){
     
     // Save fetched chapters into book object so drawer & detail page see all chapters!
     const targetBook = book(id);
-    if(targetBook) targetBook.chapters = data.chapters;
+    if(targetBook) {
+      targetBook.chapters = data.chapters;
+      targetBook.isFallback = !!data.isFallback;
+      targetBook.isLocal = !!data.isLocal;
+      saveState();
+      renderAll();
+    }
 
     const realTitle = targetBook && !isNaN(Number(targetBook.title)) ? title || targetBook.title : (targetBook ? targetBook.title : title || 'Book');
     const realAuthor = targetBook ? targetBook.author : author || 'Author';
