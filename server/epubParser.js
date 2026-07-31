@@ -150,12 +150,22 @@ async function parseEpubBuffer(zip) {
 
     const opf = opfEntry.getData().toString('utf8');
 
-    // Parse spine & manifest
-    const spineIds = [...opf.matchAll(/idref="([^"]+)"/g)].map(m => m[1]);
+    // Parse spine & manifest robustly regardless of attribute order
     const manifest = {};
-    for (const m of [...opf.matchAll(/<item[^>]+id="([^"]+)"[^>]+href="([^"]+)"[^>]*\/?>/g)]) {
-        manifest[m[1]] = m[2];
+    const itemRegex = /<item\s+[^>]*\/?>/gi;
+    let itemMatch;
+    while ((itemMatch = itemRegex.exec(opf)) !== null) {
+        const tag = itemMatch[0];
+        const idMatch = tag.match(/\bid="([^"]+)"/i);
+        const hrefMatch = tag.match(/\bhref="([^"]+)"/i);
+        if (idMatch && hrefMatch) {
+            manifest[idMatch[1]] = hrefMatch[1];
+        }
     }
+
+    const spineSectionMatch = opf.match(/<spine[\s\S]*?<\/spine>/i);
+    const spineXml = spineSectionMatch ? spineSectionMatch[0] : opf;
+    const spineIds = [...spineXml.matchAll(/\bidref="([^"]+)"/gi)].map(m => m[1]);
 
     let chapterFiles = spineIds.map(id => manifest[id])
         .filter(href => href && /\.(html|xhtml|htm)$/i.test(href));
