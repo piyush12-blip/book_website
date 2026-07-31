@@ -136,13 +136,20 @@ app.get('/api/check-local', async (req, res) => {
     try {
         const fs = require('fs');
         const path = require('path');
-        const downloadsDir = path.join(require('os').homedir(), 'Downloads');
+        const home = require('os').homedir();
+        const targetDirs = [
+            path.join(home, 'Downloads'),
+            path.join(home, 'Music'),
+            path.join(home, 'Desktop'),
+            path.join(home, 'Documents')
+        ];
         
-        if (fs.existsSync(downloadsDir)) {
-            const files = fs.readdirSync(downloadsDir);
-            let localEpubFile = null;
+        let localEpubFile = null;
+
+        for (const dir of targetDirs) {
+            if (!fs.existsSync(dir)) continue;
+            const files = fs.readdirSync(dir);
             
-            // Check both .epub and .pdf files
             for (const file of files) {
                 const fLower = file.toLowerCase();
                 if (!fLower.endsWith('.epub') && !fLower.endsWith('.pdf')) continue;
@@ -151,21 +158,21 @@ app.get('/api/check-local', async (req, res) => {
                 for (const term of titleTerms) {
                     if (fLower.includes(term)) matches++;
                 }
-                // Require at least 2 title words (or 1 if title only has 1 unique word)
                 const requiredMatches = Math.min(titleTerms.length, 2);
                 if (matches >= requiredMatches && matches > 0) {
-                    localEpubFile = path.join(downloadsDir, file);
+                    localEpubFile = path.join(dir, file);
                     break;
                 }
             }
-            
-            if (localEpubFile) {
-                console.log(`[POLL] Found local file for "${cleanQuery}": ${localEpubFile}`);
-                const { extractChaptersFromFile } = require('./epubParser');
-                const chapters = await extractChaptersFromFile(localEpubFile);
-                if (chapters.length > 0) {
-                    return res.json({ found: true, chapters });
-                }
+            if (localEpubFile) break;
+        }
+        
+        if (localEpubFile) {
+            console.log(`[POLL] Found local file for "${cleanQuery}": ${localEpubFile}`);
+            const { extractChaptersFromFile } = require('./epubParser');
+            const chapters = await extractChaptersFromFile(localEpubFile);
+            if (chapters.length > 0) {
+                return res.json({ found: true, chapters });
             }
         }
     } catch(e) {
@@ -291,18 +298,27 @@ app.get('/api/books/:id/chapters', async (req, res) => {
         try {
             const fs = require('fs');
             const path = require('path');
-            const downloadsDir = path.join(require('os').homedir(), 'Downloads');
-            if (fs.existsSync(downloadsDir)) {
-                const files = fs.readdirSync(downloadsDir);
-                const titleParts = cleanQuery.split(' ');
-                const titleOnly = titleParts.length > 2 ? titleParts.slice(0, titleParts.length - 1).join(' ') : cleanQuery;
-                const rawTerms = titleOnly.toLowerCase().split(/\s+/).filter(t => t.length > 3);
-                
-                const COMMON_NAMES = new Set(['john', 'david', 'james', 'robert', 'michael', 'william', 'williams', 'richard', 'thomas', 'charles', 'paul', 'mark', 'george', 'steven', 'edward', 'brian', 'ronald', 'anthony', 'kevin', 'jason', 'matthew', 'gary', 'timothy', 'joseph', 'larry', 'jeffrey', 'frank', 'scott', 'eric', 'stephen', 'andrew', 'raymond', 'gregory', 'joshua', 'jerry', 'dennis', 'walter', 'patrick', 'peter', 'harold', 'douglas', 'henry', 'carl', 'arthur', 'ryan', 'roger', 'joe', 'jack', 'albert', 'jonathan', 'justin', 'samuel', 'harry', 'steve', 'louis', 'aaron', 'carlos', 'russell', 'martin', 'chris', 'green', 'smith']);
-                let titleTerms = [...new Set(rawTerms)].filter(t => !COMMON_NAMES.has(t));
-                if (titleTerms.length === 0) titleTerms = [...new Set(rawTerms)];
-                
-                let localEpubFile = null;
+            const home = require('os').homedir();
+            const targetDirs = [
+                path.join(home, 'Downloads'),
+                path.join(home, 'Music'),
+                path.join(home, 'Desktop'),
+                path.join(home, 'Documents')
+            ];
+            
+            const titleParts = cleanQuery.split(' ');
+            const titleOnly = titleParts.length > 2 ? titleParts.slice(0, titleParts.length - 1).join(' ') : cleanQuery;
+            const rawTerms = titleOnly.toLowerCase().split(/\s+/).filter(t => t.length > 3);
+            
+            const COMMON_NAMES = new Set(['john', 'david', 'james', 'robert', 'michael', 'william', 'williams', 'richard', 'thomas', 'charles', 'paul', 'mark', 'george', 'steven', 'edward', 'brian', 'ronald', 'anthony', 'kevin', 'jason', 'matthew', 'gary', 'timothy', 'joseph', 'larry', 'jeffrey', 'frank', 'scott', 'eric', 'stephen', 'andrew', 'raymond', 'gregory', 'joshua', 'jerry', 'dennis', 'walter', 'patrick', 'peter', 'harold', 'douglas', 'henry', 'carl', 'arthur', 'ryan', 'roger', 'joe', 'jack', 'albert', 'jonathan', 'justin', 'samuel', 'harry', 'steve', 'louis', 'aaron', 'carlos', 'russell', 'martin', 'chris', 'green', 'smith']);
+            let titleTerms = [...new Set(rawTerms)].filter(t => !COMMON_NAMES.has(t));
+            if (titleTerms.length === 0) titleTerms = [...new Set(rawTerms)];
+            
+            let localEpubFile = null;
+            
+            for (const dir of targetDirs) {
+                if (!fs.existsSync(dir)) continue;
+                const files = fs.readdirSync(dir);
                 
                 for (const file of files) {
                     const fLower = file.toLowerCase();
@@ -314,18 +330,19 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                     }
                     const requiredMatches = Math.min(titleTerms.length, 2);
                     if (matches >= requiredMatches && matches > 0) {
-                        localEpubFile = path.join(downloadsDir, file);
+                        localEpubFile = path.join(dir, file);
                         break;
                     }
                 }
-                
-                if (localEpubFile) {
-                    console.log(`[CHAPTERS] Instant local EPUB match for "${cleanQuery}": ${localEpubFile}`);
-                    const { extractChaptersFromFile } = require('./epubParser');
-                    const chapters = await extractChaptersFromFile(localEpubFile);
-                    if (chapters.length > 0) {
-                        return res.json({ chapters, epubUrl: null, type: 'book', isLocal: true });
-                    }
+                if (localEpubFile) break;
+            }
+            
+            if (localEpubFile) {
+                console.log(`[CHAPTERS] Instant local EPUB match for "${cleanQuery}": ${localEpubFile}`);
+                const { extractChaptersFromFile } = require('./epubParser');
+                const chapters = await extractChaptersFromFile(localEpubFile);
+                if (chapters.length > 0) {
+                    return res.json({ chapters, epubUrl: null, type: 'book', isLocal: true });
                 }
             }
         } catch(e) {
