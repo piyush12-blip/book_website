@@ -137,9 +137,9 @@ function renderReader(){
   const p=pct(b.id), r=state.reader, notes=state.notes[b.id]||[], isManga=(b.format||inferFormat(b))==='Manga & Manhwa';
   const chapterNav=chapters.map((c,i)=>`<a class="${i===idx?'active':''}" data-action="open-chapter" data-book="${b.id}" data-chapter-index="${i}" href="#/read/${b.id}/${i+1}" data-chapter-title="${c.title.toLowerCase()}">${i+1}. ${c.title}<small>${c.minutes||12} min</small></a>`).join('');
   const renderTextChapter=(ch,i)=>{
-    const paras=(ch.content||[]).map((x,j)=>`<p class="${j===0&&state.highlighted[b.id]?'highlighted':''}">${j===0?'<span class="dropcap">'+x.charAt(0)+'</span>'+x.slice(1):x}</p>`).join('');
+    const proseHTML = ch.html || (ch.content||[]).map((x,j)=>`<p class="${j===0&&state.highlighted[b.id]?'highlighted':''}">${j===0?'<span class="dropcap">'+x.charAt(0)+'</span>'+x.slice(1):x}</p>`).join('');
     const fig=ch.image?`<figure class="reader-figure"><img src="${ch.image}" alt="${ch.imageCaption||ch.title}"><figcaption>${ch.imageCaption||''}</figcaption></figure>`:'';
-    return `<section class="chapter-block" id="chapter-${i+1}" data-chapter-index="${i}"><p class="chapter-count">Chapter ${i+1} of ${total}</p><h2>${ch.title}</h2><span class="reader-progress-note">${ch.minutes||12} min · ${ch.publicDomain?'Public domain · ':''}${b.author}</span><div class="reading-prose" style="font-size:var(--reader-font);line-height:var(--reader-line)">${paras}${fig}<blockquote>${ch.quote||''}</blockquote></div></section>`;
+    return `<section class="chapter-block" id="chapter-${i+1}" data-chapter-index="${i}"><p class="chapter-count">Chapter ${i+1} of ${total}</p><h2>${ch.title}</h2><span class="reader-progress-note">${ch.minutes||12} min · ${ch.publicDomain?'Public domain · ':''}${b.author}</span><div class="reading-prose stolen-prose" style="font-size:var(--reader-font);line-height:var(--reader-line)">${proseHTML}${fig}${ch.quote?`<blockquote>${ch.quote}</blockquote>`:''}</div></section>`;
   };
   const renderMangaChapter=(ch,i)=>{
     const lines=ch.content||[];
