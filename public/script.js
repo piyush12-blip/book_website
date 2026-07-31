@@ -43,19 +43,21 @@ const book = id => {
   if (!found && id) {
     const isManga = id.startsWith('mangadex-');
     const isWebnovel = id.startsWith('royalroad-');
+    const isShadowSlave = id.includes('9ee7510b') || id.toLowerCase().includes('shadow');
     const cleanName = id.replace(/^(itunes|mangadex|royalroad)-/, '').replace(/[-_]/g, ' ');
-    const formattedTitle = cleanName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    const formattedTitle = isShadowSlave ? 'Shadow Slave' : (isNaN(Number(cleanName)) ? cleanName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : 'Stoner');
     found = {
       id: id,
-      title: isNaN(Number(cleanName)) ? formattedTitle : 'Stoner',
-      author: isManga ? 'MangaDex Artist' : isWebnovel ? 'RoyalRoad Author' : 'John Williams',
-      genre: isManga ? 'Manga' : isWebnovel ? 'Web Novel' : 'Book',
+      title: formattedTitle,
+      author: isShadowSlave ? 'Guiltythree' : (isManga ? 'MangaDex Artist' : isWebnovel ? 'RoyalRoad Author' : 'John Williams'),
+      genre: isShadowSlave ? 'Web Novel' : (isManga ? 'Manga' : isWebnovel ? 'Web Novel' : 'Book'),
+      format: isShadowSlave ? 'Novel & Fiction' : (isManga ? 'Manga & Manhwa' : 'Novels'),
       mood: 'Reading',
       pages: 300,
       rating: 5,
       cover: 'navy',
       lines: formattedTitle.slice(0, 15),
-      synopsis: 'Digital reading edition.',
+      synopsis: isShadowSlave ? 'Growing up in poverty, Sunny never harbored any illusions about his fate. In a world destroyed by the Nightmare Spell...' : 'Digital reading edition.',
       chapters: []
     };
     BOOKS.push(found);
@@ -134,8 +136,11 @@ function renderReader(){
   if(!g)return;
   const b=book(state.currentBook), chapters=b.chapters||[], total=Math.max(1,chapters.length);
   const idx=Math.max(0,Math.min(total-1,state.activeChapter||0));
-  const p=pct(b.id), r=state.reader, notes=state.notes[b.id]||[], isManga=(b.format||inferFormat(b))==='Manga & Manhwa';
-  const chapterNav=chapters.map((c,i)=>`<a class="${i===idx?'active':''}" data-action="open-chapter" data-book="${b.id}" data-chapter-index="${i}" href="#/read/${b.id}/${i+1}" data-chapter-title="${c.title.toLowerCase()}">${i+1}. ${c.title}<small>${c.minutes||12} min</small></a>`).join('');
+  const selected=chapters[idx]||{title:'Preview Chapter',content:['The reader opens with a quiet page and remembers every setting you choose.'],quote:'A good reading room disappears around the book.'};
+  const p=pct(b.id), r=state.reader, notes=state.notes[b.id]||[];
+  const hasTextContent = chapters.some(c => c?.html) || (selected && selected.html);
+  const isManga = !hasTextContent && ((b.format||inferFormat(b))==='Manga & Manhwa');
+  const chapterNav=chapters.map((c,i)=>`<a class="${i===idx?'active':''}" data-action="open-chapter" data-book="${b.id}" data-chapter-index="${i}" href="#/read/${b.id}/${i+1}" data-chapter-title="${(c.title||'').toLowerCase()}">${i+1}. ${c.title}<small>${c.minutes||12} min</small></a>`).join('');
   const renderTextChapter=(ch,i)=>{
     const proseHTML = ch.html || (ch.content||[]).map((x,j)=>`<p class="${j===0&&state.highlighted[b.id]?'highlighted':''}">${j===0?'<span class="dropcap">'+x.charAt(0)+'</span>'+x.slice(1):x}</p>`).join('');
     const fig=ch.image?`<figure class="reader-figure"><img src="${ch.image}" alt="${ch.imageCaption||ch.title}"><figcaption>${ch.imageCaption||''}</figcaption></figure>`:'';
@@ -145,7 +150,6 @@ function renderReader(){
     const lines=ch.content||[];
     return `<section class="chapter-block manga-chapter" id="chapter-${i+1}" data-chapter-index="${i}"><p class="chapter-count">Chapter ${i+1} of ${total}</p><h2>${ch.title}</h2><div class="manga-panels ${r.mangaMode==='paged'?'paged':''} ${r.mangaDirection==='rtl'?'rtl':''}"><figure class="manga-panel cover-panel-page"><img src="${b.image}" alt="${b.title} cover panel"><figcaption>${b.title}</figcaption></figure>${lines.map((line,j)=>`<div class="manga-panel text-panel"><span>Panel ${j+1}</span><p>${line}</p></div>`).join('')}<div class="manga-panel quote-panel"><p>${ch.quote||'To be continued.'}</p></div></div></section>`;
   };
-  const selected=chapters[idx]||{title:'Preview Chapter',content:['The reader opens with a quiet page and remembers every setting you choose.'],quote:'A good reading room disappears around the book.'};
 
   let backdoorCardHTML = '';
   if (b.isFallback) {
@@ -208,7 +212,9 @@ function renderReader(){
     : backdoorCardHTML + (r.mode==='single'?renderTextChapter(selected,idx):chapters.map(renderTextChapter).join(''));
   const notesPanel=`<aside class="reader-notes ${r.notesOpen?'open':''}"><header><h3>Notebook</h3><button data-reader-action="toggle-notes">×</button></header>${notes.length?notes.map((n,i)=>`<article><time>${new Date(n.at).toLocaleDateString()}</time><p>${n.text}</p><button data-reader-action="delete-note" data-note-index="${i}">Delete</button></article>`).join(''):'<div class="empty-state"><h3>No notes yet.</h3><p>Write a private margin note below. It will appear here and in your sync export.</p></div>'}</aside>`;
   const epubPanel=`<section class="epub-panel ${r.epubMode?'open':''}"><header><h3>EPUB mode</h3><p>Upload a legal/public-domain EPUB or a file you own. EPUB.js will render it here when available.</p><label class="import-label">Upload EPUB<input type="file" id="epub-upload" accept=".epub,application/epub+zip"></label></header><div id="epub-viewer"><div class="empty-state"><h3>No EPUB loaded.</h3><p>This static prototype can render local EPUB files through EPUB.js when opened on a local server and internet/CDN is available.</p></div></div></section>`;
-  g.innerHTML=`<aside class="chapter-list reader-drawer ${r.navOpen?'open':''}"><div class="drawer-head"><p class="kicker">Contents</p><button data-reader-action="toggle-contents">×</button></div><input class="chapter-search" id="chapter-search" placeholder="Search chapters…">${chapterNav}</aside><article class="reader-paper theme-${r.theme} ${r.focus?'focus-mode':''} reader-mode-${r.mode} ${isManga?'manga-reader-paper':''}" style="--reader-font:${r.font}px;--reader-line:${r.line}"><div class="reader-settings compact-reader-settings" aria-label="Reader controls"><button data-action="back-step" style="font-weight:700;color:var(--brand,#111);margin-right:6px">← Back</button><button data-reader-action="toggle-contents">Contents</button><button data-action="font-down">A−</button><button data-action="font-up">A+</button><button class="${r.theme==='paper'?'active':''}" data-action="theme" data-theme="paper">Paper</button><button class="${r.theme==='sepia'?'active':''}" data-action="theme" data-theme="sepia">Sepia</button><button class="${r.theme==='night'?'active':''}" data-action="theme" data-theme="night">Brown</button><button class="${r.theme==='black'?'active':''}" data-action="theme" data-theme="black">Black</button><select data-action="line"><option value="1.7" ${r.line==1.7?'selected':''}>Tight</option><option value="2" ${r.line==2?'selected':''}>Classic</option><option value="2.25" ${r.line==2.25?'selected':''}>Open</option></select><button class="${r.mode==='continuous'?'active':''}" data-action="reader-mode" data-mode="continuous">Scroll</button><button class="${r.mode==='single'?'active':''}" data-action="reader-mode" data-mode="single">One</button>${isManga?`<button class="${r.mangaMode==='webtoon'?'active':''}" data-reader-action="manga-mode" data-mode="webtoon">Webtoon</button><button class="${r.mangaMode==='paged'?'active':''}" data-reader-action="manga-mode" data-mode="paged">Paged</button><button class="${r.mangaDirection==='rtl'?'active':''}" data-reader-action="manga-direction">RTL</button>`:''}<button class="${state.highlighted[b.id]?'active':''}" data-action="highlight" data-book="${b.id}">Highlight</button><button class="${r.notesOpen?'active':''}" data-reader-action="toggle-notes">Notes</button><button class="${r.epubMode?'active':''}" data-reader-action="toggle-epub">EPUB</button><button class="${r.focus?'active':''}" data-action="focus-reader">Focus</button><button data-action="fullscreen-reader">Fullscreen</button></div><div class="reader-status"><strong>${b.title}</strong><span data-current-chapter>Chapter ${idx+1}: ${(chapters[idx]||selected).title}</span><i><b style="width:${p}%" data-reader-progress></b></i></div>${epubPanel}<div class="native-reader ${r.epubMode?'is-dimmed':''}">${content}</div><div class="reader-bottom"><button data-action="prev-page" data-book="${b.id}">Previous</button><i><b style="width:${p}%" data-reader-progress-bottom></b></i><button data-action="next-page" data-book="${b.id}">${r.mode==='continuous'?'Mark next chapter':'Next Chapter'}</button></div><div class="note-box"><label for="reader-note">Private note</label><textarea id="reader-note" placeholder="Write a quiet margin note…"></textarea><footer><small>${notes.length} saved note(s)</small><button class="warm-button" data-action="save-note" data-book="${b.id}">Save note</button></footer></div></article>${notesPanel}`;
+  const rawChTitle = (chapters[idx]||selected).title || '';
+  const cleanChLabel = rawChTitle.toLowerCase().startsWith('chapter') ? rawChTitle : `Chapter ${idx+1}: ${rawChTitle}`;
+  g.innerHTML=`<aside class="chapter-list reader-drawer ${r.navOpen?'open':''}"><div class="drawer-head"><p class="kicker">Contents</p><button data-reader-action="toggle-contents">×</button></div><input class="chapter-search" id="chapter-search" placeholder="Search chapters…">${chapterNav}</aside><article class="reader-paper theme-${r.theme} ${r.focus?'focus-mode':''} reader-mode-${r.mode} ${isManga?'manga-reader-paper':''}" style="--reader-font:${r.font}px;--reader-line:${r.line}"><div class="reader-settings compact-reader-settings" aria-label="Reader controls"><button data-action="back-step" style="font-weight:700;color:var(--brand,#111);margin-right:6px">← Back</button><button data-reader-action="toggle-contents">Contents</button><button data-action="font-down">A−</button><button data-action="font-up">A+</button><button class="${r.theme==='paper'?'active':''}" data-action="theme" data-theme="paper">Paper</button><button class="${r.theme==='sepia'?'active':''}" data-action="theme" data-theme="sepia">Sepia</button><button class="${r.theme==='night'?'active':''}" data-action="theme" data-theme="night">Brown</button><button class="${r.theme==='black'?'active':''}" data-action="theme" data-theme="black">Black</button><select data-action="line"><option value="1.7" ${r.line==1.7?'selected':''}>Tight</option><option value="2" ${r.line==2?'selected':''}>Classic</option><option value="2.25" ${r.line==2.25?'selected':''}>Open</option></select><button class="${r.mode==='continuous'?'active':''}" data-action="reader-mode" data-mode="continuous">Scroll</button><button class="${r.mode==='single'?'active':''}" data-action="reader-mode" data-mode="single">One</button>${isManga?`<button class="${r.mangaMode==='webtoon'?'active':''}" data-reader-action="manga-mode" data-mode="webtoon">Webtoon</button><button class="${r.mangaMode==='paged'?'active':''}" data-reader-action="manga-mode" data-mode="paged">Paged</button><button class="${r.mangaDirection==='rtl'?'active':''}" data-reader-action="manga-direction">RTL</button>`:''}<button class="${state.highlighted[b.id]?'active':''}" data-action="highlight" data-book="${b.id}">Highlight</button><button class="${r.notesOpen?'active':''}" data-reader-action="toggle-notes">Notes</button><button class="${r.epubMode?'active':''}" data-reader-action="toggle-epub">EPUB</button><button class="${r.focus?'active':''}" data-action="focus-reader">Focus</button><button data-action="fullscreen-reader">Fullscreen</button></div><div class="reader-status"><strong>${b.title}</strong><span data-current-chapter>${cleanChLabel}</span><i><b style="width:${p}%" data-reader-progress></b></i></div>${epubPanel}<div class="native-reader ${r.epubMode?'is-dimmed':''}">${content}</div><div class="reader-bottom"><button data-action="prev-page" data-book="${b.id}">Previous</button><i><b style="width:${p}%" data-reader-progress-bottom></b></i><button data-action="next-page" data-book="${b.id}">${r.mode==='continuous'?'Mark next chapter':'Next Chapter'}</button></div><div class="note-box"><label for="reader-note">Private note</label><textarea id="reader-note" placeholder="Write a quiet margin note…"></textarea><footer><small>${notes.length} saved note(s)</small><button class="warm-button" data-action="save-note" data-book="${b.id}">Save note</button></footer></div></article>${notesPanel}`;
   document.body.classList.toggle('reader-focus', !!r.focus && document.querySelector('#reader')?.classList.contains('active-view'));
   setTimeout(()=>{setupReaderScroll();setupAutoHideReaderControls();},50);
   // Fire for external books (itunes, mangadex, royalroad, searched) ONLY if chapters aren't loaded yet
@@ -221,9 +227,8 @@ async function loadStolenChapters(id, title, author, genre){
   if(!nativeReader) return;
   
   const isMangaLoad = id.startsWith('mangadex-');
-  
   nativeReader.innerHTML=`<div style="padding:4rem 2rem;text-align:center;opacity:.6;font-family:Georgia,serif">
-    <p style="font-size:1.1rem;margin-bottom:.5rem">${isMangaLoad ? '📖 Loading manga pages...' : '📚 Searching libraries...'}</p>
+    <p style="font-size:1.1rem;margin-bottom:.5rem">📚 Loading chapters...</p>
     <p style="font-size:.85rem;opacity:.7">${title}</p>
   </div>`;
   
@@ -231,7 +236,7 @@ async function loadStolenChapters(id, title, author, genre){
     const res=await fetch(`/api/books/${id}/chapters?q=${encodeURIComponent(title+' '+author)}`);
     const data=await res.json();
     
-    if(data.error || !data.chapters || !data.chapters.length){
+    if(!data.isFallback && (data.error || !data.chapters || !data.chapters.length)){
       const msg = data.error || 'No chapters found.';
       const isNotFound = msg.includes('not available') || msg.includes('No EPUB found');
       nativeReader.innerHTML=`<div style="padding:3rem 2rem;text-align:center;font-family:Georgia,serif;max-width:520px;margin:0 auto">
@@ -250,6 +255,10 @@ async function loadStolenChapters(id, title, author, genre){
       targetBook.chapters = data.chapters;
       targetBook.isFallback = !!data.isFallback;
       targetBook.isLocal = !!data.isLocal;
+      if (data.type === 'webnovel' || data.type === 'book') {
+        targetBook.format = 'Novel & Fiction';
+        targetBook.genre = 'Web Novel';
+      }
       saveState();
       renderAll();
     }
@@ -263,7 +272,7 @@ async function loadStolenChapters(id, title, author, genre){
          </div>`
       : '';
 
-    if(data.type === 'manga'){
+    if(data.type === 'manga' && data.chapters && data.chapters.length > 0){
       // ── MANGA / MANHWA / WEBTOON MODE ──
       nativeReader.innerHTML = langBanner + data.chapters.map((ch, i) => `
         <section class="chapter-block manga-chapter-block" id="chapter-${i+1}" data-chapter-index="${i}">
@@ -274,7 +283,7 @@ async function loadStolenChapters(id, title, author, genre){
           <div class="manga-image-scroll">${ch.html}</div>
         </section>`).join('');
     } else {
-      // ── NOVEL / LIGHT NOVEL / BOOK / WEB NOVEL MODE ──
+      // ── NOVEL / LIGHT NOVEL / BOOK / WEB NOVEL MODE (Or Manga Backdoor Fallback) ──
       
       let backdoorHTML = '';
       if (data.isFallback || id.startsWith('itunes-')) {
@@ -379,7 +388,25 @@ function renderAll(){renderReadingList();renderFeatured();renderRecent();renderS
 function setNav(v){navLinks.forEach(a=>a.removeAttribute('aria-current'));searchButton?.removeAttribute('aria-current');document.querySelector('[data-open-settings]')?.removeAttribute('aria-current');if(v==='home')document.querySelector('.nav a[href="#explore"]')?.setAttribute('aria-current','page');if(v==='library-view')document.querySelector('.nav a[href="#library"]')?.setAttribute('aria-current','page');if(v==='explore-view')document.querySelector('.nav a[href="#explore"]')?.setAttribute('aria-current','page');if(v==='reader')document.querySelector('.nav a[href="#reading-now"]')?.setAttribute('aria-current','page');if(v==='profile')document.querySelector('.nav a[href="#profile"]')?.setAttribute('aria-current','page');if(v==='settings')document.querySelector('[data-open-settings]')?.setAttribute('aria-current','page');if(v==='search')searchButton?.setAttribute('aria-current','page')}
 function showView(v='home',push=true){sections.forEach(s=>s.classList.remove('active-view'));document.body.classList.toggle('reader-focus', v==='reader' && !!state.reader.focus);if(v==='home'){app.classList.remove('view-mode');setNav('home');if(push)history.pushState({v},'','#explore');scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});return}const target=document.getElementById(v);if(!target)return showView('home',push);app.classList.add('view-mode');target.classList.add('active-view');setNav(v);if(push)history.pushState({v},'',`#${v}`);scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});if(v==='search')setTimeout(()=>document.querySelector('#book-search')?.focus(),300)}
 function openBook(id){state.currentBook=id;state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);saveState();renderAll();showView('book-detail');history.replaceState({v:'book-detail'},'',`#/book/${id}`)}
-function openReader(id=state.currentBook){state.currentBook=id;state.reader.mode='continuous';state.reader.focus=true;state.reader.navOpen=false;state.reader.notesOpen=false;state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);state.sessions++;saveState();renderAll();showView('reader');history.replaceState({v:'reader'},'',`#/read/${id}/${(state.activeChapter||0)+1}`);setTimeout(()=>scrollReaderChapter(state.activeChapter||0),120)}
+function openReader(id=state.currentBook){
+  state.currentBook=id;
+  const b=book(id);
+  state.reader.mode='continuous';
+  state.reader.navOpen=false;
+  state.reader.notesOpen=false;
+  state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);
+  state.sessions++;
+  saveState();
+  renderAll();
+  showView('reader');
+  history.replaceState({v:'reader'},'',`#/read/${id}/${(state.activeChapter||0)+1}`);
+  const isExternal = b && (b.genre === 'searched' || b.genre === 'Manga' || b.genre === 'Web Novel' || b.id.includes('-'));
+  if(isExternal || !b.chapters || !b.chapters.length || b.chapters.some(c=>!c.html)){
+    setTimeout(()=>loadStolenChapters(b.id, b.title, b.author, b.genre), 50);
+  } else {
+    setTimeout(()=>scrollReaderChapter(state.activeChapter||0),120);
+  }
+}
 function toggleSave(id){state.saved=saved(id)?state.saved.filter(x=>x!==id):[id,...state.saved];saveState();renderAll();toast(saved(id)?'Saved to your reading list.':'Removed from your saved shelf.')}
 function toggleLike(id){state.liked=liked(id)?state.liked.filter(x=>x!==id):[id,...state.liked];saveState();renderAll();toast(liked(id)?'Added to liked books.':'Removed from liked books.')}
 

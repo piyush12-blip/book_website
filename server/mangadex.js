@@ -23,7 +23,7 @@ async function searchMangaDex(query) {
         const res = await axios.get(`${API}/manga`, {
             params: {
                 title: query,
-                'includes[]': 'cover_art',
+                'includes[]': ['cover_art', 'author', 'artist'],
                 'order[relevance]': 'desc',
                 limit: 6
             },
@@ -34,12 +34,14 @@ async function searchMangaDex(query) {
 
         return res.data.data.map((manga, i) => {
             const color  = COLORS[i % COLORS.length];
+            const altEn  = (manga.attributes.altTitles || []).find(t => t.en)?.en;
             const title  = manga.attributes.title.en
+                        || altEn
                         || Object.values(manga.attributes.title)[0]
                         || 'Unknown Title';
 
-            const authorRel = manga.relationships.find(r => r.type === 'author');
-            const author = authorRel?.attributes?.name || 'MangaDex Artist';
+            const authorRel = manga.relationships.find(r => r.type === 'author' || r.type === 'artist');
+            const author = authorRel?.attributes?.name || 'Guiltythree';
 
             let coverUrl = null;
             const coverArt = manga.relationships.find(r => r.type === 'cover_art');

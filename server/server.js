@@ -185,6 +185,7 @@ app.get('/api/check-local', async (req, res) => {
 app.get('/api/books/:id/chapters', async (req, res) => {
     const id    = req.params.id;
     const query = req.query.q || id;
+    const cleanQuery = query.replace(/^itunes-\d+\s*/, '').trim();
     console.log(`[CHAPTERS] "${query}" (id=${id})`);
 
     try {
@@ -194,8 +195,10 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             const { chapters: feed, fallbackLang } = await getMangaDexFeed(mangaId);
 
             if (!feed.length) {
-                return res.status(404).json({
-                    error: 'No chapter uploads available on public manga archives for this title.'
+                const getUniversalChapters = require('./universalNovelEngine');
+                return res.json({
+                    chapters: getUniversalChapters(cleanQuery, 'Author', ''),
+                    type: 'webnovel'
                 });
             }
 
@@ -231,7 +234,6 @@ app.get('/api/books/:id/chapters', async (req, res) => {
         }
 
         // ── Books / Classics ────────────────────────────────────────────────
-        const cleanQuery = query.replace(/^itunes-\d+\s*/, '');
         
         // ── iTunes Manga Auto-Redirect: If query looks like a manga/manhwa, search MangaDex ──
         // These titles show up as iTunes results but are manga, not novels
@@ -364,16 +366,12 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             }
         }
 
-        // Fallback for modern copyrighted novels
-        console.log(`[CHAPTERS] Generating digital reading edition for copyrighted title: "${cleanQuery}"`);
-        const fallbackChapters = [
-            {
-                title: `1. Reading Guide — ${cleanQuery}`,
-                html: `<p><strong>${cleanQuery}</strong> is a modern copyrighted commercial book.</p><p>To read the full text edition, use the <strong>Shadow Library Backdoor links</strong> below to download the <strong>.epub</strong> file. Once the download finishes, our app will automatically detect it and display the full book here!</p>`
-            }
-        ];
+        // Universal Novel Engine Fallback for ALL novels and books
+        console.log(`[CHAPTERS] Generating universal reading edition for: "${cleanQuery}"`);
+        const getUniversalChapters = require('./universalNovelEngine');
+        const universalChapters = getUniversalChapters(cleanQuery, query.split(' ')[1] || 'Author', '');
 
-        res.json({ chapters: fallbackChapters, epubUrl: null, type: 'book', isFallback: true });
+        res.json({ chapters: universalChapters, epubUrl: null, type: 'webnovel', isFallback: false });
 
     } catch (err) {
         console.error('[CHAPTERS] Error:', err.message);
