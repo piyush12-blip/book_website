@@ -146,9 +146,65 @@ function renderReader(){
     return `<section class="chapter-block manga-chapter" id="chapter-${i+1}" data-chapter-index="${i}"><p class="chapter-count">Chapter ${i+1} of ${total}</p><h2>${ch.title}</h2><div class="manga-panels ${r.mangaMode==='paged'?'paged':''} ${r.mangaDirection==='rtl'?'rtl':''}"><figure class="manga-panel cover-panel-page"><img src="${b.image}" alt="${b.title} cover panel"><figcaption>${b.title}</figcaption></figure>${lines.map((line,j)=>`<div class="manga-panel text-panel"><span>Panel ${j+1}</span><p>${line}</p></div>`).join('')}<div class="manga-panel quote-panel"><p>${ch.quote||'To be continued.'}</p></div></div></section>`;
   };
   const selected=chapters[idx]||{title:'Preview Chapter',content:['The reader opens with a quiet page and remembers every setting you choose.'],quote:'A good reading room disappears around the book.'};
+
+  let backdoorCardHTML = '';
+  if (b.isFallback || b.id.startsWith('itunes-')) {
+      const realTitle = b.title || 'Book';
+      const realAuthor = b.author || 'Author';
+      backdoorCardHTML = `
+        <div style="background:#1a1a1a!important;color:#f1f1f1!important;padding:2.5rem;border-radius:12px;margin:1rem auto 3rem auto;max-width:650px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid #333;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+          <h2 style="margin:0 0 1rem 0;font-size:1.6rem;color:#f39c12!important;display:flex;align-items:center;justify-content:center;gap:10px;">
+            <span>🏴‍☠️</span> Shadow Library Backdoor
+          </h2>
+          <p style="opacity:0.9;font-size:1rem;line-height:1.6;margin-bottom:1.5rem;color:#f1f1f1!important;">
+            <strong>${realTitle}</strong> is a modern copyrighted book. Server firewalls block automated scraping.<br>
+            <strong>Click one of these links to download the full EPUB file for free:</strong>
+          </p>
+          <div style="display:flex;gap:15px;justify-content:center;margin-bottom:1.5rem;flex-wrap:wrap;">
+            <a href="https://annas-archive.li/search?q=${encodeURIComponent(realTitle + ' ' + realAuthor)}&ext=epub" target="_blank" style="background:#3b82f6!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(59,130,246,0.4);display:inline-block;">Anna's Archive</a>
+            <a href="https://oceanofpdf.com/?s=${encodeURIComponent(realTitle)}" target="_blank" style="background:#f59e0b!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(245,158,11,0.4);display:inline-block;">OceanOfPDF</a>
+            <a href="http://libgen.is/search.php?req=${encodeURIComponent(realTitle + ' ' + realAuthor)}" target="_blank" style="background:#10b981!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(16,185,129,0.4);display:inline-block;">LibGen</a>
+          </div>
+          <div style="background:#2d2d2d!important;border-radius:8px;padding:1.2rem;text-align:left;color:#f1f1f1!important;">
+            <p style="margin:0 0 0.5rem 0;font-weight:600;color:#a3e635!important;">How to read it here:</p>
+            <ol style="margin:0;padding-left:1.5rem;opacity:0.9;font-size:0.95rem;line-height:1.5;color:#f1f1f1!important;">
+              <li>Click one of the bright buttons above, verify you are human, and download the <strong>.epub</strong> file.</li>
+              <li><strong>Do not refresh!</strong> As soon as the download completes, the book will load right here automatically.</li>
+            </ol>
+            <div id="polling-status" style="margin-top:1rem;color:#f39c12!important;font-size:0.9rem;text-align:center;font-weight:600;">
+              <span class="loading-spinner" style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> Waiting for download...
+            </div>
+          </div>
+        </div>
+        <style>@keyframes spin { 100% { transform:rotate(360deg); } }</style>
+      `;
+      
+      // Start/restart polling for downloaded file
+      if(!window._activePollers) window._activePollers = {};
+      if(!window._activePollers[b.id]){
+        const doPoll = async () => {
+            try {
+                const checkRes = await fetch(`/api/check-local?q=${encodeURIComponent(realTitle + ' ' + realAuthor)}`);
+                const checkData = await checkRes.json();
+                if (checkData.found) {
+                    clearInterval(window._activePollers[b.id]);
+                    delete window._activePollers[b.id];
+                    b.chapters = checkData.chapters;
+                    b.isFallback = false;
+                    const statusEl = document.getElementById('polling-status');
+                    if (statusEl) statusEl.innerHTML = "✅ Download detected! Loading book...";
+                    setTimeout(() => loadStolenChapters(b.id, realTitle, realAuthor, b.genre), 800);
+                }
+            } catch(e) { /* ignore */ }
+        };
+        doPoll();
+        window._activePollers[b.id] = setInterval(doPoll, 3000);
+      }
+  }
+
   const content=isManga
     ? (r.mode==='single'?renderMangaChapter(selected,idx):chapters.map(renderMangaChapter).join(''))
-    : (r.mode==='single'?renderTextChapter(selected,idx):chapters.map(renderTextChapter).join(''));
+    : backdoorCardHTML + (r.mode==='single'?renderTextChapter(selected,idx):chapters.map(renderTextChapter).join(''));
   const notesPanel=`<aside class="reader-notes ${r.notesOpen?'open':''}"><header><h3>Notebook</h3><button data-reader-action="toggle-notes">×</button></header>${notes.length?notes.map((n,i)=>`<article><time>${new Date(n.at).toLocaleDateString()}</time><p>${n.text}</p><button data-reader-action="delete-note" data-note-index="${i}">Delete</button></article>`).join(''):'<div class="empty-state"><h3>No notes yet.</h3><p>Write a private margin note below. It will appear here and in your sync export.</p></div>'}</aside>`;
   const epubPanel=`<section class="epub-panel ${r.epubMode?'open':''}"><header><h3>EPUB mode</h3><p>Upload a legal/public-domain EPUB or a file you own. EPUB.js will render it here when available.</p><label class="import-label">Upload EPUB<input type="file" id="epub-upload" accept=".epub,application/epub+zip"></label></header><div id="epub-viewer"><div class="empty-state"><h3>No EPUB loaded.</h3><p>This static prototype can render local EPUB files through EPUB.js when opened on a local server and internet/CDN is available.</p></div></div></section>`;
   g.innerHTML=`<aside class="chapter-list reader-drawer ${r.navOpen?'open':''}"><div class="drawer-head"><p class="kicker">Contents</p><button data-reader-action="toggle-contents">×</button></div><input class="chapter-search" id="chapter-search" placeholder="Search chapters…">${chapterNav}</aside><article class="reader-paper theme-${r.theme} ${r.focus?'focus-mode':''} reader-mode-${r.mode} ${isManga?'manga-reader-paper':''}" style="--reader-font:${r.font}px;--reader-line:${r.line}"><div class="reader-settings compact-reader-settings" aria-label="Reader controls"><button data-action="back-step" style="font-weight:700;color:var(--brand,#111);margin-right:6px">← Back</button><button data-reader-action="toggle-contents">Contents</button><button data-action="font-down">A−</button><button data-action="font-up">A+</button><button class="${r.theme==='paper'?'active':''}" data-action="theme" data-theme="paper">Paper</button><button class="${r.theme==='sepia'?'active':''}" data-action="theme" data-theme="sepia">Sepia</button><button class="${r.theme==='night'?'active':''}" data-action="theme" data-theme="night">Brown</button><button class="${r.theme==='black'?'active':''}" data-action="theme" data-theme="black">Black</button><select data-action="line"><option value="1.7" ${r.line==1.7?'selected':''}>Tight</option><option value="2" ${r.line==2?'selected':''}>Classic</option><option value="2.25" ${r.line==2.25?'selected':''}>Open</option></select><button class="${r.mode==='continuous'?'active':''}" data-action="reader-mode" data-mode="continuous">Scroll</button><button class="${r.mode==='single'?'active':''}" data-action="reader-mode" data-mode="single">One</button>${isManga?`<button class="${r.mangaMode==='webtoon'?'active':''}" data-reader-action="manga-mode" data-mode="webtoon">Webtoon</button><button class="${r.mangaMode==='paged'?'active':''}" data-reader-action="manga-mode" data-mode="paged">Paged</button><button class="${r.mangaDirection==='rtl'?'active':''}" data-reader-action="manga-direction">RTL</button>`:''}<button class="${state.highlighted[b.id]?'active':''}" data-action="highlight" data-book="${b.id}">Highlight</button><button class="${r.notesOpen?'active':''}" data-reader-action="toggle-notes">Notes</button><button class="${r.epubMode?'active':''}" data-reader-action="toggle-epub">EPUB</button><button class="${r.focus?'active':''}" data-action="focus-reader">Focus</button><button data-action="fullscreen-reader">Fullscreen</button></div><div class="reader-status"><strong>${b.title}</strong><span data-current-chapter>Chapter ${idx+1}: ${(chapters[idx]||selected).title}</span><i><b style="width:${p}%" data-reader-progress></b></i></div>${epubPanel}<div class="native-reader ${r.epubMode?'is-dimmed':''}">${content}</div><div class="reader-bottom"><button data-action="prev-page" data-book="${b.id}">Previous</button><i><b style="width:${p}%" data-reader-progress-bottom></b></i><button data-action="next-page" data-book="${b.id}">${r.mode==='continuous'?'Mark next chapter':'Next Chapter'}</button></div><div class="note-box"><label for="reader-note">Private note</label><textarea id="reader-note" placeholder="Write a quiet margin note…"></textarea><footer><small>${notes.length} saved note(s)</small><button class="warm-button" data-action="save-note" data-book="${b.id}">Save note</button></footer></div></article>${notesPanel}`;
