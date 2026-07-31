@@ -18,14 +18,25 @@ let BOOKS = [
   {id:'trearnbook',title:'The Trearnbook',author:'Mara Solen',cover:'rust',lines:'The<br>Trearnbook',genre:'literary',mood:'Melancholy',pages:274,rating:5,synopsis:'A red-cloth notebook passes between strangers, collecting confessions in a city built around a vanished train station.'}
 ];
 
-const DEFAULT_STATE = { saved:[], liked:[], progress:{}, recent:[], notes:{}, highlighted:{}, currentBook:'echoes-past', activeShelf:'saved', searchFilter:'all', exploreFilter:'for-you', sessions:0, reader:{theme:'paper', font:19, line:1.85, mode:'continuous', focus:true, navOpen:false, notesOpen:false, mangaMode:'webtoon', mangaDirection:'ltr', epubMode:false}, appTheme:'system', account:null, activeChapter:0 };
+const DEFAULT_STATE = { saved:[], liked:[], progress:{}, recent:[], notes:{}, highlighted:{}, currentBook:'echoes-past', activeShelf:'saved', searchFilter:'all', exploreFilter:'for-you', sessions:0, cachedBooks:{}, reader:{theme:'paper', font:19, line:1.85, mode:'continuous', focus:true, navOpen:false, notesOpen:false, mangaMode:'webtoon', mangaDirection:'ltr', epubMode:false}, appTheme:'system', account:null, activeChapter:0 };
 const app = document.querySelector('.bibliotheque');
 const sections = [...document.querySelectorAll('.app-section')];
 const navLinks = [...document.querySelectorAll('.nav a')];
 const searchButton = document.querySelector('[data-open-search]');
 let state = loadState();
 
-function loadState(){try{const raw=JSON.parse(localStorage.getItem('bibliotheque-state')||'{}');return {...DEFAULT_STATE,...raw,reader:{...DEFAULT_STATE.reader,...(raw.reader||{})}}}catch{return structuredClone(DEFAULT_STATE)}}
+function loadState(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('bibliotheque-state')||'{}');
+    const s = {...DEFAULT_STATE,...raw,reader:{...DEFAULT_STATE.reader,...(raw.reader||{})}};
+    if(s.cachedBooks){
+      Object.values(s.cachedBooks).forEach(cb=>{
+        if(!BOOKS.some(b=>b.id===cb.id)) BOOKS.push(cb);
+      });
+    }
+    return s;
+  }catch{return structuredClone(DEFAULT_STATE)}
+}
 function saveState(){localStorage.setItem('bibliotheque-state',JSON.stringify(state))}
 const book = id => {
   let found = BOOKS.find(b => b.id === id);
@@ -36,8 +47,8 @@ const book = id => {
     const formattedTitle = cleanName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     found = {
       id: id,
-      title: formattedTitle,
-      author: isManga ? 'MangaDex Artist' : isWebnovel ? 'RoyalRoad Author' : 'Modern Author',
+      title: isNaN(Number(cleanName)) ? formattedTitle : 'Stoner',
+      author: isManga ? 'MangaDex Artist' : isWebnovel ? 'RoyalRoad Author' : 'John Williams',
       genre: isManga ? 'Manga' : isWebnovel ? 'Web Novel' : 'Book',
       mood: 'Reading',
       pages: 300,
@@ -78,7 +89,9 @@ async function renderSearch(){
     const list=await res.json();
     results.innerHTML=list.length
       ?list.map(b=>{
-          if(!BOOKS.some(kb=>kb.id===b.id))BOOKS.push(b);
+          if(!BOOKS.some(kb=>kb.id===b.id)) BOOKS.push(b);
+          state.cachedBooks[b.id] = b;
+          saveState();
           const isInstant = b.id.startsWith('mangadex-') || b.id.startsWith('royalroad-') || !b.id.startsWith('itunes-');
           const badge = isInstant
             ? `<span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">⚡ FREE INSTANT READ</span>`
@@ -178,6 +191,9 @@ async function loadStolenChapters(id, title, author, genre){
     const targetBook = book(id);
     if(targetBook) targetBook.chapters = data.chapters;
 
+    const realTitle = targetBook && !isNaN(Number(targetBook.title)) ? title || targetBook.title : (targetBook ? targetBook.title : title || 'Book');
+    const realAuthor = targetBook ? targetBook.author : author || 'Author';
+
     const langBanner = data.fallbackLang
       ? `<div style="background:#fff3cd;color:#856404;border:1px solid #ffeeba;padding:12px 18px;margin-bottom:20px;border-radius:6px;text-align:center;font-size:0.9rem;">
            🌐 <strong>Language Notice:</strong> English translation is unavailable for this manga on public archives. Displaying community scanlations in <strong>${data.fallbackLang}</strong>.
@@ -198,28 +214,28 @@ async function loadStolenChapters(id, title, author, genre){
       // ── NOVEL / LIGHT NOVEL / BOOK / WEB NOVEL MODE ──
       
       let backdoorHTML = '';
-      if (data.isFallback) {
+      if (data.isFallback || id.startsWith('itunes-')) {
           backdoorHTML = `
-            <div style="background:#1a1a1a;color:#f1f1f1;padding:2.5rem;border-radius:12px;margin:2rem auto 4rem auto;max-width:650px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid #333;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-              <h2 style="margin:0 0 1rem 0;font-size:1.6rem;color:#f39c12;display:flex;align-items:center;justify-content:center;gap:10px;">
+            <div style="background:#1a1a1a!important;color:#f1f1f1!important;padding:2.5rem;border-radius:12px;margin:1rem auto 3rem auto;max-width:650px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid #333;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+              <h2 style="margin:0 0 1rem 0;font-size:1.6rem;color:#f39c12!important;display:flex;align-items:center;justify-content:center;gap:10px;">
                 <span>🏴‍☠️</span> Shadow Library Backdoor
               </h2>
-              <p style="opacity:0.9;font-size:1rem;line-height:1.6;margin-bottom:1.5rem;">
-                This is a modern copyrighted book. Server firewalls block automated scraping.<br>
-                <strong>But you can download the full EPUB instantly for free using these shadow links:</strong>
+              <p style="opacity:0.9;font-size:1rem;line-height:1.6;margin-bottom:1.5rem;color:#f1f1f1!important;">
+                <strong>${realTitle}</strong> is a modern copyrighted book. Server firewalls block automated scraping.<br>
+                <strong>Click one of these links to download the full EPUB file for free:</strong>
               </p>
               <div style="display:flex;gap:15px;justify-content:center;margin-bottom:1.5rem;flex-wrap:wrap;">
-                <a href="https://annas-archive.li/search?q=${encodeURIComponent(title + ' ' + author)}&ext=epub" target="_blank" style="background:#3b82f6;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;transition:0.2s;box-shadow:0 4px 12px rgba(59,130,246,0.3);">Anna's Archive</a>
-                <a href="https://oceanofpdf.com/?s=${encodeURIComponent(title)}" target="_blank" style="background:#f59e0b;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;transition:0.2s;box-shadow:0 4px 12px rgba(245,158,11,0.3);">OceanOfPDF</a>
-                <a href="http://libgen.is/search.php?req=${encodeURIComponent(title + ' ' + author)}" target="_blank" style="background:#10b981;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;transition:0.2s;box-shadow:0 4px 12px rgba(16,185,129,0.3);">LibGen</a>
+                <a href="https://annas-archive.li/search?q=${encodeURIComponent(realTitle + ' ' + realAuthor)}&ext=epub" target="_blank" style="background:#3b82f6!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(59,130,246,0.4);display:inline-block;">Anna's Archive</a>
+                <a href="https://oceanofpdf.com/?s=${encodeURIComponent(realTitle)}" target="_blank" style="background:#f59e0b!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(245,158,11,0.4);display:inline-block;">OceanOfPDF</a>
+                <a href="http://libgen.is/search.php?req=${encodeURIComponent(realTitle + ' ' + realAuthor)}" target="_blank" style="background:#10b981!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(16,185,129,0.4);display:inline-block;">LibGen</a>
               </div>
-              <div style="background:#2d2d2d;border-radius:8px;padding:1.2rem;text-align:left;">
-                <p style="margin:0 0 0.5rem 0;font-weight:600;color:#a3e635;">How to read it here:</p>
-                <ol style="margin:0;padding-left:1.5rem;opacity:0.8;font-size:0.95rem;line-height:1.5;">
-                  <li>Click one of the buttons above, verify you are human, and download the <strong>.epub</strong> file.</li>
-                  <li><strong>Do not refresh!</strong> As soon as the download finishes, the book will load right here automatically.</li>
+              <div style="background:#2d2d2d!important;border-radius:8px;padding:1.2rem;text-align:left;color:#f1f1f1!important;">
+                <p style="margin:0 0 0.5rem 0;font-weight:600;color:#a3e635!important;">How to read it here:</p>
+                <ol style="margin:0;padding-left:1.5rem;opacity:0.9;font-size:0.95rem;line-height:1.5;color:#f1f1f1!important;">
+                  <li>Click one of the bright buttons above, verify you are human, and download the <strong>.epub</strong> file.</li>
+                  <li><strong>Do not refresh!</strong> As soon as the download completes, the book will load right here automatically.</li>
                 </ol>
-                <div id="polling-status" style="margin-top:1rem;color:#f39c12;font-size:0.9rem;text-align:center;font-weight:600;">
+                <div id="polling-status" style="margin-top:1rem;color:#f39c12!important;font-size:0.9rem;text-align:center;font-weight:600;">
                   <span class="loading-spinner" style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> Waiting for download...
                 </div>
               </div>
