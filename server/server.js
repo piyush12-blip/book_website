@@ -125,9 +125,13 @@ app.get('/api/check-local', async (req, res) => {
     // Use ONLY the title portion (strip author name which is usually last 1-2 words)
     const cleanQuery = query.replace(/^itunes-\d+\s*/, '');
     const parts = cleanQuery.split(' ');
-    // Heuristic: if query is "Title Author", last 1-2 words are author. Use first N-1 words as title.
     const titleOnly = parts.length > 2 ? parts.slice(0, parts.length - 1).join(' ') : cleanQuery;
-    const titleTerms = titleOnly.toLowerCase().split(/\s+/).filter(t => t.length > 3);
+    const rawTerms = titleOnly.toLowerCase().split(/\s+/).filter(t => t.length > 3);
+    
+    // Filter out common first/last names to prevent "John Green" matching "John Williams"
+    const COMMON_NAMES = new Set(['john', 'david', 'james', 'robert', 'michael', 'william', 'williams', 'richard', 'thomas', 'charles', 'paul', 'mark', 'george', 'steven', 'edward', 'brian', 'ronald', 'anthony', 'kevin', 'jason', 'matthew', 'gary', 'timothy', 'joseph', 'larry', 'jeffrey', 'frank', 'scott', 'eric', 'stephen', 'andrew', 'raymond', 'gregory', 'joshua', 'jerry', 'dennis', 'walter', 'patrick', 'peter', 'harold', 'douglas', 'henry', 'carl', 'arthur', 'ryan', 'roger', 'joe', 'jack', 'albert', 'jonathan', 'justin', 'samuel', 'harry', 'steve', 'louis', 'aaron', 'carlos', 'russell', 'martin', 'chris', 'green', 'smith']);
+    let titleTerms = [...new Set(rawTerms)].filter(t => !COMMON_NAMES.has(t));
+    if (titleTerms.length === 0) titleTerms = [...new Set(rawTerms)];
     
     try {
         const fs = require('fs');
@@ -147,8 +151,9 @@ app.get('/api/check-local', async (req, res) => {
                 for (const term of titleTerms) {
                     if (fLower.includes(term)) matches++;
                 }
-                // Require at least 2 title words to match (so Paper Towns != Fault in Our Stars)
-                if (matches >= Math.min(titleTerms.length, 2)) {
+                // Require at least 2 title words (or 1 if title only has 1 unique word)
+                const requiredMatches = Math.min(titleTerms.length, 2);
+                if (matches >= requiredMatches && matches > 0) {
                     localEpubFile = path.join(downloadsDir, file);
                     break;
                 }
@@ -298,24 +303,28 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             const downloadsDir = path.join(require('os').homedir(), 'Downloads');
             if (fs.existsSync(downloadsDir)) {
                 const files = fs.readdirSync(downloadsDir);
-                // Use ONLY title words (strip last word = author last name) with length > 3
                 const titleParts = cleanQuery.split(' ');
                 const titleOnly = titleParts.length > 2 ? titleParts.slice(0, titleParts.length - 1).join(' ') : cleanQuery;
-                const titleTerms = titleOnly.toLowerCase().split(/\s+/).filter(t => t.length > 3);
+                const rawTerms = titleOnly.toLowerCase().split(/\s+/).filter(t => t.length > 3);
+                
+                const COMMON_NAMES = new Set(['john', 'david', 'james', 'robert', 'michael', 'william', 'williams', 'richard', 'thomas', 'charles', 'paul', 'mark', 'george', 'steven', 'edward', 'brian', 'ronald', 'anthony', 'kevin', 'jason', 'matthew', 'gary', 'timothy', 'joseph', 'larry', 'jeffrey', 'frank', 'scott', 'eric', 'stephen', 'andrew', 'raymond', 'gregory', 'joshua', 'jerry', 'dennis', 'walter', 'patrick', 'peter', 'harold', 'douglas', 'henry', 'carl', 'arthur', 'ryan', 'roger', 'joe', 'jack', 'albert', 'jonathan', 'justin', 'samuel', 'harry', 'steve', 'louis', 'aaron', 'carlos', 'russell', 'martin', 'chris', 'green', 'smith']);
+                let titleTerms = [...new Set(rawTerms)].filter(t => !COMMON_NAMES.has(t));
+                if (titleTerms.length === 0) titleTerms = [...new Set(rawTerms)];
+                
                 let localEpubFile = null;
                 
                 for (const file of files) {
-                    if (file.toLowerCase().endsWith('.epub')) {
-                        const fName = file.toLowerCase();
-                        let matches = 0;
-                        for (const term of titleTerms) {
-                            if (fName.includes(term)) matches++;
-                        }
-                        // Require at least 2 title words to prevent cross-matching (Paper Towns != Fault in Our Stars)
-                        if (matches >= Math.min(titleTerms.length, 2)) {
-                            localEpubFile = path.join(downloadsDir, file);
-                            break;
-                        }
+                    const fLower = file.toLowerCase();
+                    if (!fLower.endsWith('.epub') && !fLower.endsWith('.pdf')) continue;
+                    
+                    let matches = 0;
+                    for (const term of titleTerms) {
+                        if (fLower.includes(term)) matches++;
+                    }
+                    const requiredMatches = Math.min(titleTerms.length, 2);
+                    if (matches >= requiredMatches && matches > 0) {
+                        localEpubFile = path.join(downloadsDir, file);
+                        break;
                     }
                 }
                 
@@ -332,21 +341,12 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             console.error('[CHAPTERS] Error checking local downloads:', e.message);
         }
 
-        // Fallback for modern copyrighted novels (e.g. The Fault in Our Stars)
-        // Generates clean, readable digital text edition so modern bestsellers ALWAYS open!
+        // Fallback for modern copyrighted novels
         console.log(`[CHAPTERS] Generating digital reading edition for copyrighted title: "${cleanQuery}"`);
         const fallbackChapters = [
             {
-                title: `1. Overview & Reading Guide — ${cleanQuery}`,
-                html: `<p><strong>${cleanQuery}</strong> is a modern copyrighted commercial release. Public domain servers (Gutenberg/Standard Ebooks) only host pre-1928 public domain classics.</p><p>This digital reader edition provides full narrative structure, chapter summaries, character guides, and thematic breakdown for your reading session.</p><blockquote>"Some infinities are bigger than other infinities."</blockquote>`
-            },
-            {
-                title: `2. Chapter Breakdown & Narrative Arc`,
-                html: `<p><strong>Key Characters:</strong> Hazel Grace Lancaster, Augustus Waters, Isaac, Peter Van Houten.</p><p><strong>Plot Summary:</strong> Hazel, a 16-year-old cancer patient, meets Augustus Waters at a support group. They bond over Hazel's favorite novel, <em>An Imperial Affliction</em>, and travel to Amsterdam to meet its reclusive author.</p>`
-            },
-            {
-                title: `3. Key Themes & Quotes`,
-                html: `<p><strong>Themes:</strong> Love under limitation, the desire to be remembered, existential courage, and the pain of loss.</p><blockquote>"That's the thing about pain, it demands to be felt."</blockquote>`
+                title: `1. Reading Guide — ${cleanQuery}`,
+                html: `<p><strong>${cleanQuery}</strong> is a modern copyrighted commercial book.</p><p>To read the full text edition, use the <strong>Shadow Library Backdoor links</strong> below to download the <strong>.epub</strong> file. Once the download finishes, our app will automatically detect it and display the full book here!</p>`
             }
         ];
 
