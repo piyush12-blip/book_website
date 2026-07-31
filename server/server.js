@@ -74,13 +74,33 @@ app.get('/api/books/search', async (req, res) => {
             };
         });
 
-        const results = [];
-        const maxLen = Math.max(webnovelResults.length, mangaResults.length, itunesResults.length);
-        for (let i = 0; i < maxLen; i++) {
-            if (itunesResults[i])   results.push(itunesResults[i]);
-            if (webnovelResults[i]) results.push(webnovelResults[i]);
-            if (mangaResults[i])    results.push(mangaResults[i]);
+        // Filter out redundant iTunes volumes if a base title is searched
+        const seenTitles = new Set();
+        const filteredItunes = [];
+        for (const book of itunesResults) {
+            // Normalize title (e.g. "Attack on Titan Vol. 1" -> "attack on titan")
+            const baseTitle = book.title.toLowerCase().replace(/vol(?:ume)?\.?\s*\d+/gi, '').replace(/\s+/g, ' ').trim();
+            if (!seenTitles.has(baseTitle)) {
+                seenTitles.add(baseTitle);
+                filteredItunes.push(book);
+            }
         }
+
+        // Prioritize MangaDex and RoyalRoad (which contain full series / instant chapters)
+        const results = [];
+        // Add MangaDex matches first
+        mangaResults.forEach(m => results.push(m));
+        // Add RoyalRoad matches next
+        webnovelResults.forEach(w => results.push(w));
+        // Add filtered iTunes books next
+        filteredItunes.forEach(b => {
+            // Avoid adding iTunes duplicates if MangaDex already has it
+            const bTitle = b.title.toLowerCase().replace(/vol(?:ume)?\.?\s*\d+/gi, '').trim();
+            const existsInManga = mangaResults.some(m => m.title.toLowerCase().includes(bTitle) || bTitle.includes(m.title.toLowerCase()));
+            if (!existsInManga) {
+                results.push(b);
+            }
+        });
 
         res.json(results);
 
@@ -94,6 +114,61 @@ app.get('/api/books/search', async (req, res) => {
 // 2. CHAPTER LIST ENDPOINT
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/favicon.ico', (req, res) => res.status(204).end());
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2.5 LOCAL DOWNLOAD POLLING ENDPOINT (Auto-load without refresh)
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/check-local', async (req, res) => {
+    const query = req.query.q;
+    if (!query) return res.json({ found: false });
+
+    // Use ONLY the title portion (strip author name which is usually last 1-2 words)
+    const cleanQuery = query.replace(/^itunes-\d+\s*/, '');
+    const parts = cleanQuery.split(' ');
+    // Heuristic: if query is "Title Author", last 1-2 words are author. Use first N-1 words as title.
+    const titleOnly = parts.length > 2 ? parts.slice(0, parts.length - 1).join(' ') : cleanQuery;
+    const titleTerms = titleOnly.toLowerCase().split(/\s+/).filter(t => t.length > 3);
+    
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const downloadsDir = path.join(require('os').homedir(), 'Downloads');
+        
+        if (fs.existsSync(downloadsDir)) {
+            const files = fs.readdirSync(downloadsDir);
+            let localEpubFile = null;
+            
+            // Check both .epub and .pdf files
+            for (const file of files) {
+                const fLower = file.toLowerCase();
+                if (!fLower.endsWith('.epub') && !fLower.endsWith('.pdf')) continue;
+                
+                let matches = 0;
+                for (const term of titleTerms) {
+                    if (fLower.includes(term)) matches++;
+                }
+                // Require at least 2 title words to match (so Paper Towns != Fault in Our Stars)
+                if (matches >= Math.min(titleTerms.length, 2)) {
+                    localEpubFile = path.join(downloadsDir, file);
+                    break;
+                }
+            }
+            
+            if (localEpubFile) {
+                console.log(`[POLL] Found local file for "${cleanQuery}": ${localEpubFile}`);
+                const { extractChaptersFromFile } = require('./epubParser');
+                const chapters = await extractChaptersFromFile(localEpubFile);
+                if (chapters.length > 0) {
+                    return res.json({ found: true, chapters });
+                }
+            }
+        }
+    } catch(e) {
+        console.error('[POLL] Error:', e.message);
+    }
+    
+    res.json({ found: false });
+});
 
 app.get('/api/books/:id/chapters', async (req, res) => {
     const id    = req.params.id;
@@ -145,6 +220,67 @@ app.get('/api/books/:id/chapters', async (req, res) => {
 
         // ── Books / Classics ────────────────────────────────────────────────
         const cleanQuery = query.replace(/^itunes-\d+\s*/, '');
+        
+        // ── iTunes Manga Auto-Redirect: If query looks like a manga/manhwa, search MangaDex ──
+        // These titles show up as iTunes results but are manga, not novels
+        const MANGA_KEYWORDS = [
+            'volume', 'vol.', 'vol ', 'manga', 'manhwa', 'manhua', 'webtoon',
+            'blue lock', 'one piece', 'naruto', 'bleach', 'attack on titan', 'fullmetal',
+            'dragon ball', 'demon slayer', 'my hero academia', 'jujutsu kaisen',
+            'death note', 'tokyo ghoul', 'chainsaw man', 'hunter x hunter',
+            'sword art online', 'black clover', 'fairy tail', 'vinland saga',
+            'solo leveling', 'tower of god', 'omniscient reader', 'overlord',
+            're:zero', 'goblin slayer', 'berserk', 'vagabond', 'slam dunk',
+            'spy x family', 'mob psycho', 'one punch man', 'trigun', 'cowboy bebop',
+            'made in abyss', 'mushishi', 'violet evergarden', 'a silent voice'
+        ];
+        const lowerQuery = cleanQuery.toLowerCase();
+        const looksLikeManga = MANGA_KEYWORDS.some(kw => lowerQuery.includes(kw));
+        
+        if (looksLikeManga) {
+            console.log(`[CHAPTERS] iTunes manga detected: "${cleanQuery}" → searching MangaDex...`);
+            try {
+                // Strip "Volume N", author name (last 1-2 words), and clean up
+                let mangaTitle = cleanQuery
+                    .replace(/volume\s*\d+/gi, '')
+                    .replace(/vol\.?\s*\d+/gi, '')
+                    .replace(/\s+/g, ' ').trim();
+                // Strip last 2 words (usually "Author Lastname") if title is long enough
+                const words = mangaTitle.split(' ');
+                if (words.length > 3) mangaTitle = words.slice(0, -2).join(' ');
+                mangaTitle = mangaTitle.trim();
+                
+                console.log(`[CHAPTERS] MangaDex query: "${mangaTitle}"`);
+                const results = await searchMangaDex(mangaTitle);
+                
+                if (results && results.length > 0) {
+                    const mangaId = results[0].id.replace('mangadex-', '');
+                    console.log(`[CHAPTERS] MangaDex found: ${results[0].title} (${mangaId})`);
+                    const { chapters: feed, fallbackLang } = await getMangaDexFeed(mangaId);
+                    if (feed.length > 0) {
+                        const chapters = [];
+                        for (let i = 0; i < Math.min(feed.length, 5); i++) {
+                            const item = feed[i];
+                            const html = await getMangaDexChapterImages(item.chapterId);
+                            chapters.push({ title: item.title, chapterId: item.chapterId, html });
+                            await new Promise(r => setTimeout(r, 80));
+                        }
+                        for (let i = 5; i < feed.length; i++) {
+                            const item = feed[i];
+                            chapters.push({
+                                title: item.title,
+                                chapterId: item.chapterId,
+                                html: `<div class="lazy-manga-trigger" data-chapter-id="${item.chapterId}"><p style="text-align:center;padding:2rem;opacity:.6;">Click or scroll to load ${item.title}...</p></div>`
+                            });
+                        }
+                        console.log(`[CHAPTERS] MangaDex redirect success for "${cleanQuery}" → ${feed.length} chapters`);
+                        return res.json({ chapters, type: 'manga', fallbackLang });
+                    }
+                }
+            } catch(e) {
+                console.warn(`[CHAPTERS] MangaDex redirect failed: ${e.message}`);
+            }
+        }
 
         const epubUrl = await findEpubUrl(cleanQuery);
         
@@ -162,19 +298,21 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             const downloadsDir = path.join(require('os').homedir(), 'Downloads');
             if (fs.existsSync(downloadsDir)) {
                 const files = fs.readdirSync(downloadsDir);
-                // Filter out small words like "the", "in", "our"
-                const queryTerms = cleanQuery.toLowerCase().split(/\s+/).filter(t => t.length > 4); 
+                // Use ONLY title words (strip last word = author last name) with length > 3
+                const titleParts = cleanQuery.split(' ');
+                const titleOnly = titleParts.length > 2 ? titleParts.slice(0, titleParts.length - 1).join(' ') : cleanQuery;
+                const titleTerms = titleOnly.toLowerCase().split(/\s+/).filter(t => t.length > 3);
                 let localEpubFile = null;
                 
                 for (const file of files) {
                     if (file.toLowerCase().endsWith('.epub')) {
                         const fName = file.toLowerCase();
                         let matches = 0;
-                        for (const term of queryTerms) {
+                        for (const term of titleTerms) {
                             if (fName.includes(term)) matches++;
                         }
-                        // If we hit at least 1 strong word match (like "fault" or "stars")
-                        if (matches >= 1) {
+                        // Require at least 2 title words to prevent cross-matching (Paper Towns != Fault in Our Stars)
+                        if (matches >= Math.min(titleTerms.length, 2)) {
                             localEpubFile = path.join(downloadsDir, file);
                             break;
                         }

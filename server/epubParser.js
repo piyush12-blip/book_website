@@ -191,9 +191,31 @@ async function parseEpubBuffer(zip) {
         let title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : `Chapter ${i + 1}`;
         if (!title) title = `Chapter ${i + 1}`;
 
-        // Remove broken image references (they'd 404 from localhost)
-        // But keep inline image tags with data URIs or absolute URLs
-        body = body.replace(/<img([^>]*)src="(?!https?:\/\/|data:)([^"]*)"([^>]*)>/gi, '');
+        // Fix images: Convert internal EPUB images to Base64 data URIs so they render perfectly inline
+        body = body.replace(/<img([^>]*)src="([^"]*)"([^>]*)>/gi, (match, before, src, after) => {
+            if (src.startsWith('http') || src.startsWith('data:')) return match;
+            
+            // Resolve the relative path of the image inside the EPUB
+            let imgPath = href.split('/').slice(0, -1).join('/');
+            let resolvedPath = imgPath ? `${imgPath}/${src}` : src;
+            
+            // Handle OPF base paths (if chapter is inside an OEBPS folder)
+            let fullImgPath = opfBasePath ? `${opfBasePath}/${resolvedPath}` : resolvedPath;
+            
+            // Clean up relative pathing like ../images/
+            fullImgPath = require('path').normalize(fullImgPath).replace(/\\/g, '/');
+            
+            const imgEntry = zip.getEntry(fullImgPath) || zip.getEntry(resolvedPath) || zip.getEntry(src);
+            
+            if (imgEntry) {
+                const ext = src.split('.').pop().toLowerCase();
+                const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+                const base64 = imgEntry.getData().toString('base64');
+                return `<img${before}src="data:${mimeType};base64,${base64}"${after} style="max-width:100%;height:auto;border-radius:8px;margin:1rem 0;">`;
+            }
+            
+            return ''; // Strip the image if it wasn't found in the zip
+        });
 
         body = body.trim();
 

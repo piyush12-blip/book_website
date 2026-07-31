@@ -27,7 +27,30 @@ let state = loadState();
 
 function loadState(){try{const raw=JSON.parse(localStorage.getItem('bibliotheque-state')||'{}');return {...DEFAULT_STATE,...raw,reader:{...DEFAULT_STATE.reader,...(raw.reader||{})}}}catch{return structuredClone(DEFAULT_STATE)}}
 function saveState(){localStorage.setItem('bibliotheque-state',JSON.stringify(state))}
-const book=id=>BOOKS.find(b=>b.id===id)||BOOKS[9];
+const book = id => {
+  let found = BOOKS.find(b => b.id === id);
+  if (!found && id) {
+    const isManga = id.startsWith('mangadex-');
+    const isWebnovel = id.startsWith('royalroad-');
+    const cleanName = id.replace(/^(itunes|mangadex|royalroad)-/, '').replace(/[-_]/g, ' ');
+    const formattedTitle = cleanName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    found = {
+      id: id,
+      title: formattedTitle,
+      author: isManga ? 'MangaDex Artist' : isWebnovel ? 'RoyalRoad Author' : 'Modern Author',
+      genre: isManga ? 'Manga' : isWebnovel ? 'Web Novel' : 'Book',
+      mood: 'Reading',
+      pages: 300,
+      rating: 5,
+      cover: 'navy',
+      lines: formattedTitle.slice(0, 15),
+      synopsis: 'Digital reading edition.',
+      chapters: []
+    };
+    BOOKS.push(found);
+  }
+  return found || BOOKS[0];
+};
 const pct=id=>Math.max(0,Math.min(100,Number(state.progress[id]||0)));
 const saved=id=>state.saved.includes(id), liked=id=>state.liked.includes(id);
 const unique=a=>[...new Set(a.filter(Boolean))];
@@ -56,8 +79,12 @@ async function renderSearch(){
     results.innerHTML=list.length
       ?list.map(b=>{
           if(!BOOKS.some(kb=>kb.id===b.id))BOOKS.push(b);
-          const badge = b.id.startsWith('royalroad-') ? '🏷️ Web Novel' : b.id.startsWith('mangadex-') ? '🎨 Manga' : '📚 Book';
-          return `<a data-book="${b.id}" href="#book-detail"><span class="result-cover ${(b.cover||'').split(' ')[0]}"></span><strong>${b.title}</strong><em>${b.author} · ${badge}</em>${actions(b.id)}</a>`;
+          const isInstant = b.id.startsWith('mangadex-') || b.id.startsWith('royalroad-') || !b.id.startsWith('itunes-');
+          const badge = isInstant
+            ? `<span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">⚡ FREE INSTANT READ</span>`
+            : `<span style="background:#d97706;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">🏴‍☠️ FREE (1-CLICK BACKDOOR)</span>`;
+          const typeLabel = b.id.startsWith('royalroad-') ? 'Web Novel' : b.id.startsWith('mangadex-') ? 'Manga / Manhwa' : 'Book';
+          return `<a data-book="${b.id}" href="#book-detail"><span class="result-cover ${(b.cover||'').split(' ')[0]}"></span><strong>${b.title}</strong><em>${b.author} · ${typeLabel}${badge}</em>${actions(b.id)}</a>`;
         }).join('')
       :'<div class="empty-library"><h3>No results found.</h3></div>';
   }catch(err){
@@ -182,20 +209,48 @@ async function loadStolenChapters(id, title, author, genre){
                 <strong>But you can download the full EPUB instantly for free using these shadow links:</strong>
               </p>
               <div style="display:flex;gap:15px;justify-content:center;margin-bottom:1.5rem;flex-wrap:wrap;">
-                <a href="https://annas-archive.org/search?q=${encodeURIComponent(title + ' ' + author)}&ext=epub" target="_blank" style="background:#3b82f6;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;transition:0.2s;box-shadow:0 4px 12px rgba(59,130,246,0.3);">Anna's Archive</a>
+                <a href="https://annas-archive.li/search?q=${encodeURIComponent(title + ' ' + author)}&ext=epub" target="_blank" style="background:#3b82f6;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;transition:0.2s;box-shadow:0 4px 12px rgba(59,130,246,0.3);">Anna's Archive</a>
                 <a href="https://oceanofpdf.com/?s=${encodeURIComponent(title)}" target="_blank" style="background:#f59e0b;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;transition:0.2s;box-shadow:0 4px 12px rgba(245,158,11,0.3);">OceanOfPDF</a>
                 <a href="http://libgen.is/search.php?req=${encodeURIComponent(title + ' ' + author)}" target="_blank" style="background:#10b981;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;transition:0.2s;box-shadow:0 4px 12px rgba(16,185,129,0.3);">LibGen</a>
               </div>
               <div style="background:#2d2d2d;border-radius:8px;padding:1.2rem;text-align:left;">
                 <p style="margin:0 0 0.5rem 0;font-weight:600;color:#a3e635;">How to read it here:</p>
                 <ol style="margin:0;padding-left:1.5rem;opacity:0.8;font-size:0.95rem;line-height:1.5;">
-                  <li>Click one of the buttons above and download the <strong>.epub</strong> file.</li>
-                  <li>Click <strong>EPUB</strong> in the top menu of this reader.</li>
-                  <li>Upload the file, and it will load the full book offline instantly!</li>
+                  <li>Click one of the buttons above, verify you are human, and download the <strong>.epub</strong> file.</li>
+                  <li><strong>Do not refresh!</strong> As soon as the download finishes, the book will load right here automatically.</li>
                 </ol>
+                <div id="polling-status" style="margin-top:1rem;color:#f39c12;font-size:0.9rem;text-align:center;font-weight:600;">
+                  <span class="loading-spinner" style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> Waiting for download...
+                </div>
               </div>
             </div>
+            <style>@keyframes spin { 100% { transform:rotate(360deg); } }</style>
           `;
+          
+          // Start polling — check IMMEDIATELY on load, then every 3 seconds
+          const doPoll = async () => {
+              try {
+                  const checkRes = await fetch(`/api/check-local?q=${encodeURIComponent(title + ' ' + author)}`);
+                  const checkData = await checkRes.json();
+                  if (checkData.found) {
+                      clearInterval(pollInterval);
+                      const targetBook = book(id);
+                      if (targetBook) targetBook.chapters = checkData.chapters;
+                      document.getElementById('polling-status').innerHTML = "✅ Download detected! Loading book...";
+                      setTimeout(() => loadStolenChapters(id, title, author, genre), 800);
+                      return true;
+                  }
+              } catch(e) { /* ignore */ }
+              return false;
+          };
+          
+          // Run immediately (catches already-downloaded files on refresh)
+          doPoll();
+          // Then keep checking every 3 seconds
+          const pollInterval = setInterval(doPoll, 3000);
+          
+          // Stop polling if user navigates away
+          window.addEventListener('hashchange', () => clearInterval(pollInterval), {once: true});
       }
 
       nativeReader.innerHTML = backdoorHTML + data.chapters.map((ch, i) => `

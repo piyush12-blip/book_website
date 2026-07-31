@@ -281,12 +281,22 @@ body.reader-focus{background:#fff!important}.reader-focus .app-section#reader.ac
 
 /* == STOLEN PROSE: Novel / Light Novel text reader == */
 .stolen-prose { font-family:'Georgia','Palatino Linotype',serif; font-size:1.1rem; line-height:1.9; color:inherit; max-width:680px; margin:0 auto; padding:0 0 2rem; }
-.stolen-prose p { margin-bottom:1.3em; text-indent:1.5em; }
+.stolen-prose p { margin-bottom:1.3em; text-indent:1.5em; color:inherit; }
 .stolen-prose p:first-child { text-indent:0; }
-.stolen-prose h1,.stolen-prose h2,.stolen-prose h3 { font-family:inherit; margin:2em 0 .6em; text-indent:0; }
+.stolen-prose h1,.stolen-prose h2,.stolen-prose h3 { font-family:inherit; margin:2em 0 .6em; text-indent:0; color:inherit; }
 .stolen-prose img { max-width:100%; height:auto; display:block; margin:1.5rem auto; border-radius:4px; }
 .stolen-prose img[src=''],.stolen-prose img:not([src]) { display:none; }
 .stolen-prose script,.stolen-prose iframe,.stolen-prose object { display:none!important; }
+/* Theme overrides for stolen-prose text */
+.reader-paper.theme-black .stolen-prose, .reader-paper.theme-black .stolen-prose p, .reader-paper.theme-black .stolen-prose h1, .reader-paper.theme-black .stolen-prose h2, .reader-paper.theme-black .stolen-prose h3 { color:#e8e0d3 !important; }
+.reader-paper.theme-night .stolen-prose, .reader-paper.theme-night .stolen-prose p, .reader-paper.theme-night .stolen-prose h1, .reader-paper.theme-night .stolen-prose h2, .reader-paper.theme-night .stolen-prose h3 { color:#f0dfc8 !important; }
+.reader-paper.theme-sepia .stolen-prose, .reader-paper.theme-sepia .stolen-prose p, .reader-paper.theme-sepia .stolen-prose h1, .reader-paper.theme-sepia .stolen-prose h2, .reader-paper.theme-sepia .stolen-prose h3 { color:#3b2e1a !important; }
+.reader-paper.theme-paper .stolen-prose, .reader-paper.theme-paper .stolen-prose p, .reader-paper.theme-paper .stolen-prose h1, .reader-paper.theme-paper .stolen-prose h2, .reader-paper.theme-paper .stolen-prose h3 { color:#25221e !important; }
+/* Focus mode theme overrides */
+.reader-focus .reader-paper.theme-black .stolen-prose, .reader-focus .reader-paper.theme-black .stolen-prose p { color:#f1f1f1 !important; }
+.reader-focus .reader-paper.theme-night .stolen-prose, .reader-focus .reader-paper.theme-night .stolen-prose p { color:#f0dfc8 !important; }
+.reader-focus .reader-paper.theme-sepia .stolen-prose, .reader-focus .reader-paper.theme-sepia .stolen-prose p { color:#3b2e1a !important; }
+.reader-focus .reader-paper.theme-paper .stolen-prose, .reader-focus .reader-paper.theme-paper .stolen-prose p { color:#030303 !important; }
 
 /* == MANGA / MANHWA / WEBTOON image scroll reader == */
 .manga-image-scroll { width:100%; max-width:800px; margin:0 auto; display:flex; flex-direction:column; align-items:center; gap:0; background:#0a0a0a; padding:0; }
