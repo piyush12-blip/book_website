@@ -15,10 +15,12 @@
     "axios": "^1.19.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
+    "epub": "^2.1.1",
     "epub2": "^3.0.2",
     "express": "^5.2.1",
     "puppeteer": "^25.4.0",
     "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "uuid": "^14.0.1"
   }
 }

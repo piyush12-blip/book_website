@@ -37,7 +37,36 @@ function loadState(){
     return s;
   }catch{return structuredClone(DEFAULT_STATE)}
 }
-function saveState(){localStorage.setItem('bibliotheque-state',JSON.stringify(state))}
+function saveState(){
+  try {
+    // Clone state and prune heavy text chapter payloads from localStorage persistence
+    const stateToSave = JSON.parse(JSON.stringify(state));
+    if (stateToSave.cachedBooks) {
+      Object.keys(stateToSave.cachedBooks).forEach(key => {
+        if (stateToSave.cachedBooks[key].chapters) {
+          delete stateToSave.cachedBooks[key].chapters;
+        }
+      });
+    }
+    localStorage.setItem('bibliotheque-state', JSON.stringify(stateToSave));
+  } catch (err) {
+    console.warn('[STORAGE] Quota exceeded, clearing cached state payloads:', err.message);
+    try {
+      // Emergency fallback: clear old cached items and save minimal state
+      const minimalState = {
+        saved: state.saved,
+        liked: state.liked,
+        progress: state.progress,
+        recent: state.recent,
+        notes: state.notes,
+        highlighted: state.highlighted,
+        currentBook: state.currentBook,
+        reader: state.reader
+      };
+      localStorage.setItem('bibliotheque-state', JSON.stringify(minimalState));
+    } catch(e) {}
+  }
+}
 const book = id => {
   if (!id) return null;
   let found = BOOKS.find(b => b.id === id) || (state.cachedBooks && state.cachedBooks[id]);
@@ -137,7 +166,12 @@ function renderDetail(){
          <button class="action-btn active" data-action="open-chapter" data-book="${b.id}" data-chapter-index="0">Start Reading</button>
        </div>
        <div class="chapter-picker"><h3>All Available Chapters (${chapters.length})</h3>${chapters.map((ch,i)=>`<a href="#/read/${b.id}/${i+1}" data-action="open-chapter" data-book="${b.id}" data-chapter-index="${i}"><strong>${ch.title}</strong><span>Read</span></a>`).join('')}</div>`
-    : `<div class="chapter-picker"><a data-action="read" data-book="${b.id}"><strong>⚡ Start reading from Chapter 1</strong><span>Click to load chapters</span></a></div>`;
+    : `<div class="chapter-picker">
+         <a data-action="read" data-book="${b.id}">
+           <strong>⚡ Click to Load & Read Book</strong>
+           <span>Auto-fetches real text from global archives</span>
+         </a>
+       </div>`;
 
   g.innerHTML=`<aside class="detail-cover-wrap">${coverHTML(b,'detail-cover')}<button class="warm-button block" data-action="read" data-book="${b.id}">Start Reading</button></aside><article class="detail-copy"><p class="kicker">${formatBadge}</p><h2>${b.title}</h2><p class="author-line">${b.author} · ${formatBadge} · ${b.pages} pages</p><div class="detail-stars">${stars(b.rating)} <small>${b.rating}.0 · Reader Recommended</small></div><div class="detail-actions">${actions(b.id)}<button class="action-btn" data-action="read" data-book="${b.id}">Read now</button></div><p class="lead">${b.synopsis}</p>${chapterPickerHTML}<div class="synopsis-box"><h3>Synopsis</h3><p>${b.synopsis}</p></div><dl class="meta-list"><div><dt>Progress</dt><dd>${p}%</dd></div><div><dt>Notes</dt><dd>${(state.notes[b.id]||[]).length}</dd></div><div><dt>Status</dt><dd>${p>=100?'Finished':p>0?'In progress':'Unread'}</dd></div></dl></article>`;
 }
@@ -162,61 +196,6 @@ function renderReader(){
   };
 
   let backdoorCardHTML = '';
-  if (b.isFallback) {
-      const realTitle = b.title || 'Book';
-      const realAuthor = b.author || 'Author';
-      backdoorCardHTML = `
-        <div style="background:#1a1a1a!important;color:#f1f1f1!important;padding:2.5rem;border-radius:12px;margin:1rem auto 3rem auto;max-width:650px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid #333;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-          <h2 style="margin:0 0 1rem 0;font-size:1.6rem;color:#f39c12!important;display:flex;align-items:center;justify-content:center;gap:10px;">
-            <span>🏴‍☠️</span> Shadow Library Backdoor
-          </h2>
-          <p style="opacity:0.9;font-size:1rem;line-height:1.6;margin-bottom:1.5rem;color:#f1f1f1!important;">
-            <strong>${realTitle}</strong> is a modern copyrighted book. Server firewalls block automated scraping.<br>
-            <strong>Click one of these links to download the full EPUB file for free:</strong>
-          </p>
-          <div style="display:flex;gap:15px;justify-content:center;margin-bottom:1.5rem;flex-wrap:wrap;">
-            <a href="https://annas-archive.li/search?q=${encodeURIComponent(realTitle + ' ' + realAuthor)}&ext=epub" target="_blank" style="background:#3b82f6!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(59,130,246,0.4);display:inline-block;">Anna's Archive</a>
-            <a href="https://oceanofpdf.com/?s=${encodeURIComponent(realTitle)}" target="_blank" style="background:#f59e0b!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(245,158,11,0.4);display:inline-block;">OceanOfPDF</a>
-            <a href="http://libgen.is/search.php?req=${encodeURIComponent(realTitle + ' ' + realAuthor)}" target="_blank" style="background:#10b981!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(16,185,129,0.4);display:inline-block;">LibGen</a>
-          </div>
-          <div style="background:#2d2d2d!important;border-radius:8px;padding:1.2rem;text-align:left;color:#f1f1f1!important;">
-            <p style="margin:0 0 0.5rem 0;font-weight:600;color:#a3e635!important;">How to read it here:</p>
-            <ol style="margin:0;padding-left:1.5rem;opacity:0.9;font-size:0.95rem;line-height:1.5;color:#f1f1f1!important;">
-              <li>Click one of the bright buttons above, verify you are human, and download the <strong>.epub</strong> file.</li>
-              <li><strong>Do not refresh!</strong> As soon as the download completes, the book will load right here automatically.</li>
-            </ol>
-            <div id="polling-status" style="margin-top:1rem;color:#f39c12!important;font-size:0.9rem;text-align:center;font-weight:600;">
-              <span class="loading-spinner" style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> Waiting for download...
-            </div>
-          </div>
-        </div>
-        <style>@keyframes spin { 100% { transform:rotate(360deg); } }</style>
-      `;
-      
-      // Start polling ONCE for downloaded file
-      if(!window._activePollers) window._activePollers = {};
-      if(!window._activePollers[b.id]){
-        const doPoll = async () => {
-            try {
-                const checkRes = await fetch(`/api/check-local?q=${encodeURIComponent(realTitle + ' ' + realAuthor)}`);
-                const checkData = await checkRes.json();
-                if (checkData.found && checkData.chapters && checkData.chapters.length) {
-                    clearInterval(window._activePollers[b.id]);
-                    delete window._activePollers[b.id];
-                    b.chapters = checkData.chapters;
-                    b.isFallback = false;
-                    b.isLocal = true;
-                    saveState();
-                    renderAll();
-                    toast('✅ Download detected! Loaded ' + b.chapters.length + ' chapters.');
-                }
-            } catch(e) { /* ignore */ }
-        };
-        doPoll();
-        window._activePollers[b.id] = setInterval(doPoll, 3000);
-      }
-  }
-
   const content=isManga
     ? (r.mode==='single'?renderMangaChapter(selected,idx):chapters.map(renderMangaChapter).join(''))
     : backdoorCardHTML + (r.mode==='single'?renderTextChapter(selected,idx):chapters.map(renderTextChapter).join(''));
@@ -243,10 +222,16 @@ async function loadStolenChapters(id, title, author, genre){
   </div>`;
   
   try{
-    const res=await fetch(`/api/books/${id}/chapters?q=${encodeURIComponent(title+' '+author)}`);
+    // Clear out dummy cache if it exists before fetching
+    const targetBookClear = book(id);
+    if(targetBookClear && targetBookClear.chapters && targetBookClear.chapters.some(c => c.html && c.html.includes('The sun was setting'))) {
+       delete targetBookClear.chapters;
+       saveState();
+    }
+    const res=await fetch(`/api/books/${id}/chapters?q=${encodeURIComponent(title+' '+author)}&_cb=${Date.now()}`);
     const data=await res.json();
     
-    if(!data.isFallback && (data.error || !data.chapters || !data.chapters.length)){
+    if(!data.isFallback && !data.pdfUrl && (data.error || !data.chapters || !data.chapters.length)){
       const msg = data.error || 'No chapters found.';
       const isNotFound = msg.includes('not available') || msg.includes('No EPUB found');
       nativeReader.innerHTML=`<div style="padding:3rem 2rem;text-align:center;font-family:Georgia,serif;max-width:520px;margin:0 auto">
@@ -296,62 +281,31 @@ async function loadStolenChapters(id, title, author, genre){
     } else {
       // ── NOVEL / LIGHT NOVEL / BOOK / WEB NOVEL MODE (Or Manga Backdoor Fallback) ──
       
-      let backdoorHTML = '';
-      if (data.isFallback || id.startsWith('itunes-')) {
-          backdoorHTML = `
-            <div style="background:#1a1a1a!important;color:#f1f1f1!important;padding:2.5rem;border-radius:12px;margin:1rem auto 3rem auto;max-width:650px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid #333;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-              <h2 style="margin:0 0 1rem 0;font-size:1.6rem;color:#f39c12!important;display:flex;align-items:center;justify-content:center;gap:10px;">
-                <span>🏴‍☠️</span> Shadow Library Backdoor
-              </h2>
-              <p style="opacity:0.9;font-size:1rem;line-height:1.6;margin-bottom:1.5rem;color:#f1f1f1!important;">
-                <strong>${realTitle}</strong> is a modern copyrighted book. Server firewalls block automated scraping.<br>
-                <strong>Click one of these links to download the full EPUB file for free:</strong>
-              </p>
-              <div style="display:flex;gap:15px;justify-content:center;margin-bottom:1.5rem;flex-wrap:wrap;">
-                <a href="https://annas-archive.li/search?q=${encodeURIComponent(realTitle + ' ' + realAuthor)}&ext=epub" target="_blank" style="background:#3b82f6!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(59,130,246,0.4);display:inline-block;">Anna's Archive</a>
-                <a href="https://oceanofpdf.com/?s=${encodeURIComponent(realTitle)}" target="_blank" style="background:#f59e0b!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(245,158,11,0.4);display:inline-block;">OceanOfPDF</a>
-                <a href="http://libgen.is/search.php?req=${encodeURIComponent(realTitle + ' ' + realAuthor)}" target="_blank" style="background:#10b981!important;color:#ffffff!important;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;transition:0.2s;box-shadow:0 4px 12px rgba(16,185,129,0.4);display:inline-block;">LibGen</a>
-              </div>
-              <div style="background:#2d2d2d!important;border-radius:8px;padding:1.2rem;text-align:left;color:#f1f1f1!important;">
-                <p style="margin:0 0 0.5rem 0;font-weight:600;color:#a3e635!important;">How to read it here:</p>
-                <ol style="margin:0;padding-left:1.5rem;opacity:0.9;font-size:0.95rem;line-height:1.5;color:#f1f1f1!important;">
-                  <li>Click one of the bright buttons above, verify you are human, and download the <strong>.epub</strong> file.</li>
-                  <li><strong>Do not refresh!</strong> As soon as the download completes, the book will load right here automatically.</li>
-                </ol>
-                <div id="polling-status" style="margin-top:1rem;color:#f39c12!important;font-size:0.9rem;text-align:center;font-weight:600;">
-                  <span class="loading-spinner" style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> Waiting for download...
-                </div>
-              </div>
-            </div>
-            <style>@keyframes spin { 100% { transform:rotate(360deg); } }</style>
-          `;
-          
-          // Start polling — check IMMEDIATELY on load, then every 3 seconds
-          const doPoll = async () => {
-              try {
-                  const checkRes = await fetch(`/api/check-local?q=${encodeURIComponent(title + ' ' + author)}`);
-                  const checkData = await checkRes.json();
-                  if (checkData.found) {
-                      clearInterval(pollInterval);
-                      const targetBook = book(id);
-                      if (targetBook) targetBook.chapters = checkData.chapters;
-                      document.getElementById('polling-status').innerHTML = "✅ Download detected! Loading book...";
-                      setTimeout(() => loadStolenChapters(id, title, author, genre), 800);
-                      return true;
-                  }
-              } catch(e) { /* ignore */ }
-              return false;
-          };
-          
-          // Run immediately (catches already-downloaded files on refresh)
-          doPoll();
-          // Then keep checking every 3 seconds
-          const pollInterval = setInterval(doPoll, 3000);
-          
-          // Stop polling if user navigates away
-          window.addEventListener('hashchange', () => clearInterval(pollInterval), {once: true});
+      if (data.pdfUrl) {
+        nativeReader.innerHTML = `
+          <div style="width:100%;height:85vh;margin:1rem auto 3rem auto;border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,0.3);border:1px solid #333;">
+            <iframe src="${data.pdfUrl}" style="width:100%;height:100%;border:none;"></iframe>
+          </div>`;
+        return;
       }
 
+      if ((data.source === 'UniversalEngine' || data.source === 'LockedDRM' || !data.chapters || !data.chapters.length) && !window.forcedBackdoors?.[id]) {
+        nativeReader.innerHTML = `
+          <div style="background:#1a1a1a!important;color:#f1f1f1!important;padding:2.5rem;border-radius:12px;margin:2rem auto 3rem auto;max-width:600px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid #333;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+            <div style="font-size:3rem;margin-bottom:1rem;">🔒</div>
+            <h3 style="color:#e74c3c!important;font-size:1.4rem;margin:0 0 1rem 0;">Commercial DRM Lock Active</h3>
+            <p style="opacity:0.85;font-size:0.95rem;line-height:1.6;margin-bottom:1.5rem;color:#f1f1f1!important;">
+              Direct text extraction for <strong>${realTitle}</strong> is locked by digital rights management. Would you like to force generate a custom AI edition via the backdoor engine?
+            </p>
+            <button onclick="window.forcedBackdoors=window.forcedBackdoors||{};window.forcedBackdoors['${id}']=true;openReader('${id}')" style="background:#e74c3c;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-weight:bold;cursor:pointer;font-size:0.95rem;box-shadow:0 4px 12px rgba(231,76,60,0.4);">
+              🏴‍☠️ FORCE GENERATE 1-CLICK BACKDOOR EDITION
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      let backdoorHTML = '';
       nativeReader.innerHTML = backdoorHTML + data.chapters.map((ch, i) => `
         <section class="chapter-block" id="chapter-${i+1}" data-chapter-index="${i}">
           <p class="chapter-count">Chapter ${i+1} of ${data.chapters.length}</p>

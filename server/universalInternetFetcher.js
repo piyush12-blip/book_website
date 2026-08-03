@@ -1,37 +1,32 @@
 /**
  * Automated Universal Multi-Source Internet Fetcher
- * Automatically fetches full-text chapters for ANY book, novel, manga, or web novel
- * from global digital archives (Gutenberg, RoyalRoad, MangaDex, OpenLibrary, Internet Archive direct documents)
- * without requiring any manual file creation or user verification!
+ * Optimized for maximum speed, clean title sanitization, and direct text extraction.
  */
 
-const axios = require('axios');
 const { fetchGutenbergChapters } = require('./gutendex');
-const { scrapeWebNovelChapters } = require('./webnovelScraper');
 const { fetchDirectDocumentText } = require('./directDocumentScraper');
-const getUniversalChapters = require('./universalNovelEngine');
+const { fetchRoyalRoadChapters } = require('./royalroad');
+const { normalizeQuery, scoreMatch } = require('./matcher');
 
-async function autoFetchBookFromInternet(title, author = '', id = '') {
-    const cleanTitle = (title || '').replace(/^\d+[-_\s]*/, '').replace(/:\s*(Reese's Book Club|Oprah's Book Club|A Novel|A Memoir).*/gi, '').trim();
-    const cleanAuthor = (author || '').trim();
+async function autoFetchBookFromInternet(rawTitle, rawAuthor = '', id = '') {
+    const { cleanTitle, cleanAuthor } = normalizeQuery(rawTitle, rawAuthor);
     const fullQuery = `${cleanTitle} ${cleanAuthor}`.trim();
+    console.log(`[AUTOMATED-FETCHER] Canonical target: "${cleanTitle}" | Author: "${cleanAuthor}"`);
 
-    console.log(`[AUTOMATED-FETCHER] Searching global internet archives for: "${fullQuery}"`);
-
-    // 1. Try Direct Internet Document Search (PDF/EPUB Text Extraction - Zero Verification)
+    // 1. Try Direct Internet Document Search First (Real Text Mirror)
     try {
         const directDocChapters = await fetchDirectDocumentText(cleanTitle, cleanAuthor);
         if (directDocChapters && directDocChapters.length > 0) {
-            console.log(`[AUTOMATED-FETCHER] Extracted direct full text document from internet archive for: "${cleanTitle}"`);
+            console.log(`[AUTOMATED-FETCHER] SUCCESS! Extracted ${directDocChapters.length} real chapters for: "${cleanTitle}"`);
             return { chapters: directDocChapters, type: 'book', source: 'DirectInternetDocument' };
         }
     } catch (e) {
-        console.warn(`[AUTOMATED-FETCHER] Direct document extraction skipped: ${e.message}`);
+        console.warn(`[AUTOMATED-FETCHER] Direct document search skipped: ${e.message}`);
     }
 
-    // 2. Try Public Domain Digital Archives (Gutendex / Gutenberg - 70,000+ books)
+    // 2. Try Public Domain Archives (Gutenberg)
     try {
-        const gutenbergResult = await fetchGutenbergChapters(fullQuery);
+        const gutenbergResult = await fetchGutenbergChapters(cleanTitle, cleanAuthor);
         if (gutenbergResult && gutenbergResult.chapters && gutenbergResult.chapters.length > 0) {
             console.log(`[AUTOMATED-FETCHER] Found full text on Project Gutenberg for: "${cleanTitle}"`);
             return { chapters: gutenbergResult.chapters, type: 'book', source: 'Gutenberg' };
@@ -40,21 +35,21 @@ async function autoFetchBookFromInternet(title, author = '', id = '') {
         console.warn(`[AUTOMATED-FETCHER] Gutenberg check skipped: ${e.message}`);
     }
 
-    // 3. Try Global Web Novel & Light Novel Archives (RoyalRoad / Aggregators - 100,000+ titles)
+    // 3. Try RoyalRoad & Web Novel Aggregators
     try {
-        const webnovelResult = await scrapeWebNovelChapters(fullQuery);
-        if (webnovelResult && webnovelResult.length > 0) {
-            console.log(`[AUTOMATED-FETCHER] Found full text on WebNovel archives for: "${cleanTitle}"`);
-            return { chapters: webnovelResult, type: 'webnovel', source: 'WebNovel' };
+        const rrData = await fetchRoyalRoadChapters(fullQuery);
+        if (rrData && rrData.chapters && rrData.chapters.length > 0) {
+            return { chapters: rrData.chapters, type: 'webnovel', source: 'RoyalRoad' };
         }
     } catch (e) {
-        console.warn(`[AUTOMATED-FETCHER] WebNovel check skipped: ${e.message}`);
+        console.warn(`[AUTOMATED-FETCHER] RoyalRoad check skipped: ${e.message}`);
     }
 
-    // 4. Universal Dynamic Engine (Fallback for all remaining commercial books)
-    console.log(`[AUTOMATED-FETCHER] Generating automated reading edition for: "${cleanTitle}" by ${cleanAuthor || 'Author'}`);
-    const generatedChapters = getUniversalChapters(cleanTitle, cleanAuthor, '');
-    return { chapters: generatedChapters, type: 'webnovel', source: 'UniversalEngine' };
+    // 4. Return LOCKED status when no real text exists - NEVER generate fake story templates!
+    console.log(`[AUTOMATED-FETCHER] No real text found on public web for: "${cleanTitle}" (DRM Active)`);
+    return { chapters: [], type: 'book', source: 'LockedDRM' };
 }
+
+module.exports = { autoFetchBookFromInternet };
 
 module.exports = { autoFetchBookFromInternet };

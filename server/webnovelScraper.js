@@ -20,10 +20,13 @@ async function scrapeWebNovelChapters(query) {
             const cardTitle = $(el).find('.fiction-title a').text().toLowerCase().trim();
             const relativeLink = $(el).find('.fiction-title a').attr('href');
             
+            // Exclude fanfictions and summaries
+            const isFanficOrSummary = ['fanfic', 'fanfiction', 'summary', 'analysis', 'guide'].some(kw => cardTitle.includes(kw));
+
             // DUAL-LOCK VERIFICATION: Main title terms MUST match cardTitle exactly
             const titleMatches = mainTitleTerms.length > 0 && mainTitleTerms.every(term => cardTitle.includes(term));
 
-            if (titleMatches && relativeLink) {
+            if (titleMatches && !isFanficOrSummary && relativeLink) {
                 matchedFictionId = relativeLink.split('/')[2];
                 return false; // break loop
             }
