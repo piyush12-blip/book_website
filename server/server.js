@@ -149,33 +149,69 @@ app.get('/api/books/search', async (req, res) => {
             results.push(topItunesMatch);
         }
 
-        // 1. Put iTunes / Official Books FIRST
-        filteredItunes.forEach(b => {
+        // Filter iTunes results by title relevance (must share key words with query)
+        const queryWords = cleanItunesQuery.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !['the', 'and', 'for', 'you', 'your'].includes(w));
+        
+        const relevantItunes = filteredItunes.filter(b => {
+            const bTitle = b.title.toLowerCase();
+            if (bTitle.includes(cleanItunesQuery.toLowerCase())) return true;
+            const matches = queryWords.filter(w => bTitle.includes(w)).length;
+            return matches >= Math.min(queryWords.length, 2);
+        });
+
+        // 1. Put Relevant iTunes / Official Books FIRST
+        relevantItunes.forEach(b => {
             if (!results.some(r => r.id === b.id)) results.push(b);
         });
 
-        // 3. Fallback: If no results found in iTunes/Manga/WebNovel, dynamically create a book card for the query!
-        if (results.length === 0 && cleanItunesQuery.length >= 3) {
+        // 2. Put RoyalRoad Web Novels
+        webnovelResults.forEach(w => {
+            if (!results.some(r => r.id === w.id)) results.push(w);
+        });
+
+        // 3. Put MangaDex Manga
+        mangaResults.forEach(m => {
+            if (!results.some(r => r.id === m.id)) results.push(m);
+        });
+
+        // 4. CRITICAL: Guarantee EXACT QUERY TITLE MATCH is ALWAYS Position #1!
+        const hasExactMatch = results.some(r => {
+            const t = r.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const q = cleanItunesQuery.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return t === q || t.includes(q) || q.includes(t);
+        });
+
+        if (!hasExactMatch && cleanItunesQuery.length >= 3) {
             let rawTitle = cleanItunesQuery.replace(/\s+by\s+.*/i, '').trim();
-            let rawAuthor = query.includes(' by ') ? query.split(/\s+by\s+/i)[1] : 'Author';
+            let rawAuthor = query.includes(' by ') ? query.split(/\s+by\s+/i)[1] : 'Web Novel / Light Novel';
             let formattedTitle = rawTitle.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
             let formattedAuthor = rawAuthor.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-            
-            results.push({
-                id: `itunes-custom-${Date.now()}-${rawTitle.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+
+            results.unshift({
+                id: `itunes-exact-${Date.now()}-${rawTitle.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
                 title: formattedTitle,
                 author: formattedAuthor,
-                cover: 'navy',
+                cover: 'burgundy',
                 image: null,
-                lines: formattedTitle.slice(0, 15),
-                genre: 'Book',
-                mood: 'Academic / Classic',
+                lines: formattedTitle.split(' ').slice(0, 3).join('<br>'),
+                genre: 'Web Novel / Light Novel',
+                mood: 'Romance / Fantasy',
                 pages: 350,
                 rating: 5,
-                synopsis: `${formattedTitle} by ${formattedAuthor}. Click to fetch text or open 1-click backdoor download mirrors.`,
+                synopsis: `${formattedTitle} by ${formattedAuthor}. Click to read chapters directly or open 1-click backdoor mirrors.`,
                 hasEpub: true
             });
         }
+
+        // Sort results so exact or near-exact title matches ALWAYS come FIRST at position #1!
+        const cleanQ = cleanItunesQuery.toLowerCase().replace(/[^a-z0-9]/g, '');
+        results.sort((a, b) => {
+            const tA = a.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const tB = b.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const scoreA = tA === cleanQ ? 1000 : tA.startsWith(cleanQ) ? 500 : tA.includes(cleanQ) || cleanQ.includes(tA) ? 200 : 0;
+            const scoreB = tB === cleanQ ? 1000 : tB.startsWith(cleanQ) ? 500 : tB.includes(cleanQ) || cleanQ.includes(tB) ? 200 : 0;
+            return scoreB - scoreA;
+        });
 
         res.json(results);
 
