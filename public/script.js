@@ -122,25 +122,38 @@ function renderSidebarStats(){const s=document.querySelector('.stats');if(!s)ret
 async function renderSearch(){
   const results=document.querySelector('.search-results');if(!results)return;
   document.querySelectorAll('.filter-row button').forEach(btn=>{const key=btn.dataset.filter||btn.textContent.toLowerCase().replace(' books','').replace(' ','-');btn.dataset.filter=key;btn.setAttribute('aria-pressed',state.searchFilter===key)});
-  const q=(document.querySelector('#book-search')?.value||'').trim();
+  let q=(document.querySelector('#book-search')?.value||'').trim();
   if(!q){results.innerHTML='';return;}
+  
+  // Clean up pasted Amazon URLs, price tags, and giant query strings
+  q = q.replace(/https?:\/\/[^\s]+/gi, '')
+       .replace(/₹[\d\.]+/gi, '')
+       .replace(/amazon\.in|flipkart|session \d{4}-\d{2}/gi, '')
+       .replace(/\s+/g, ' ')
+       .trim()
+       .slice(0, 100);
+
+  if(!q){results.innerHTML='';return;}
+
   results.innerHTML='<div class="empty-library"><h3>Searching library & archives...</h3></div>';
   try{
     const res=await fetch(`/api/books/search?q=${encodeURIComponent(q)}`);
     const list=await res.json();
-    results.innerHTML=list.length
-      ?list.map(b=>{
-          if(!BOOKS.some(kb=>kb.id===b.id)) BOOKS.push(b);
-          state.cachedBooks[b.id] = b;
-          saveState();
-          const isInstant = b.id.startsWith('mangadex-') || b.id.startsWith('royalroad-') || !b.id.startsWith('itunes-');
-          const badge = isInstant
-            ? `<span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">⚡ FREE INSTANT READ</span>`
-            : `<span style="background:#d97706;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">🏴‍☠️ FREE (1-CLICK BACKDOOR)</span>`;
-          const typeLabel = b.id.startsWith('royalroad-') ? 'Web Novel' : b.id.startsWith('mangadex-') ? 'Manga / Manhwa' : 'Book';
-          return `<div class="search-result-item" onclick="event.preventDefault();event.stopPropagation();openBook('${b.id}')" style="cursor:pointer"><span class="result-cover ${(b.cover||'').split(' ')[0]}"></span><strong>${b.title}</strong><em>${b.author} · ${typeLabel}${badge}</em>${actions(b.id)}</div>`;
-        }).join('')
-      :'<div class="empty-library"><h3>No results found.</h3></div>';
+    if (list.length) {
+      results.innerHTML = list.map(b => {
+        if(!BOOKS.some(kb=>kb.id===b.id)) BOOKS.push(b);
+        state.cachedBooks[b.id] = b;
+        const isInstant = b.id.startsWith('mangadex-') || b.id.startsWith('royalroad-') || !b.id.startsWith('itunes-');
+        const badge = isInstant
+          ? `<span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">⚡ FREE INSTANT READ</span>`
+          : `<span style="background:#d97706;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">🏴‍☠️ FREE (1-CLICK BACKDOOR)</span>`;
+        const typeLabel = b.id.startsWith('royalroad-') ? 'Web Novel' : b.id.startsWith('mangadex-') ? 'Manga / Manhwa' : 'Book';
+        return `<div class="search-result-item" onclick="event.preventDefault();event.stopPropagation();openBook('${b.id}')" style="cursor:pointer"><span class="result-cover ${(b.cover||'').split(' ')[0]}"></span><strong>${b.title}</strong><em>${b.author} · ${typeLabel}${badge}</em>${actions(b.id)}</div>`;
+      }).join('');
+      saveState(); // Save ONCE after rendering list instead of 25 times inside loop
+    } else {
+      results.innerHTML = '<div class="empty-library"><h3>No results found.</h3></div>';
+    }
   }catch(err){
     results.innerHTML='<div class="empty-library"><h3>Search error. Is the server running?</h3></div>';
   }
@@ -481,7 +494,14 @@ async function loadBooksJson(){try{const res=await fetch('books.json',{cache:'no
 navLinks.forEach(a=>a.addEventListener('click',e=>{e.preventDefault();const h=a.getAttribute('href');if(h==='#library')showView('library-view');if(h==='#explore')showView('explore-view');if(h==='#reading-now')openReader();if(h==='#profile')showView('profile')}));
 document.querySelector('.brand')?.addEventListener('click',e=>{e.preventDefault();showView('home')});document.querySelector('.user')?.addEventListener('click',()=>showView('profile'));searchButton?.addEventListener('click',()=>showView('search'));document.querySelector('[data-open-settings]')?.addEventListener('click',()=>showView('settings'));
 document.addEventListener('click',e=>{const action=e.target.closest('[data-action]');if(action){e.preventDefault();e.stopPropagation();const id=action.dataset.book||state.currentBook,a=action.dataset.action;if(a==='back-step'){if(window.history.length>1){window.history.back();}else{showView('book-detail');}}if(a==='save')toggleSave(id);if(a==='like')toggleLike(id);if(a==='read')openReader(id);if(a==='open-book'){const cachedB=state.cachedBooks[id];if(cachedB&&!BOOKS.some(b=>b.id===id)){BOOKS.push(cachedB);}openBook(id);return;}if(a==='next-page'){state.progress[id]=Math.min(100,pct(id)+Math.ceil(100/Math.max(1,(book(id).chapters||[]).length)));state.activeChapter=Math.min(((book(id).chapters||[]).length-1), (state.activeChapter||0)+1);state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100);toast(`${book(id).title} is now ${pct(id)}% complete.`)}if(a==='prev-page'){state.activeChapter=Math.max(0,(state.activeChapter||0)-1);state.progress[id]=Math.max(0,pct(id)-8);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100)}if(a==='font-up'){state.reader.font=Math.min(24,state.reader.font+1);saveState();renderReader()}if(a==='font-down'){state.reader.font=Math.max(15,state.reader.font-1);saveState();renderReader()}if(a==='theme'){state.reader.theme=action.dataset.theme;saveState();renderReader()}if(a==='reader-mode'){state.reader.mode=action.dataset.mode;saveState();renderReader();setTimeout(()=>scrollReaderChapter(state.activeChapter||0),80)}if(a==='focus-reader'){state.reader.focus=!state.reader.focus;saveState();renderReader();document.body.classList.toggle('reader-focus',!!state.reader.focus);toast(state.reader.focus?'Focus reading on.':'Focus reading off.')}if(a==='fullscreen-reader'){const el=document.querySelector('#reader');if(!document.fullscreenElement&&el?.requestFullscreen){el.requestFullscreen();state.reader.focus=true;}else if(document.exitFullscreen){document.exitFullscreen();state.reader.focus=false;}saveState();renderReader()}if(a==='highlight'){state.highlighted[id]=!state.highlighted[id];saveState();renderReader()}if(a==='open-chapter'){state.currentBook=id;state.activeChapter=Number(action.dataset.chapterIndex||0);state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);saveState();renderAll();showView('reader');history.replaceState({v:'reader'},'',`#/read/${id}/${state.activeChapter+1}`);setTimeout(()=>scrollReaderChapter(state.activeChapter),120)}if(a==='signin-local'){const name=document.querySelector('#account-name')?.value.trim();state.account=name||'Local reader';saveState();renderAll();toast('Signed in locally.')}if(a==='signout-local'){state.account=null;saveState();renderAll();toast('Signed out locally.')}if(a==='export-state'){exportState()}if(a==='app-theme'){state.appTheme=action.dataset.themeChoice||'system';saveState();applyAppTheme();renderSettings();toast(`Theme set to ${state.appTheme}.`)}if(a==='save-note'){const text=document.querySelector('#reader-note')?.value.trim();if(text){state.notes[id]=[...(state.notes[id]||[]),{text,at:new Date().toISOString()}];saveState();renderAll();toast('Margin note saved.')}}return}const view=e.target.closest('[data-view]');if(view){e.preventDefault();showView(view.dataset.view);return}const shelf=e.target.closest('.shelf-tabs button');if(shelf){state.activeShelf=shelf.dataset.shelf;saveState();renderLibrary();return}const exp=e.target.closest('.explore-controls button');if(exp){state.exploreFilter=exp.dataset.exploreFilter;saveState();renderExplore();return}const themeChoice=e.target.closest('[data-theme-choice]');if(themeChoice){state.appTheme=themeChoice.dataset.themeChoice;saveState();renderSettings();applyAppTheme();return}const filter=e.target.closest('.filter-row button');if(filter){state.searchFilter=filter.dataset.filter;saveState();renderSearch();return}const author=e.target.closest('[data-author]');if(author){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${author.dataset.author}</h3><p>Author shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.author===author.dataset.author).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.genre}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const mood=e.target.closest('[data-mood]');if(mood){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${mood.dataset.mood}</h3><p>Mood shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.mood===mood.dataset.mood).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const cat=e.target.closest('[data-category]');if(cat){const name=cat.dataset.category;document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${name}</h3><p>Dedicated shelf for ${name.toLowerCase()} only.</p></header><div class="explore-books">${BOOKS.filter(b=>(b.format||inferFormat(b))===name).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author} · ${b.mood}</p><span class="book-type-badge">${b.format||inferFormat(b)}</span>${actions(b.id)}</article>`).join('')||'<div class="empty-state"><h3>No titles yet.</h3><p>This shelf is ready for future catalogue items.</p></div>'}</div></section>`;return}const cover=e.target.closest('[data-book]');if(cover&&!e.target.closest('button'))openBook(cover.dataset.book)});
-document.addEventListener('change',e=>{if(e.target?.dataset.action==='line'){state.reader.line=Number(e.target.value);saveState();renderReader()}if(e.target?.id==='setting-line'){state.reader.line=Number(e.target.value);saveState();renderAll()}if(e.target?.id==='import-state'){const file=e.target.files[0];if(file){file.text().then(txt=>{state={...DEFAULT_STATE,...JSON.parse(txt)};saveState();renderAll();toast('Sync file imported.')}).catch(()=>toast('Import failed.'))}}});document.addEventListener('input',e=>{if(e.target?.id==='book-search')renderSearch();if(e.target?.id==='setting-font'){state.reader.font=Number(e.target.value);saveState();renderSettings()}});document.addEventListener('submit',e=>{if(e.target.classList.contains('search-board')){e.preventDefault();renderSearch()}});
+document.addEventListener('change',e=>{if(e.target?.dataset.action==='line'){state.reader.line=Number(e.target.value);saveState();renderReader()}if(e.target?.id==='setting-line'){state.reader.line=Number(e.target.value);saveState();renderAll()}if(e.target?.id==='import-state'){const file=e.target.files[0];if(file){file.text().then(txt=>{state={...DEFAULT_STATE,...JSON.parse(txt)};saveState();renderAll();toast('Sync file imported.')}).catch(()=>toast('Import failed.'))}}});let searchInputTimer;
+document.addEventListener('input',e=>{
+  if(e.target?.id==='book-search'){
+    clearTimeout(searchInputTimer);
+    searchInputTimer = setTimeout(() => renderSearch(), 300);
+  }
+  if(e.target?.id==='setting-font'){state.reader.font=Number(e.target.value);saveState();renderSettings()}
+});document.addEventListener('submit',e=>{if(e.target.classList.contains('search-board')){e.preventDefault();renderSearch()}});
 
 document.addEventListener('click',e=>{
   const btn=e.target.closest('[data-reader-action]');
