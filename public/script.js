@@ -232,15 +232,31 @@ async function loadStolenChapters(id, title, author, genre){
     const data=await res.json();
     
     if(!data.isFallback && !data.pdfUrl && (data.error || !data.chapters || !data.chapters.length)){
-      const msg = data.error || 'No chapters found.';
-      const isNotFound = msg.includes('not available') || msg.includes('No EPUB found');
-      nativeReader.innerHTML=`<div style="padding:3rem 2rem;text-align:center;font-family:Georgia,serif;max-width:520px;margin:0 auto">
-        <p style="font-size:2.5rem;margin-bottom:1rem">${isMangaLoad ? '\u{1F4D6}' : '\u{1F4DA}'}</p>
-        <h3 style="margin-bottom:.8rem;font-size:1.2rem">${isNotFound ? 'Not in free library' : 'Nothing loaded'}</h3>
-        <p style="opacity:.6;font-size:.9rem;line-height:1.6">${isNotFound
-          ? 'This title isn&apos;t freely available yet. Try classic novels like <em>Pride and Prejudice</em>, <em>Moby Dick</em>, or <em>Sherlock Holmes</em>.'
-          : msg}</p>
-      </div>`;
+      const realTitle = (title || 'this book').replace(/^\d+\s*/, '').trim();
+      const encodedTitle = encodeURIComponent(realTitle);
+      nativeReader.innerHTML=`
+        <div style="background:#1a1a1a!important;color:#f1f1f1!important;padding:2.5rem;border-radius:12px;margin:2rem auto 3rem auto;max-width:620px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid #333;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+          <div style="font-size:3rem;margin-bottom:1rem;">🔒</div>
+          <h3 style="color:#e74c3c!important;font-size:1.4rem;margin:0 0 1rem 0;">Commercial DRM Lock Active</h3>
+          <p style="opacity:0.85;font-size:0.95rem;line-height:1.6;margin-bottom:1.5rem;color:#f1f1f1!important;">
+            Direct text extraction for <strong>${realTitle}</strong> is locked by digital rights management. Choose an external mirror link below or force generate a custom AI edition via the backdoor engine:
+          </p>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:1.5rem;">
+            <a href="https://annas-archive.org/search?q=${encodedTitle}" target="_blank" rel="noopener" style="background:#2b2b2b;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #444;display:block;font-weight:600;">
+              🏴‍☠️ Mirror 1: Anna's Archive (Direct EPUB/PDF)
+            </a>
+            <a href="https://oceanofpdf.com/?s=${encodedTitle}" target="_blank" rel="noopener" style="background:#2b2b2b;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #444;display:block;font-weight:600;">
+              ☁️ Mirror 2: Direct Cloud Mirror (OceanofPDF)
+            </a>
+            <a href="https://libgen.is/search.php?req=${encodedTitle}" target="_blank" rel="noopener" style="background:#2b2b2b;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #444;display:block;font-weight:600;">
+              🏛️ Mirror 3: Library Genesis Mirror
+            </a>
+          </div>
+          <button onclick="window.forcedBackdoors=window.forcedBackdoors||{};window.forcedBackdoors['${id}']=true;openReader('${id}')" style="background:#e74c3c;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-weight:bold;cursor:pointer;font-size:0.95rem;box-shadow:0 4px 12px rgba(231,76,60,0.4);width:100%;">
+            ⚡ FORCE GENERATE 1-CLICK BACKDOOR EDITION
+          </button>
+        </div>
+      `;
       return;
     }
     

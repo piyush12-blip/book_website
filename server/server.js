@@ -149,14 +149,17 @@ app.get('/api/books/search', async (req, res) => {
             results.push(topItunesMatch);
         }
 
+        // 1. Put iTunes / Official Books FIRST
+        filteredItunes.forEach(b => {
+            if (!results.some(r => r.id === b.id)) results.push(b);
+        });
+
+        // 2. Put Manga and WebNovels AFTER official books
         mangaResults.forEach(m => {
             if (!results.some(r => r.id === m.id)) results.push(m);
         });
         webnovelResults.forEach(w => {
             if (!results.some(r => r.id === w.id)) results.push(w);
-        });
-        filteredItunes.forEach(b => {
-            if (!results.some(r => r.id === b.id)) results.push(b);
         });
 
         res.json(results);

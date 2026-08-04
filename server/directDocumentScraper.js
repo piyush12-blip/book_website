@@ -18,12 +18,12 @@ async function fetchDirectDocumentText(title, author = '') {
     try {
         // 1. Query Internet Archive Direct Unabridged Documents API
         let iaSearchUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent('"' + cleanTitle + '"')}+AND+mediatype%3A%28texts%29&fl%5B%5D=identifier,title,creator&rows=5&page=1&output=json`;
-        let iaRes = await axios.get(iaSearchUrl, { timeout: 6000 });
+        let iaRes = await axios.get(iaSearchUrl, { timeout: 30000 });
         
         let docs = iaRes.data?.response?.docs || [];
         if (docs.length === 0) {
             iaSearchUrl = `https://archive.org/advancedsearch.php?q=title%3A%28${encodeURIComponent(cleanTitle.toLowerCase())}%29&fl%5B%5D=identifier,title,creator&rows=15&page=1&output=json`;
-            iaRes = await axios.get(iaSearchUrl, { timeout: 6000 });
+            iaRes = await axios.get(iaSearchUrl, { timeout: 30000 });
             docs = iaRes.data?.response?.docs || [];
         }
 
@@ -56,14 +56,44 @@ async function fetchDirectDocumentText(title, author = '') {
                 const identifier = match.identifier;
                 try {
                     console.log(`[DIRECT-DOC] Checking Internet Archive OCR text for record "${identifier}"`);
-                    const metaRes = await axios.get(`https://archive.org/metadata/${identifier}`, { timeout: 4000 });
+                    const metaRes = await axios.get(`https://archive.org/metadata/${identifier}`, { timeout: 30000 });
                     const files = metaRes.data?.files || [];
                     const txtFile = files.find(f => f.name && (f.name.toLowerCase().endsWith('_djvu.txt') || f.name.toLowerCase().endsWith('.txt') || f.name.toLowerCase().endsWith('_text.pdf')));
 
                     if (txtFile && !txtFile.name.endsWith('.pdf')) {
                         const txtUrl = `https://archive.org/download/${identifier}/${encodeURIComponent(txtFile.name)}`;
-                        const txtRes = await axios.get(txtUrl, { timeout: 6000, responseType: 'text' });
+                        const txtRes = await axios.get(txtUrl, { timeout: 30000, responseType: 'text' });
                         if (typeof txtRes.data === 'string' && txtRes.data.length > 50000 && !txtRes.data.includes('<!DOCTYPE html') && !txtRes.data.toLowerCase().includes('filmyzilla')) {
+                            const sampleText = txtRes.data.substring(0, 15000).toLowerCase();
+
+                            // 1. Language Check: Reject Spanish, Indonesian, French, German, and all non-English scans
+                            const FOREIGN_INDICATORS = [
+                                'lectulandia', 'un planeta', 'el bien', 'traducido por', 'ediciones', 'del español', 'las intrigas', 'capítulo', 
+                                'chapitre', 'kapitel', 'traduction', 'kulit', 'pohon', 'tidak', 'berani', 'masuk', 'mungkin', 'tempat', 'tinggal', 
+                                'adalah', 'dengan', 'untuk', 'seperti', 'mereka', 'telah', 'kami', 'bisa', 'bukan'
+                            ];
+                            const isForeign = FOREIGN_INDICATORS.some(ind => sampleText.includes(ind));
+                            
+                            // English word density check: count standard English stop-words
+                            const ENGLISH_STOP_WORDS = [' the ', ' and ', ' was ', ' that ', ' with ', ' for ', ' his ', ' her ', ' had ', ' you ', ' not ', ' but ', ' they ', ' from ', ' she ', ' said ', ' have ', ' were '];
+                            const englishCount = ENGLISH_STOP_WORDS.reduce((acc, word) => acc + (sampleText.split(word).length - 1), 0);
+                            
+                            if (isForeign || englishCount < 20) {
+                                console.warn(`[DIRECT-DOC] Rejected record "${identifier}": Non-English language detected (Foreign flag: ${isForeign}, English stop-word count: ${englishCount}).`);
+                                return null;
+                            }
+
+                            // 2. Relevance Check: Verify main title/author keywords exist in text sample
+                            const titleKeywords = cleanTitle.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !['the', 'and', 'with', 'from', 'book', 'novel'].includes(w));
+                            const authorKeywords = cleanAuthor.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+                            const allKeyTerms = [...titleKeywords, ...authorKeywords];
+
+                            const matchesAnyKeyTerm = allKeyTerms.length === 0 || allKeyTerms.some(term => sampleText.includes(term));
+                            if (!matchesAnyKeyTerm) {
+                                console.warn(`[DIRECT-DOC] Rejected record "${identifier}": Text content does not match title keywords (${titleKeywords.join(', ')}).`);
+                                return null;
+                            }
+
                             return txtRes.data;
                         }
                     }
