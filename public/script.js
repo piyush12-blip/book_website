@@ -125,9 +125,12 @@ async function renderSearch(){
   let q=(document.querySelector('#book-search')?.value||'').trim();
   if(!q){results.innerHTML='';return;}
   
-  // Clean up pasted Amazon URLs, price tags, and giant query strings
-  q = q.replace(/https?:\/\/[^\s]+/gi, '')
+  // Clean up pasted Amazon/Webnovel URLs, ratings (e.g. 4.7), markdown links, price tags, and giant query strings
+  q = q.replace(/\[([^\]]+)\]\([^\)]+\)/gi, '$1')
+       .replace(/https?:\/\/[^\s]+/gi, '')
+       .replace(/webnovel\.com[^\s]*/gi, '')
        .replace(/₹[\d\.]+/gi, '')
+       .replace(/\b[1-5]\.\d\b/g, '')
        .replace(/amazon\.in|flipkart|session \d{4}-\d{2}/gi, '')
        .replace(/\s+/g, ' ')
        .trim()
@@ -143,11 +146,13 @@ async function renderSearch(){
       results.innerHTML = list.map(b => {
         if(!BOOKS.some(kb=>kb.id===b.id)) BOOKS.push(b);
         state.cachedBooks[b.id] = b;
-        const isInstant = b.id.startsWith('mangadex-') || b.id.startsWith('royalroad-') || !b.id.startsWith('itunes-');
-        const badge = isInstant
-          ? `<span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">⚡ FREE INSTANT READ</span>`
-          : `<span style="background:#d97706;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">🏴‍☠️ FREE (1-CLICK BACKDOOR)</span>`;
-        const typeLabel = b.id.startsWith('royalroad-') ? 'Web Novel' : b.id.startsWith('mangadex-') ? 'Manga / Manhwa' : 'Book';
+        const isWebNovel = b.genre === 'Web Novel' || b.genre === 'Light Novel' || b.id.startsWith('royalroad-') || b.id.includes('-custom-') || b.id.includes('-exact-');
+        const badge = isWebNovel
+          ? `<span style="background:#7c3aed;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">📖 WEB NOVEL / LIGHT NOVEL</span>`
+          : b.id.startsWith('mangadex-')
+          ? `<span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">⚡ MANGA / MANHWA</span>`
+          : `<span style="background:#d97706;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">🏴‍☠️ PUBLISHED BOOK</span>`;
+        const typeLabel = isWebNovel ? 'Web Novel / Light Novel' : b.id.startsWith('mangadex-') ? 'Manga / Manhwa' : 'Book';
         return `<div class="search-result-item" onclick="event.preventDefault();event.stopPropagation();openBook('${b.id}')" style="cursor:pointer"><span class="result-cover ${(b.cover||'').split(' ')[0]}"></span><strong>${b.title}</strong><em>${b.author} · ${typeLabel}${badge}</em>${actions(b.id)}</div>`;
       }).join('');
       saveState(); // Save ONCE after rendering list instead of 25 times inside loop

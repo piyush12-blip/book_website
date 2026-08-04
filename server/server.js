@@ -35,14 +35,21 @@ app.get('/api/books/search', async (req, res) => {
     if (!query) return res.status(400).json([]);
 
     try {
-        const qLower = query.toLowerCase().trim();
-
-        const cleanItunesQuery = query.replace(/\s+by\s+.*/i, '').trim();
+        let cleanQuery = query.replace(/\[([^\]]+)\]\([^\)]+\)/gi, '$1')
+                              .replace(/https?:\/\/[^\s]+/gi, '')
+                              .replace(/webnovel\.com[^\s]*/gi, '')
+                              .replace(/₹[\d\.]+/gi, '')
+                              .replace(/([a-zA-Z])([1-5]\.\d)\b/g, '$1')
+                              .replace(/\b[1-5]\.\d\b/g, '')
+                              .replace(/\s+/g, ' ')
+                              .trim();
+        const qLower = cleanQuery.toLowerCase();
+        const cleanItunesQuery = cleanQuery.replace(/\s+by\s+.*/i, '').trim();
         const [itunesResp, mangaResults, webnovelResults] = await Promise.all([
             axios.get(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanItunesQuery)}&entity=ebook&limit=25`)
                  .catch(() => ({ data: { results: [] } })),
-            searchMangaDex(query),
-            searchRoyalRoad(query)
+            searchMangaDex(cleanQuery),
+            searchRoyalRoad(cleanQuery)
         ]);
 
         const COLORS = ['navy','teal','burgundy','midnight','sage','rust','ochre','brown','grey','ivory'];
