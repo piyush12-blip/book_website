@@ -108,8 +108,22 @@ async function getRoyalRoadChapters(fictionId) {
         return chapters;
     } catch (err) {
         console.error('[ROYALROAD] Chapter fetch error:', err.message);
-        throw err;
+        return [];
     }
 }
 
-module.exports = { searchRoyalRoad, getRoyalRoadChapters };
+async function fetchRoyalRoadChapters(query) {
+    try {
+        const searchRes = await searchRoyalRoad(query);
+        if (!searchRes || !searchRes.length) return { chapters: [] };
+        const topMatch = searchRes[0];
+        const fictionId = topMatch.id.replace('royalroad-', '');
+        const chapters = await getRoyalRoadChapters(fictionId);
+        return { chapters, title: topMatch.title, author: topMatch.author };
+    } catch (e) {
+        console.error('[ROYALROAD] fetchRoyalRoadChapters error:', e.message);
+        return { chapters: [] };
+    }
+}
+
+module.exports = { searchRoyalRoad, getRoyalRoadChapters, fetchRoyalRoadChapters };
