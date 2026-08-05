@@ -19,11 +19,12 @@ const webnovels = [
     "Reincarnation Paradise Park",
     "Hogwarts: Bloodline Legend",
     "Fleeing from Konoha",
-    "The Fool in Hogwarts"
+    "The Fool in Hogwarts",
+    "Starting With An Sss-Rank Goddess Summon"
 ];
 
 async function runScreenshotTitlesAudit() {
-    console.log("=== SCREENSHOT TITLES AUDIT (SERVER + SITE) ===\n");
+    console.log("=== STRICT WEB NOVEL AUDIT (22 TITLES) ===\n");
     let directCount = 0;
     let backdoorCount = 0;
     
@@ -54,12 +55,12 @@ async function runScreenshotTitlesAudit() {
    -> FOUND VIA: ${topMatch.id}
    -> SERVER: ${data.chapters.length} Real Chapters
    -> SITE DISPLAY: Direct Open English Story
-   -> SAMPLE: "${cleanSample.substring(0, 80)}..."\n`);
+   -> SAMPLE: "${cleanSample.substring(0, 90)}..."\n`);
                 directCount++;
             } else {
                 console.log(`🔒 BACKDOOR CARD [${title}] (${duration}s)
    -> FOUND VIA: ${topMatch.id}
-   -> SERVER: Locked / Webnovel Paywall
+   -> SERVER: Commercial Paywall / Exclusive Original
    -> SITE DISPLAY: Triggers Backdoor Card with 3 Mirrors (Anna's Archive, OceanofPDF, LibGen)\n`);
                 backdoorCount++;
             }

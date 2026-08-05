@@ -79,8 +79,8 @@ module.exports = function getUniversalChapters(title = 'Novel', author = '', syn
         return getShadowSlaveChapters();
     }
 
-    // 10. Dedicated Provider for SSS-Rank Livestream
-    if (lower.includes('livestream') || lower.includes('sss-rank') || lower.includes('starting with sss')) {
+    // 10. Dedicated Provider for SSS-Rank Livestream (Strict Match Only)
+    if (lower.includes('sss-rank livestream') || lower.includes('livestream hunter')) {
         return getSSSRankLivestreamChapters();
     }
 

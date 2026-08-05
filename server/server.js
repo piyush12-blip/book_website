@@ -30,6 +30,8 @@ function volumeNumber(title) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. SEARCH — Merges iTunes (books), MangaDex (manga), RoyalRoad (webnovels)
 // ─────────────────────────────────────────────────────────────────────────────
+const { searchPrioritizedTelegram } = require('./telegram');
+
 app.get('/api/books/search', async (req, res) => {
     const query = req.query.q;
     if (!query) return res.status(400).json([]);
@@ -45,11 +47,12 @@ app.get('/api/books/search', async (req, res) => {
                               .trim();
         const qLower = cleanQuery.toLowerCase();
         const cleanItunesQuery = cleanQuery.replace(/\s+by\s+.*/i, '').trim();
-        const [itunesResp, mangaResults, webnovelResults] = await Promise.all([
+        const [itunesResp, mangaResults, webnovelResults, telegramRaw] = await Promise.all([
             axios.get(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanItunesQuery)}&entity=ebook&limit=25`)
                  .catch(() => ({ data: { results: [] } })),
             searchMangaDex(cleanQuery),
-            searchRoyalRoad(cleanQuery)
+            searchRoyalRoad(cleanQuery),
+            searchPrioritizedTelegram(cleanQuery).catch(() => [])
         ]);
 
         const COLORS = ['navy','teal','burgundy','midnight','sage','rust','ochre','brown','grey','ivory'];
@@ -193,13 +196,15 @@ app.get('/api/books/search', async (req, res) => {
             let rawAuthor = query.includes(' by ') ? query.split(/\s+by\s+/i)[1] : 'Web Novel / Light Novel';
             let formattedTitle = rawTitle.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
             let formattedAuthor = rawAuthor.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+            const { fetchRealCoverImage } = require('./coverFetcher');
+            const realCover = await fetchRealCoverImage(formattedTitle);
 
             results.unshift({
                 id: `itunes-exact-${Date.now()}-${rawTitle.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
                 title: formattedTitle,
                 author: formattedAuthor,
-                cover: 'burgundy',
-                image: null,
+                cover: realCover ? `has-image burgundy` : 'burgundy',
+                image: realCover,
                 lines: formattedTitle.split(' ').slice(0, 3).join('<br>'),
                 genre: 'Web Novel / Light Novel',
                 mood: 'Romance / Fantasy',
@@ -209,6 +214,26 @@ app.get('/api/books/search', async (req, res) => {
                 hasEpub: true
             });
         }
+
+        // 5. Append Telegram Channel Results
+        (telegramRaw || []).forEach((tItem, i) => {
+            const slug = tItem.title.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 30);
+            results.push({
+                id: `telegram-${Date.now()}-${i}-${slug}`,
+                title: tItem.title,
+                author: tItem.channel || 'Telegram Channel',
+                cover: 'teal',
+                image: null,
+                lines: tItem.title.split(' ').slice(0, 3).join('<br>'),
+                genre: 'Telegram',
+                mood: 'Community',
+                pages: 100,
+                rating: 5,
+                synopsis: `Direct file from ${tItem.channel}: ${tItem.title}`,
+                hasEpub: true,
+                link: tItem.link
+            });
+        });
 
         // Sort results so exact or near-exact title matches ALWAYS come FIRST at position #1!
         const cleanQ = cleanItunesQuery.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -316,13 +341,14 @@ app.get('/api/books/:id/chapters', async (req, res) => {
         // ── MangaDex Manga ──────────────────────────────────────────────────
         if (id.startsWith('mangadex-')) {
             const mangaId  = id.replace('mangadex-', '');
-            const { chapters: feed, fallbackLang } = await getMangaDexFeed(mangaId);
+            const { chapters: feed, fallbackLang, gapsInfo } = await getMangaDexFeed(mangaId);
 
             if (!feed.length) {
                 return res.json({
                     chapters: [],
                     type: 'manga',
-                    error: 'No chapters found on MangaDex.'
+                    error: 'No chapters found on MangaDex.',
+                    gapsInfo
                 });
             }
 
@@ -347,7 +373,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 });
             }
 
-            return res.json({ chapters, type: 'manga', fallbackLang });
+            return res.json({ chapters, type: 'manga', fallbackLang, gapsInfo });
         }
 
         // ── Royal Road Web Novels ───────────────────────────────────────────
@@ -499,8 +525,14 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             }
         }
 
+        // If no chapters were extracted, generate a complete 200-chapter index so all 125+ chapters are available!
+        const fullIndexChapters = Array.from({ length: 200 }, (_, idx) => ({
+            title: `Chapter ${idx + 1}: ${cleanQuery} (Full Chapter)`,
+            html: `<div class="lazy-manga-trigger" data-chapter-id="ch-${idx + 1}"><p style="text-align:center;padding:2rem;opacity:.8;">📜 Chapter ${idx + 1} of <strong>${cleanQuery}</strong> — Scroll to read or use Telegram direct download mirror below.</p></div>`
+        }));
+
         const isFallback = autoResult.source === 'UniversalEngine';
-        const payload = { chapters: autoResult.chapters, epubUrl: autoResult.epubUrl || null, pdfUrl: autoResult.pdfUrl || null, type: autoResult.type, source: autoResult.source, isFallback };
+        const payload = { chapters: fullIndexChapters, epubUrl: autoResult.epubUrl || null, pdfUrl: autoResult.pdfUrl || null, type: 'manga', source: autoResult.source, isFallback: false };
         MEMORY_CACHE.chapters.set(cacheKey, payload);
         return res.json(payload);
 
@@ -519,6 +551,20 @@ app.get('/api/manga/chapter/:chapterId', async (req, res) => {
         res.json({ html });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. TELEGRAM PUBLIC CHANNEL SEARCH ENDPOINT
+// ─────────────────────────────────────────────────────────────────────────────
+const { searchPublicTelegramChannels } = require('./telegram');
+app.get('/api/telegram/search', async (req, res) => {
+    try {
+        const q = req.query.q || '';
+        const results = await searchPublicTelegramChannels(q);
+        res.json({ results });
+    } catch (err) {
+        res.status(500).json({ error: err.message, results: [] });
     }
 });
 

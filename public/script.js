@@ -108,7 +108,15 @@ const saved=id=>state.saved.includes(id), liked=id=>state.liked.includes(id);
 const unique=a=>[...new Set(a.filter(Boolean))];
 function toast(msg){let el=document.querySelector('.toast');if(!el){el=document.createElement('div');el.className='toast';document.body.appendChild(el)}el.textContent=msg;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),1800)}
 function stars(n){return '★'.repeat(n)+'<i>'+'★'.repeat(5-n)+'</i>'}
-function coverHTML(item,size='mini'){if(item.image)return `<div class="cover ${size} has-image ${item.cover||''}" data-book="${item.id}" role="button" tabindex="0" aria-label="Open ${item.title}"><img class="cover-img" src="${item.image}" alt="${item.title} book cover" onerror="this.style.display='none';if(this.parentElement)this.parentElement.classList.remove('has-image');"></div>`;const extras=item.cover.includes('moon')?'<em></em>':item.cover==='blue'?'<em class="house"></em>':item.cover==='tan'?'<em></em>':'';const author=['feature','detail-cover'].includes(size)?`<small>${item.author}</small>`:'';return `<div class="cover ${size} ${item.cover}" data-book="${item.id}" role="button" tabindex="0" aria-label="Open ${item.title}"><span>${item.lines}</span>${author}${extras}</div>`}
+function coverHTML(item,size='mini'){
+  if (item.image) {
+    return `<div class="cover ${size} has-image ${item.cover||''}" data-book="${item.id}" role="button" tabindex="0" aria-label="Open ${item.title}"><img class="cover-img" src="${item.image}" alt="${item.title} book cover" onerror="this.style.display='none';if(this.parentElement)this.parentElement.classList.remove('has-image');"></div>`;
+  }
+  const color = item.cover || 'burgundy';
+  const author = ['feature','detail-cover'].includes(size) ? `<small>${item.author || 'Author'}</small>` : '';
+  const lines = item.lines || item.title.split(' ').slice(0,3).join('<br>');
+  return `<div class="cover ${size} ${color}" data-book="${item.id}" role="button" tabindex="0" aria-label="Open ${item.title}"><span>${lines}</span>${author}</div>`;
+}
 function actions(id){return `<div class="card-actions"><button class="action-btn ${saved(id)?'active':''}" data-action="save" data-book="${id}" aria-pressed="${saved(id)}">${saved(id)?'Saved':'Save'}</button><button class="action-btn ${liked(id)?'active':''}" data-action="like" data-book="${id}" aria-pressed="${liked(id)}" aria-label="Like ${book(id).title}">${liked(id)?'♥':'♡'}</button></div>`}
 function miniCard(item){let p=pct(item.id);return `<article class="mini-book" data-card="${item.id}">${coverHTML(item,'mini')}<h2>${item.title}</h2><p>${item.author}</p><span class="progress-label"><i class="progress"><b style="width:${p}%"></b></i>${p}%</span>${actions(item.id)}</article>`}
 function featureCard(item,cls=''){return `<article class="feature-card ${cls}" data-card="${item.id}">${coverHTML(item,'feature')}<h3>${item.title}</h3><p>${item.author}</p><div class="stars">${stars(item.rating)}</div>${actions(item.id)}</article>`}
@@ -119,13 +127,65 @@ function renderReadingList(){const el=document.querySelector('.reading-list');if
 function renderFeatured(){const grid=document.querySelector('.featured-grid');if(grid)grid.innerHTML=recommendations(6).map((b,i)=>featureCard(b,i>2?'lower':'')).join('')}
 function renderRecent(){const r=document.querySelector('.recent');if(!r)return;const ids=state.recent.slice(0,2);r.innerHTML='<h2>Recently Read</h2>'+(ids.length?ids.map(id=>`<article class="recent-item" data-book="${id}">${coverHTML(book(id),'recent-cover')}<h3>${book(id).title}</h3></article>`).join(''):`<div class="empty-state"><h3>No recent books.</h3><p>Open any title or use Reading Now. This panel will update automatically.</p></div>`)}
 function renderSidebarStats(){const s=document.querySelector('.stats');if(!s)return;const finished=Object.values(state.progress).filter(v=>+v>=100).length;s.innerHTML=`<h2>Reading Stats</h2><dl><div><dt>${state.saved.length}</dt><dd>Saved books</dd></div><div><dt>${state.liked.length}</dt><dd>Liked books</dd></div><div><dt>${finished}</dt><dd>Finished</dd></div></dl>`}
+let searchAbortController = null;
+let activePredictiveIndex = -1;
+
+function highlightMatchText(text, query) {
+  if (!text || !query) return text || '';
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escaped})`, 'gi');
+  return text.replace(regex, '<mark style="background:#f59e0b;color:#000;padding:0 2px;border-radius:2px;font-weight:700;">$1</mark>');
+}
+
 async function renderSearch(){
   const results=document.querySelector('.search-results');if(!results)return;
   document.querySelectorAll('.filter-row button').forEach(btn=>{const key=btn.dataset.filter||btn.textContent.toLowerCase().replace(' books','').replace(' ','-');btn.dataset.filter=key;btn.setAttribute('aria-pressed',state.searchFilter===key)});
   let q=(document.querySelector('#book-search')?.value||'').trim();
-  if(!q){results.innerHTML='';return;}
-  
-  // Clean up pasted Amazon/Webnovel URLs, ratings (e.g. 4.7), markdown links, price tags, and giant query strings
+  let searchInput = document.querySelector('#book-search');
+
+  // Create or select floating predictive dropdown element
+  let predictiveBox = document.querySelector('#predictive-search-box');
+  if (!predictiveBox && searchInput) {
+    predictiveBox = document.createElement('div');
+    predictiveBox.id = 'predictive-search-box';
+    predictiveBox.style.cssText = 'position:absolute;z-index:9999;background:#1a1a1a;border:1px solid #333;border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,0.6);max-height:380px;overflow-y:auto;width:100%;max-width:540px;margin-top:8px;display:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
+    if (searchInput.parentElement) {
+      searchInput.parentElement.style.position = 'relative';
+      searchInput.parentElement.appendChild(predictiveBox);
+    }
+  }
+
+  if(!q){
+    results.innerHTML='';
+    if(predictiveBox) {
+      // Show Trending Series on empty focus
+      const trending = [
+        { id: 'mangadex-sono-bisque', title: 'My Dress-Up Darling', author: 'Shinichi Fukuda', genre: 'Manga' },
+        { id: 'mangadex-blue-lock', title: 'Blue Lock', author: 'Muneyuki Kaneshiro', genre: 'Manga' },
+        { id: 'mangadex-solo-leveling', title: 'Solo Leveling', author: 'Chugong', genre: 'Manga' },
+        { id: 'itunes-exact-dune', title: 'Dune', author: 'Frank Herbert', genre: 'Book' }
+      ];
+      predictiveBox.innerHTML = `
+        <div style="padding:8px 12px;background:#111;color:#888;font-size:0.75rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #222;">
+          🔥 Trending & Recent Searches
+        </div>
+        ${trending.map(b => `
+          <div class="predictive-item" onclick="event.preventDefault();event.stopPropagation();document.querySelector('#predictive-search-box').style.display='none';openBook('${b.id}');" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid #262626;cursor:pointer;" onmouseover="this.style.background='#262626'" onmouseout="this.style.background='transparent'">
+            <div style="width:36px;height:48px;background:#2563eb;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;">📚</div>
+            <div style="flex:1;min-width:0;">
+              <div style="color:#fff;font-weight:600;font-size:0.92rem;">${b.title}</div>
+              <div style="color:#888;font-size:0.78rem;margin-top:2px;">${b.author}</div>
+            </div>
+            <span style="background:#16a34a;color:#fff;padding:3px 8px;border-radius:4px;font-size:0.7rem;font-weight:700;">🔥 Trending</span>
+          </div>
+        `).join('')}
+      `;
+      predictiveBox.style.display = 'block';
+    }
+    return;
+  }
+
+  // Clean up query string
   q = q.replace(/\[([^\]]+)\]\([^\)]+\)/gi, '$1')
        .replace(/https?:\/\/[^\s]+/gi, '')
        .replace(/webnovel\.com[^\s]*/gi, '')
@@ -136,13 +196,84 @@ async function renderSearch(){
        .trim()
        .slice(0, 100);
 
-  if(!q){results.innerHTML='';return;}
+  if(!q){
+    results.innerHTML='';
+    if(predictiveBox) predictiveBox.style.display = 'none';
+    return;
+  }
 
-  results.innerHTML='<div class="empty-library"><h3>Searching library & archives...</h3></div>';
+  // 1. INSTANT LOCAL 0ms PREDICTION (From BOOKS array + state.cachedBooks)
+  const qLower = q.toLowerCase();
+  const allKnown = unique([...BOOKS, ...Object.values(state.cachedBooks || {})]);
+  const instantMatches = allKnown.filter(b => (b.title || '').toLowerCase().includes(qLower) || (b.author || '').toLowerCase().includes(qLower));
+
+  activePredictiveIndex = -1;
+
+  if (predictiveBox && instantMatches.length > 0) {
+    predictiveBox.innerHTML = `
+      <div style="padding:8px 12px;background:#111;color:#888;font-size:0.75rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #222;display:flex;justify-content:space-between;">
+        <span>🎯 Instant Predictions (0ms)</span>
+        <span style="color:#60a5fa;">Searching archives...</span>
+      </div>
+      ${instantMatches.slice(0, 6).map((b, idx) => {
+        const isTelegram = b.genre === 'Telegram' || b.id.startsWith('telegram-');
+        const isWebNovel = !isTelegram && (b.genre === 'Web Novel' || b.genre === 'Light Novel' || b.id.startsWith('royalroad-') || b.id.includes('-custom-') || b.id.includes('-exact-'));
+        const tgIconHTML = `<span style="display:inline-flex;align-items:center;gap:4px;background:#0284c7;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.68rem;font-weight:800;flex-shrink:0;"><svg style="width:10px;height:10px;fill:currentColor;" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.16l-1.97 9.28c-.15.67-.54.83-1.1.52l-3.04-2.24-1.47 1.41c-.16.16-.3.3-.61.3l.22-3.1 5.64-5.1c.25-.22-.05-.34-.38-.12l-6.97 4.39-3-.94c-.65-.2-.67-.65.14-.97l11.72-4.52c.54-.2 1.02.13.82.99z"/></svg> Telegram</span>`;
+        const badgeLabel = isTelegram ? tgIconHTML : isWebNovel ? '<span style="background:#7c3aed;color:#fff;padding:3px 8px;border-radius:4px;font-size:0.7rem;font-weight:700;">📖 Web Novel</span>' : b.id.startsWith('mangadex-') ? '<span style="background:#16a34a;color:#fff;padding:3px 8px;border-radius:4px;font-size:0.7rem;font-weight:700;">⚡ Manga</span>' : '<span style="background:#d97706;color:#fff;padding:3px 8px;border-radius:4px;font-size:0.7rem;font-weight:700;">🏴‍☠️ Book</span>';
+        const imgHTML = b.image ? `<img src="${b.image}" style="width:36px;height:48px;object-fit:cover;border-radius:4px;flex-shrink:0;">` : `<div style="width:36px;height:48px;background:#333;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa;">📖</div>`;
+        return `
+          <div class="predictive-item" data-index="${idx}" data-book-id="${b.id}" onclick="event.preventDefault();event.stopPropagation();document.querySelector('#predictive-search-box').style.display='none';openBook('${b.id}');" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid #262626;cursor:pointer;" onmouseover="this.style.background='#262626'" onmouseout="this.style.background='transparent'">
+            ${imgHTML}
+            <div style="flex:1;min-width:0;">
+              <div style="color:#fff;font-weight:600;font-size:0.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${highlightMatchText(b.title, q)}</div>
+              <div style="color:#888;font-size:0.78rem;margin-top:2px;">${highlightMatchText(b.author, q)}</div>
+            </div>
+            ${badgeLabel}
+          </div>
+        `;
+      }).join('')}
+    `;
+    predictiveBox.style.display = 'block';
+  } else if (predictiveBox) {
+    predictiveBox.innerHTML = '<div style="padding:1rem;color:#888;font-size:0.85rem;text-align:center;">🔍 Searching global archives for "' + q + '"...</div>';
+    predictiveBox.style.display = 'block';
+  }
+
+  // 2. ABORT STALE PREVIOUS REQUESTS
+  if (searchAbortController) searchAbortController.abort();
+  searchAbortController = new AbortController();
+
   try{
-    const res=await fetch(`/api/books/search?q=${encodeURIComponent(q)}`);
-    const list=await res.json();
+    const res = await fetch(`/api/books/search?q=${encodeURIComponent(q)}`, { signal: searchAbortController.signal });
+    const list = await res.json();
+
     if (list.length) {
+      if (predictiveBox) {
+        predictiveBox.innerHTML = `
+          <div style="padding:8px 12px;background:#111;color:#888;font-size:0.75rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #222;display:flex;justify-content:space-between;">
+            <span>🎯 Live Predictions (${list.length})</span>
+            <span style="color:#10b981;">✓ Updated</span>
+          </div>
+          ${list.slice(0, 6).map((b, idx) => {
+            const isWebNovel = b.genre === 'Web Novel' || b.genre === 'Light Novel' || b.id.startsWith('royalroad-') || b.id.includes('-custom-') || b.id.includes('-exact-');
+            const badgeLabel = isWebNovel ? '📖 Web Novel' : b.id.startsWith('mangadex-') ? '⚡ Manga' : '🏴‍☠️ Book';
+            const badgeColor = isWebNovel ? '#7c3aed' : b.id.startsWith('mangadex-') ? '#16a34a' : '#d97706';
+            const imgHTML = b.image ? `<img src="${b.image}" style="width:36px;height:48px;object-fit:cover;border-radius:4px;flex-shrink:0;">` : `<div style="width:36px;height:48px;background:#333;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa;">📖</div>`;
+            return `
+              <div class="predictive-item" data-index="${idx}" data-book-id="${b.id}" onclick="event.preventDefault();event.stopPropagation();document.querySelector('#predictive-search-box').style.display='none';openBook('${b.id}');" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid #262626;cursor:pointer;" onmouseover="this.style.background='#262626'" onmouseout="this.style.background='transparent'">
+                ${imgHTML}
+                <div style="flex:1;min-width:0;">
+                  <div style="color:#fff;font-weight:600;font-size:0.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${highlightMatchText(b.title, q)}</div>
+                  <div style="color:#888;font-size:0.78rem;margin-top:2px;">${highlightMatchText(b.author, q)}</div>
+                </div>
+                <span style="background:${badgeColor};color:#fff;padding:3px 8px;border-radius:4px;font-size:0.7rem;font-weight:700;flex-shrink:0;">${badgeLabel}</span>
+              </div>
+            `;
+          }).join('')}
+        `;
+        predictiveBox.style.display = 'block';
+      }
+
       results.innerHTML = list.map(b => {
         if(!BOOKS.some(kb=>kb.id===b.id)) BOOKS.push(b);
         state.cachedBooks[b.id] = b;
@@ -153,14 +284,18 @@ async function renderSearch(){
           ? `<span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">⚡ MANGA / MANHWA</span>`
           : `<span style="background:#d97706;color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;margin-left:6px;display:inline-block;">🏴‍☠️ PUBLISHED BOOK</span>`;
         const typeLabel = isWebNovel ? 'Web Novel / Light Novel' : b.id.startsWith('mangadex-') ? 'Manga / Manhwa' : 'Book';
-        return `<div class="search-result-item" onclick="event.preventDefault();event.stopPropagation();openBook('${b.id}')" style="cursor:pointer"><span class="result-cover ${(b.cover||'').split(' ')[0]}"></span><strong>${b.title}</strong><em>${b.author} · ${typeLabel}${badge}</em>${actions(b.id)}</div>`;
+        return `<div class="search-result-item" onclick="event.preventDefault();event.stopPropagation();openBook('${b.id}')" style="cursor:pointer"><span class="result-cover ${(b.cover||'').split(' ')[0]}"></span><strong>${highlightMatchText(b.title, q)}</strong><em>${highlightMatchText(b.author, q)} · ${typeLabel}${badge}</em>${actions(b.id)}</div>`;
       }).join('');
-      saveState(); // Save ONCE after rendering list instead of 25 times inside loop
-    } else {
+      saveState();
+    } else if (instantMatches.length === 0) {
       results.innerHTML = '<div class="empty-library"><h3>No results found.</h3></div>';
+      if(predictiveBox) predictiveBox.innerHTML = '<div style="padding:1rem;color:#888;font-size:0.85rem;text-align:center;">No predictive matches found.</div>';
     }
   }catch(err){
-    results.innerHTML='<div class="empty-library"><h3>Search error. Is the server running?</h3></div>';
+    if (err.name !== 'AbortError') {
+      results.innerHTML='<div class="empty-library"><h3>Search error. Is the server running?</h3></div>';
+      if(predictiveBox) predictiveBox.style.display = 'none';
+    }
   }
 }
 function renderDetail(){
@@ -213,10 +348,20 @@ function renderReader(){
     return `<section class="chapter-block manga-chapter" id="chapter-${i+1}" data-chapter-index="${i}"><p class="chapter-count">Chapter ${i+1} of ${total}</p><h2>${ch.title}</h2><div class="manga-panels ${r.mangaMode==='paged'?'paged':''} ${r.mangaDirection==='rtl'?'rtl':''}"><figure class="manga-panel cover-panel-page"><img src="${b.image}" alt="${b.title} cover panel"><figcaption>${b.title}</figcaption></figure>${lines.map((line,j)=>`<div class="manga-panel text-panel"><span>Panel ${j+1}</span><p>${line}</p></div>`).join('')}<div class="manga-panel quote-panel"><p>${ch.quote||'To be continued.'}</p></div></div></section>`;
   };
 
-  let backdoorCardHTML = '';
+  const endOfPreviewCard = `
+    <div style="background:#1a1a1a!important;color:#f1f1f1!important;padding:2rem;border-radius:12px;margin:3rem auto;max-width:620px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid #333;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+      <div style="font-size:2.5rem;margin-bottom:0.75rem;">📚</div>
+      <h3 style="color:#e74c3c!important;font-size:1.3rem;margin:0 0 0.75rem 0;">End of Available Preview</h3>
+      <p style="opacity:0.85;font-size:0.92rem;line-height:1.6;margin-bottom:1.25rem;color:#f1f1f1!important;">
+        You've reached the end of the available chapters for <strong>${b.title}</strong>. To continue reading or download the full complete novel, use a 1-click backdoor mirror below:
+      </p>
+      ${getBackdoorMirrorsHTML(b.title, b.genre, b.format, b.id, (idx + 1))}
+    </div>
+  `;
+
   const content=isManga
     ? (r.mode==='single'?renderMangaChapter(selected,idx):chapters.map(renderMangaChapter).join(''))
-    : backdoorCardHTML + (r.mode==='single'?renderTextChapter(selected,idx):chapters.map(renderTextChapter).join(''));
+    : (r.mode==='single'?renderTextChapter(selected,idx):chapters.map(renderTextChapter).join('')) + endOfPreviewCard;
   const notesPanel=`<aside class="reader-notes ${r.notesOpen?'open':''}"><header><h3>Notebook</h3><button data-reader-action="toggle-notes">×</button></header>${notes.length?notes.map((n,i)=>`<article><time>${new Date(n.at).toLocaleDateString()}</time><p>${n.text}</p><button data-reader-action="delete-note" data-note-index="${i}">Delete</button></article>`).join(''):'<div class="empty-state"><h3>No notes yet.</h3><p>Write a private margin note below. It will appear here and in your sync export.</p></div>'}</aside>`;
   const epubPanel=`<section class="epub-panel ${r.epubMode?'open':''}"><header><h3>EPUB mode</h3><p>Upload a legal/public-domain EPUB or a file you own. EPUB.js will render it here when available.</p><label class="import-label">Upload EPUB<input type="file" id="epub-upload" accept=".epub,application/epub+zip"></label></header><div id="epub-viewer"><div class="empty-state"><h3>No EPUB loaded.</h3><p>This static prototype can render local EPUB files through EPUB.js when opened on a local server and internet/CDN is available.</p></div></div></section>`;
   const rawChTitle = (chapters[idx]||selected).title || '';
@@ -227,6 +372,81 @@ function renderReader(){
   // Fire for external books (itunes, mangadex, royalroad, searched) ONLY if chapters aren't loaded yet
   const isExternal = b.genre === 'searched' || b.genre === 'Manga' || b.genre === 'Web Novel' || b.id.includes('-');
   if(isExternal && (!b.chapters || !b.chapters.length)) setTimeout(()=>loadStolenChapters(b.id, b.title, b.author, b.genre), 80);
+}
+
+function getBackdoorMirrorsHTML(title, genre = '', format = '', id = '', chapterNum = 0) {
+  const cleanTitle = (title || '').replace(/^\d+\s*/, '').trim();
+  const chStr = chapterNum > 0 ? ` Chapter ${chapterNum}` : '';
+  
+  const fullTitle = cleanTitle + chStr;
+  const encodedTitle = encodeURIComponent(fullTitle);
+  const plusTitle = fullTitle.replace(/\s+/g, '+').toLowerCase();
+  const underscoreTitle = fullTitle.replace(/\s+/g, '_').toLowerCase();
+  const dashTitle = fullTitle.replace(/\s+/g, '-').toLowerCase();
+
+  const basePlus = cleanTitle.replace(/\s+/g, '+').toLowerCase();
+  const baseEncoded = encodeURIComponent(cleanTitle);
+
+  const t = cleanTitle.toLowerCase();
+  const g = (genre || '').toLowerCase();
+  const f = (format || '').toLowerCase();
+
+  const isManga = id.startsWith('mangadex-') || g.includes('manga') || f.includes('manga') || t.includes('manhwa') || t.includes('manhua') || t.includes('comic');
+  const isWebNovel = !isManga && [
+    'sss', 'system', 'reincarnation', 'goddess', 'leveling', 'rank', 'cultivation', 
+    'beast', 'yandere', 'konoha', 'hogwarts', 'scumbag', 'pornstar', 'transmigrat', 
+    'light novel', 'web novel', 'royal road'
+  ].some(kw => t.includes(kw) || g.includes(kw) || f.includes(kw));
+
+    if (isManga) {
+    return `
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <a href="https://archive.org/search.php?query=${basePlus}+manga" target="_blank" rel="noopener" style="background:#2563eb;color:#fff;text-decoration:none;padding:12px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #1d4ed8;display:block;font-weight:600;transition:all 0.2s;">
+          📦 Mirror 1: Internet Archive (Direct CBZ / PDF Manga Vault)
+        </a>
+        <a href="https://annas-archive.org/search?q=${basePlus}+cbz" target="_blank" rel="noopener" style="background:#0369a1;color:#fff;text-decoration:none;padding:12px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #0284c7;display:block;font-weight:600;">
+          🏴‍☠️ Mirror 2: Anna's Archive (Direct CBR / CBZ Manga Download)
+        </a>
+        <a href="https://nyaa.si/?f=0&c=3_1&q=${basePlus}" target="_blank" rel="noopener" style="background:#059669;color:#fff;text-decoration:none;padding:12px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #047857;display:block;font-weight:600;">
+          ⚡ Mirror 3: Nyaa Manga Archive (Complete CBZ / Volume Packs)
+        </a>
+        <a href="https://www.google.com/search?q=${basePlus}+manga+download+cbz+pdf" target="_blank" rel="noopener" style="background:#475569;color:#fff;text-decoration:none;padding:12px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #334155;display:block;font-weight:600;">
+          🔍 Mirror 4: Google Direct CBZ / PDF Download Search
+        </a>
+      </div>
+    `;
+  } else if (isWebNovel) {
+    return `
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <a href="https://novelbin.com/search?keyword=${encodedTitle}" target="_blank" rel="noopener" style="background:#7c3aed;color:#fff;text-decoration:none;padding:12px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #6d28d9;display:block;font-weight:600;transition:all 0.2s;">
+          ⚡ Mirror 1: NovelBin Mirror${chStr ? ' (Chapter ' + chapterNum + ')' : ''}
+        </a>
+        <a href="https://www.lightnovelpub.com/search?keyword=${encodedTitle}" target="_blank" rel="noopener" style="background:#2563eb;color:#fff;text-decoration:none;padding:12px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #1d4ed8;display:block;font-weight:600;transition:all 0.2s;">
+          📖 Mirror 2: LightNovelPub Archive
+        </a>
+        <a href="https://ranobes.top/search/${plusTitle}" target="_blank" rel="noopener" style="background:#0f766e;color:#fff;text-decoration:none;padding:12px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #0d9488;display:block;font-weight:600;">
+          📦 Mirror 3: Ranobes Direct Archive
+        </a>
+        <a href="https://www.google.com/search?q=${plusTitle}+webnovel+read+online" target="_blank" rel="noopener" style="background:#475569;color:#fff;text-decoration:none;padding:12px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #334155;display:block;font-weight:600;">
+          🔍 Mirror 4: Google Direct WebNovel Search
+        </a>
+      </div>
+    `;
+  } else {
+    return `
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <a href="https://oceanofpdf.com/?s=${basePlus}" target="_blank" rel="noopener" style="background:#0369a1;color:#fff;text-decoration:none;padding:12px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #0284c7;display:block;font-weight:600;">
+          🌊 Mirror 1: OceanofPDF (Direct EPUB Download)
+        </a>
+        <a href="http://libgen.is/search.php?req=${baseEncoded}" target="_blank" rel="noopener" style="background:#0f766e;color:#fff;text-decoration:none;padding:12px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #0d9488;display:block;font-weight:600;">
+          🏛️ Mirror 2: Library Genesis (LibGen)
+        </a>
+        <a href="https://www.google.com/search?q=${basePlus}+epub+pdf+download" target="_blank" rel="noopener" style="background:#475569;color:#fff;text-decoration:none;padding:12px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #334155;display:block;font-weight:600;">
+          🔍 Mirror 3: Google Direct EPUB/PDF Search
+        </a>
+      </div>
+    `;
+  }
 }
 
 async function loadStolenChapters(id, title, author, genre){
@@ -251,28 +471,14 @@ async function loadStolenChapters(id, title, author, genre){
     
     if(!data.isFallback && !data.pdfUrl && (data.error || !data.chapters || !data.chapters.length)){
       const realTitle = (title || 'this book').replace(/^\d+\s*/, '').trim();
-      const encodedTitle = encodeURIComponent(realTitle);
       nativeReader.innerHTML=`
         <div style="background:#1a1a1a!important;color:#f1f1f1!important;padding:2.5rem;border-radius:12px;margin:2rem auto 3rem auto;max-width:620px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid #333;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
           <div style="font-size:3rem;margin-bottom:1rem;">🔒</div>
           <h3 style="color:#e74c3c!important;font-size:1.4rem;margin:0 0 1rem 0;">Commercial DRM Lock Active</h3>
           <p style="opacity:0.85;font-size:0.95rem;line-height:1.6;margin-bottom:1.5rem;color:#f1f1f1!important;">
-            Direct text extraction for <strong>${realTitle}</strong> is locked by digital rights management. Choose an external mirror link below or force generate a custom AI edition via the backdoor engine:
+            Direct text extraction for <strong>${realTitle}</strong> is locked by digital rights management. Choose an external mirror link below to download or read the full book directly:
           </p>
-          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:1.5rem;">
-            <a href="https://annas-archive.org/search?q=${encodedTitle}" target="_blank" rel="noopener" style="background:#2b2b2b;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #444;display:block;font-weight:600;">
-              🏴‍☠️ Mirror 1: Anna's Archive (Direct EPUB/PDF)
-            </a>
-            <a href="https://oceanofpdf.com/?s=${encodedTitle}" target="_blank" rel="noopener" style="background:#2b2b2b;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #444;display:block;font-weight:600;">
-              ☁️ Mirror 2: Direct Cloud Mirror (OceanofPDF)
-            </a>
-            <a href="https://libgen.is/search.php?req=${encodedTitle}" target="_blank" rel="noopener" style="background:#2b2b2b;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;font-size:0.9rem;border:1px solid #444;display:block;font-weight:600;">
-              🏛️ Mirror 3: Library Genesis Mirror
-            </a>
-          </div>
-          <button onclick="window.forcedBackdoors=window.forcedBackdoors||{};window.forcedBackdoors['${id}']=true;openReader('${id}')" style="background:#e74c3c;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-weight:bold;cursor:pointer;font-size:0.95rem;box-shadow:0 4px 12px rgba(231,76,60,0.4);width:100%;">
-            ⚡ FORCE GENERATE 1-CLICK BACKDOOR EDITION
-          </button>
+          ${getBackdoorMirrorsHTML(realTitle, genre, '', id)}
         </div>
       `;
       return;
@@ -503,10 +709,17 @@ document.addEventListener('change',e=>{if(e.target?.dataset.action==='line'){sta
 document.addEventListener('input',e=>{
   if(e.target?.id==='book-search'){
     clearTimeout(searchInputTimer);
-    searchInputTimer = setTimeout(() => renderSearch(), 300);
+    searchInputTimer = setTimeout(() => renderSearch(), 150);
   }
   if(e.target?.id==='setting-font'){state.reader.font=Number(e.target.value);saveState();renderSettings()}
 });document.addEventListener('submit',e=>{if(e.target.classList.contains('search-board')){e.preventDefault();renderSearch()}});
+
+document.addEventListener('click',e=>{
+  const box = document.querySelector('#predictive-search-box');
+  if(box && !e.target.closest('#book-search') && !e.target.closest('#predictive-search-box')) {
+    box.style.display = 'none';
+  }
+});
 
 document.addEventListener('click',e=>{
   const btn=e.target.closest('[data-reader-action]');

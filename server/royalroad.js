@@ -116,7 +116,19 @@ async function fetchRoyalRoadChapters(query) {
     try {
         const searchRes = await searchRoyalRoad(query);
         if (!searchRes || !searchRes.length) return { chapters: [] };
-        const topMatch = searchRes[0];
+        
+        const qClean = query.toLowerCase().replace(/[^a-z0-9]/g, '');
+        // Only accept match if title has strong overlap with search query
+        const topMatch = searchRes.find(item => {
+            const tClean = item.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return tClean.includes(qClean) || qClean.includes(tClean);
+        });
+
+        if (!topMatch) {
+            console.warn(`[ROYALROAD] Rejecting loose search result. No strict title match for: "${query}"`);
+            return { chapters: [] };
+        }
+
         const fictionId = topMatch.id.replace('royalroad-', '');
         const chapters = await getRoyalRoadChapters(fictionId);
         return { chapters, title: topMatch.title, author: topMatch.author };

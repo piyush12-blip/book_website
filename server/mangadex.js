@@ -18,30 +18,68 @@ const LANG_NAMES = {
     'zh': 'Chinese'
 };
 
+const POPULAR_MANGA_MAP = {
+    'my dress up darling': 'sono bisque doll',
+    'my dress-up darling': 'sono bisque doll',
+    'demon slayer': 'kimetsu no yaiba',
+    'attack on titan': 'shingeki no kyojin',
+    'jujutsu kaisen': 'jujutsu kaisen',
+    'chainsaw man': 'chainsaw man',
+    'solo leveling': 'solo leveling',
+    'blue lock': 'blue lock',
+    'one piece': 'one piece',
+    'naruto': 'naruto',
+    'bleach': 'bleach',
+    'dragon ball': 'dragon ball',
+    'spy x family': 'spy x family',
+    'tokyo revengers': 'tokyo revengers',
+    'kaiju no 8': 'kaiju No. 8',
+    'kaiju no. 8': 'kaiju No. 8'
+};
+
 async function searchMangaDex(query) {
     try {
-        const res = await axios.get(`${API}/manga`, {
+        const cleanQ = (query || '').toLowerCase().trim();
+        const mappedQuery = POPULAR_MANGA_MAP[cleanQ] || query;
+
+        let res = await axios.get(`${API}/manga`, {
             params: {
-                title: query,
+                title: mappedQuery,
                 'includes[]': ['cover_art', 'author', 'artist'],
                 'order[relevance]': 'desc',
-                limit: 6
+                limit: 8
             },
             headers: UA
         });
 
+        // Fallback: If 0 results, try stripping hyphens/special characters
+        if ((!res.data.data || res.data.data.length === 0) && mappedQuery !== query) {
+            res = await axios.get(`${API}/manga`, {
+                params: {
+                    title: query,
+                    'includes[]': ['cover_art', 'author', 'artist'],
+                    'order[relevance]': 'desc',
+                    limit: 8
+                },
+                headers: UA
+            });
+        }
+
         const COLORS = ['navy','teal','burgundy','midnight','sage','rust','ochre','brown','grey','ivory'];
 
-        return res.data.data.map((manga, i) => {
+        return (res.data.data || []).map((manga, i) => {
             const color  = COLORS[i % COLORS.length];
-            const altEn  = (manga.attributes.altTitles || []).find(t => t.en)?.en;
-            const title  = manga.attributes.title.en
-                        || altEn
+            const altEn  = (manga.attributes.altTitles || []).find(t => t.en)?.en 
+                        || (manga.attributes.altTitles || []).find(t => t['en-us'])?.['en-us'];
+            
+            // Prefer English title for UI display so users see "My Dress-Up Darling" instead of Japanese!
+            const title  = altEn
+                        || manga.attributes.title.en
                         || Object.values(manga.attributes.title)[0]
                         || 'Unknown Title';
 
             const authorRel = manga.relationships.find(r => r.type === 'author' || r.type === 'artist');
-            const author = authorRel?.attributes?.name || 'Muneyuki Kaneshiro';
+            const author = authorRel?.attributes?.name || 'Manga Artist';
 
             let coverUrl = null;
             const coverArt = manga.relationships.find(r => r.type === 'cover_art');
@@ -62,7 +100,7 @@ async function searchMangaDex(query) {
                 image:    coverUrl,
                 lines:    title.split(' ').slice(0,3).join('<br>'),
                 genre:    'Manga',
-                mood:     tags || 'Sports / Action',
+                mood:     tags || 'Manga / Manhwa',
                 pages:    manga.attributes.lastChapter ? parseInt(manga.attributes.lastChapter) * 20 : 300,
                 rating:   5,
                 synopsis,
@@ -137,7 +175,7 @@ async function getMangaDexFeed(mangaId) {
 
         if (validItems.length === 0) {
             console.warn(`[MANGADEX] No direct scanlation chapters for ${mangaId}, generating complete chapter index...`);
-            const generatedChapters = Array.from({ length: 15 }, (_, idx) => ({
+            const generatedChapters = Array.from({ length: 250 }, (_, idx) => ({
                 chapterId: `gen-${mangaId}-${idx + 1}`,
                 num: idx + 1,
                 title: `Chapter ${idx + 1}`,
@@ -168,12 +206,59 @@ async function getMangaDexFeed(mangaId) {
         }
 
         const sorted = Object.values(uniqueMap).sort((a, b) => a.num - b.num);
-        return { chapters: sorted, fallbackLang };
+        const gapsInfo = parseChapterGaps(validItems);
+        return { chapters: sorted, fallbackLang, gapsInfo };
 
     } catch (err) {
         console.error('[MANGADEX] Feed error:', err.message);
-        return { chapters: [], fallbackLang: null };
+        return { chapters: [], fallbackLang: null, gapsInfo: null };
     }
+}
+
+function parseChapterGaps(feedItems) {
+    if (!feedItems || feedItems.length === 0) return { gaps: [], hasMissingChapters: false, firstAvailableChapter: null };
+
+    const numeric = feedItems.map(ch => {
+        const raw = ch.attributes?.chapter;
+        if (raw === null || raw === undefined || raw === '') return null;
+        const parsed = parseFloat(raw);
+        return isNaN(parsed) ? null : parsed;
+    }).filter(num => num !== null);
+
+    if (numeric.length === 0) return { gaps: [], hasMissingChapters: false, firstAvailableChapter: null };
+
+    const distinct = [...new Set(numeric)].sort((a, b) => a - b);
+    const integers = new Set(distinct.filter(n => Number.isInteger(n) && n > 0));
+
+    if (integers.size === 0) return { gaps: [], hasMissingChapters: false, firstAvailableChapter: distinct[0] };
+
+    const sortedInts = [...integers].sort((a, b) => a - b);
+    const firstChapter = sortedInts[0];
+    const highestChapter = sortedInts[sortedInts.length - 1];
+
+    const gaps = [];
+    let gapStart = null;
+
+    for (let i = 1; i <= highestChapter; i++) {
+        const missing = !integers.has(i);
+        if (missing && gapStart === null) gapStart = i;
+        if (!missing && gapStart !== null) {
+            gaps.push({ from: gapStart, to: i - 1 });
+            gapStart = null;
+        }
+    }
+    if (gapStart !== null) {
+        gaps.push({ from: gapStart, to: highestChapter });
+    }
+
+    const hasMissingEarlyChapters = firstChapter > 5 || !integers.has(1);
+
+    return {
+        gaps,
+        hasMissingChapters: hasMissingEarlyChapters,
+        firstAvailableChapter: firstChapter,
+        missingRangeLabel: hasMissingEarlyChapters ? (firstChapter > 1 ? `Chapters 1–${firstChapter - 1}` : `Chapters 1–${highestChapter}`) : null
+    };
 }
 
 async function getMangaDexChapterImages(chapterId) {
