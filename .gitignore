@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+test_*.js
+test_*.cjs
+probe*.js
+probe*.cjs
+server/test_*.js
+server/test_*.cjs
+server/probe*.js
+server/probe*.cjs
+
