@@ -299,9 +299,10 @@ body.reader-focus{background:#fff!important}.reader-focus .app-section#reader.ac
 .reader-focus .reader-paper.theme-paper .stolen-prose, .reader-focus .reader-paper.theme-paper .stolen-prose p { color:#030303 !important; }
 
 /* == MANGA / MANHWA / WEBTOON image scroll reader == */
-.manga-image-scroll { width:100%; max-width:800px; margin:0 auto; display:flex; flex-direction:column; align-items:center; gap:0; background:#0a0a0a; padding:0; }
-.manga-image-scroll img { width:100%; max-width:800px; height:auto; display:block; border:none; margin:0; padding:0; vertical-align:bottom; }
-.manga-chapter-block { padding:0; margin:0; background:#0a0a0a; }
-.chapter-divider { display:flex; align-items:center; justify-content:center; flex-direction:column; gap:.3rem; padding:2rem 1rem; text-align:center; background:#111; color:#888; border-top:1px solid #222; border-bottom:1px solid #222; font-size:.8rem; letter-spacing:.08em; text-transform:uppercase; }
-.chapter-divider strong { color:#eee; font-size:1rem; text-transform:none; letter-spacing:0; }
+.manga-image-scroll { width:100%; max-width:920px; margin:0 auto; display:flex; flex-direction:column; align-items:center; gap:0; background:#05070a; padding:0; }
+.manga-image-scroll img { width:100%; max-width:920px; height:auto; min-height:450px; display:block; border:none; margin:0 auto; padding:0; vertical-align:bottom; background:#05070a; object-fit:contain; }
+.manga-chapter-block { padding:0; margin:0 0 2rem 0; background:#05070a; width:100%; }
+.chapter-divider { display:flex; align-items:center; justify-content:center; flex-direction:column; gap:.3rem; padding:1.75rem 1rem; text-align:center; background:#0a0e17; color:#94a3b8; border-top:1px solid #1e293b; border-bottom:1px solid #1e293b; font-size:.8rem; letter-spacing:.08em; text-transform:uppercase; }
+.chapter-divider strong { color:#f8fafc; font-size:1.1rem; text-transform:none; letter-spacing:0; }
+
 

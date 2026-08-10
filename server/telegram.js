@@ -110,7 +110,7 @@ function isRealPanelImage(url) {
 // ─── FETCH HELPER ─────────────────────────────────────────────────────────────
 const AXIOS_OPTS = {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-    timeout: 5000
+    timeout: 2500
 };
 
 async function fetchHtml(url) {
@@ -248,27 +248,20 @@ async function getTelegramChaptersAndPanels(titleQuery) {
         // telegramIndex not ready yet, continue
     }
 
-    // ── PHASE 1: Primary channels (Manga_Cruise_Updates first) ──────────────
-    for (const ch of PRIMARY_CHANNELS) {
-        const chapters = await searchChannelForChapters(ch, titleQuery);
-        if (chapters.length > 0) return chapters;
-    }
+    // ── PHASE 1: Fast Parallel Search across all priority & joined channels ──
+    const allChannels = [...new Set([...PRIMARY_CHANNELS, ...getJoinedChannels(), ...SECONDARY_CHANNELS])];
+    
+    try {
+        const promises = allChannels.map(ch => searchChannelForChapters(ch, titleQuery));
+        const results = await Promise.allSettled(promises);
+        for (const res of results) {
+            if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
+                return res.value;
+            }
+        }
+    } catch(e) {}
 
-    // ── PHASE 2: Secondary joined channels ──────────────────────────────────
-    const joined = getJoinedChannels().filter(c => !PRIMARY_CHANNELS.includes(c));
-    for (const ch of joined) {
-        const chapters = await searchChannelForChapters(ch, titleQuery);
-        if (chapters.length > 0) return chapters;
-    }
-
-    // ── PHASE 3: All secondary fallback channels ─────────────────────────────
-    for (const ch of SECONDARY_CHANNELS) {
-        if (joined.includes(ch)) continue;
-        const chapters = await searchChannelForChapters(ch, titleQuery);
-        if (chapters.length > 0) return chapters;
-    }
-
-    // ── PHASE 4: Nothing found anywhere ─────────────────────────────────────
+    // ── PHASE 2: Nothing found anywhere ─────────────────────────────────────
     console.log(`[TG] No chapters found for "${titleQuery}" anywhere on Telegram.`);
     return null;
 }

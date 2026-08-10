@@ -437,12 +437,19 @@ async function getTelegramIndexChapters(query) {
     // ── Step 2: Merge panelsByChapter ──
     const combinedPanels = new Map([...bestEntry.panelsByChapter, ...perTitlePanels]);
 
-    // ── Step 3: Build chapter list (100% pure reader views, NO redirect boxes) ──
+    // If no real image panels were scraped, return null so MangaDex / Real Story Engine handles it!
+    if (combinedPanels.size === 0) {
+        console.log(`[TELEGRAM INDEX] No raw panels for "${title}", delegating to Real Story Engine...`);
+        return null;
+    }
+
+    // ── Step 3: Build chapter list with genuine panels ──
     const chapters = [];
 
     for (let i = startCh; i <= maxCh; i++) {
         const panels = combinedPanels.get(i);
-        const htmlContent = buildStoryPanelHtml(i, maxCh, title, panels, bestEntry.coverImage);
+        if (!panels || panels.length === 0) continue;
+        const htmlContent = buildStoryPanelHtml(i, maxCh, title, panels);
 
         chapters.push({
             title: i === 0 ? 'Prologue (Ch.0)' : `Chapter ${i}`,
@@ -451,7 +458,9 @@ async function getTelegramIndexChapters(query) {
         });
     }
 
-    console.log(`[CHAPTERS] Built ${chapters.length} chapters for "${title}" (Pure Reader Mode)`);
+    if (chapters.length === 0) return null;
+
+    console.log(`[CHAPTERS] Built ${chapters.length} real panel chapters for "${title}" (Pure Reader Mode)`);
     return chapters;
 }
 

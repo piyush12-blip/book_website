@@ -19,22 +19,33 @@ const LANG_NAMES = {
 };
 
 const POPULAR_MANGA_MAP = {
-    'my dress up darling': 'sono bisque doll',
-    'my dress-up darling': 'sono bisque doll',
-    'demon slayer': 'kimetsu no yaiba',
-    'attack on titan': 'shingeki no kyojin',
-    'jujutsu kaisen': 'jujutsu kaisen',
-    'chainsaw man': 'chainsaw man',
-    'solo leveling': 'solo leveling',
-    'blue lock': 'blue lock',
-    'one piece': 'one piece',
-    'naruto': 'naruto',
-    'bleach': 'bleach',
-    'dragon ball': 'dragon ball',
-    'spy x family': 'spy x family',
-    'tokyo revengers': 'tokyo revengers',
-    'kaiju no 8': 'kaiju No. 8',
-    'kaiju no. 8': 'kaiju No. 8'
+    'the immortal genius spearman': 'The Immortal Genius Spearman',
+    'immortal genius spearman': 'The Immortal Genius Spearman',
+    'resurrection boy': 'Resurrection Boy',
+    'the resurrection boy': 'Resurrection Boy',
+    'return of the mount hua sect': 'Return of the Mount Hua Sect',
+    'mount hua sect': 'Return of the Mount Hua Sect',
+    'the reincarnated assassin is a genius swordsman': 'The Reincarnated Assassin Is a Genius Swordsman',
+    'reincarnated assassin': 'The Reincarnated Assassin Is a Genius Swordsman',
+    'swordmaster s youngest son': "Swordmaster's Youngest Son",
+    'swordmasters youngest son': "Swordmaster's Youngest Son",
+    'my dress up darling': 'Sono Bisque Doll wa Koi wo Suru',
+    'my dress-up darling': 'Sono Bisque Doll wa Koi wo Suru',
+    'demon slayer': 'Kimetsu no Yaiba',
+    'attack on titan': 'Shingeki no Kyojin',
+    'jujutsu kaisen': 'Jujutsu Kaisen',
+    'chainsaw man': 'Chainsaw Man',
+    'solo leveling': 'Solo Leveling',
+    'blue lock': 'Blue Lock',
+    'one piece': 'One Piece',
+    'naruto': 'Naruto',
+    'bleach': 'Bleach',
+    'dragon ball': 'Dragon Ball',
+    'spy x family': 'SPY x FAMILY',
+    'tokyo revengers': 'Tokyo Revengers',
+    'kaiju no 8': 'Kaiju No. 8',
+    'kaiju no. 8': 'Kaiju No. 8',
+    'nano machine': 'Nano Machine'
 };
 
 async function searchMangaDex(query) {
@@ -148,15 +159,6 @@ async function getMangaDexFeed(mangaId) {
         // 2. Fallback: if no English chapters exist, fetch all available languages
         if (validItems.length === 0) {
             console.log(`[MANGADEX] No English chapters for ${mangaId}. Attempting language fallback...`);
-            // SPA fallback
-            const indexPath = path.join(publicPath, 'index.html');
-            app.use((req, res) => {
-                if (fs.existsSync(indexPath)) {
-                    res.sendFile(indexPath);
-                } else {
-                    res.status(404).send('Not found');
-                }
-            });
             feedRes = await axios.get(`${API}/manga/${mangaId}/feed`, {
                 params: {
                     'order[chapter]': 'asc',
@@ -272,43 +274,7 @@ function parseChapterGaps(feedItems) {
 
 async function getMangaDexChapterImages(chapterId) {
     try {
-        // Special chapter image rendering for Blue Lock & generated manga chapters
-        if (chapterId.startsWith('bluelock-')) {
-            const chNum = chapterId.replace('bluelock-', '');
-            return `<div class="manga-chapter-container" style="max-width:800px;margin:0 auto;padding:2rem 1rem;font-family:sans-serif;background:#111;color:#eee;border-radius:8px;">
-                <h2 style="color:#60a5fa;margin-bottom:1rem;text-align:center;">⚽ Blue Lock — Chapter ${chNum}</h2>
-                <div style="background:#1e293b;padding:1.5rem;border-radius:6px;margin-bottom:1.5rem;line-height:1.7;">
-                    <p style="font-size:1.1rem;font-weight:bold;color:#f3f4f6;margin-bottom:0.8rem;">[Panel 1: High School Nationals Final]</p>
-                    <p>Yoichi Isagi sprints down the center of the pitch. The score is tied 1-1 in the final minute of the prefectural final. He passes to his teammate instead of shooting, and the shot hits the post. The opposition counter-attacks and scores. Isagi collapses to his knees in tears.</p>
-                </div>
-                <div style="background:#1e293b;padding:1.5rem;border-radius:6px;margin-bottom:1.5rem;line-height:1.7;">
-                    <p style="font-size:1.1rem;font-weight:bold;color:#f3f4f6;margin-bottom:0.8rem;">[Panel 2: The Blue Lock Invitation]</p>
-                    <p>Upon arriving home, Isagi receives an official letter from the Japan Football Union inviting him to a special high-performance athlete facility called <strong>Blue Lock</strong>.</p>
-                </div>
-                <div style="background:#1e293b;padding:1.5rem;border-radius:6px;line-height:1.7;">
-                    <p style="font-size:1.1rem;font-weight:bold;color:#f3f4f6;margin-bottom:0.8rem;">[Panel 3: Ego Jinpachi's Announcement]</p>
-                    <p>Three hundred teenage strikers gather inside a dark auditorium. Ego Jinpachi steps into the spotlight: <em>"Japan's football lacks one thing: EGO. The ultimate striker who throws away teamwork and hunger only for goals!"</em></p>
-                </div>
-            </div>`;
-        }
-
-        if (chapterId.startsWith('ch-')) {
-            const chNum = chapterId.replace('ch-', '');
-            return `<div class="manga-chapter-container" style="max-width:800px;margin:0 auto;padding:1.5rem;background:#0d0f12;color:#eee;border-radius:8px;line-height:1.7;">
-                <h3 style="color:#60a5fa;margin-bottom:1rem;text-align:center;">📖 Chapter ${chNum}</h3>
-                <p>The shadows move swiftly across the city skyline. Reborn into a world where power dictates survival, the path of the Shadow Assassin begins in silence.</p>
-                <p>With unmatched precision, every step brings new mastery. Enemies fall before they even realize the blade has moved.</p>
-            </div>`;
-        }
-
-        if (chapterId.startsWith('gen-')) {
-            const parts = chapterId.split('-');
-            const chNum = parts[parts.length - 1];
-            return `<div class="manga-chapter-container" style="max-width:800px;margin:0 auto;padding:1.5rem;background:#0d0f12;color:#eee;border-radius:8px;line-height:1.7;">
-                <h3 style="color:#60a5fa;margin-bottom:1rem;text-align:center;">📖 Chapter ${chNum}</h3>
-                <p>The story continues as secrets of the ancient domain unfold. Shadows intertwine with destiny, marking the rise of an unstoppable force.</p>
-            </div>`;
-        }
+        if (!chapterId) return null;
 
         let atHomeRes = null;
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -333,9 +299,16 @@ async function getMangaDexChapterImages(chapterId) {
 
         if (!pageList || pageList.length === 0) return '<p style="text-align:center;padding:2rem;">No pages found for this chapter.</p>';
 
-        return pageList.map(filename =>
-            `<img src="${baseUrl}/data/${hash}/${filename}" loading="lazy" style="width:100%;max-width:800px;margin:0 auto;display:block;padding:0;border:none;" onerror="this.onerror=null;this.src='${baseUrl}/data-saver/${hash}/${filename}';" />`
-        ).join('');
+        return pageList.map((filename, i) => {
+            const rawUrl = `${baseUrl}/data/${hash}/${filename}`;
+            const proxiedUrl = `/api/proxy/image?url=${encodeURIComponent(rawUrl)}`;
+            return `<img src="${proxiedUrl}" 
+                 loading="lazy" 
+                 decoding="async"
+                 referrerpolicy="no-referrer"
+                 style="width:100%;max-width:900px;margin:0 auto;display:block;padding:0;border:none;min-height:500px;background:#05070a;object-fit:contain;" 
+                 onerror="this.onerror=null;this.src='/api/proxy/image?url=${encodeURIComponent(baseUrl + '/data-saver/' + hash + '/' + filename)}';" />`;
+        }).join('');
 
     } catch (err) {
         console.error(`[MANGADEX] Chapter image error for ${chapterId}:`, err.message);
@@ -374,16 +347,11 @@ async function getChapterImagesCached(chapterId) {
 }
 
 // ─── STRICT TITLE MATCH SCORER ────────────────────────────────────────────────
-// Calculates token overlap & similarity between searched query and manga title
-function scoreTitleMatch(query, candidateTitle, altTitles = []) {
+// Calculates Dice coefficient similarity between searched query and manga title
+function scoreTitleMatch(query, candidateTitle, altTitles) {
     if (!query || !candidateTitle) return 0;
     const clean = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     const qClean = clean(query);
-    const cClean = clean(candidateTitle);
-
-    if (qClean === cClean) return 1.0;
-    if (cClean.includes(qClean) || qClean.includes(cClean)) return 0.9;
-
     const stopWords = new Set(['the', 'a', 'an', 'of', 'in', 'at', 'to', 'for', 'and', 'or', 'is', 'its', 'my', 'i', 'im', 'am']);
     const qTokens = qClean.split(' ').filter(t => t.length > 1 && !stopWords.has(t));
     if (qTokens.length === 0) return 0;
@@ -393,17 +361,21 @@ function scoreTitleMatch(query, candidateTitle, altTitles = []) {
 
     for (const title of allCandidateTitles) {
         const tClean = clean(title);
+        if (qClean === tClean) return 1.0;
+
         const cTokens = tClean.split(' ').filter(t => t.length > 1 && !stopWords.has(t));
         if (cTokens.length === 0) continue;
 
         let matched = 0;
         for (const token of qTokens) {
-            if (cTokens.includes(token) || cTokens.some(ct => ct.startsWith(token) || token.startsWith(ct))) {
+            if (cTokens.includes(token) || cTokens.some(ct => ct === token)) {
                 matched++;
             }
         }
-        const score = matched / qTokens.length;
-        if (score > highestScore) highestScore = score;
+
+        // Dice coefficient: 2 * intersection / (|A| + |B|)
+        const dice = (2 * matched) / (qTokens.length + cTokens.length);
+        if (dice > highestScore) highestScore = dice;
     }
 
     return highestScore;
@@ -411,171 +383,161 @@ function scoreTitleMatch(query, candidateTitle, altTitles = []) {
 
 // ── Full End-to-End Chapter Panel Extractor ────────────────────────────────────
 // Given any manga/manhwa title, searches MangaDex, finds all chapters, and builds
-// real story panels with high-res images for the reader up to targetMaxChapter!
+// real story panels with high-res images for the reader!
 async function fetchRealMangaChapters(titleQuery, targetMaxChapter) {
     try {
         if (!titleQuery || titleQuery.length < 2) return null;
         const cleanQ = titleQuery.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
-        // 1. Search MangaDex with exact query and common alias variants
+        // 1. Search MangaDex with alias mapping first, then exact query variants
         const queries = [
+            POPULAR_MANGA_MAP[cleanQ],
             cleanQ,
             cleanQ.replace(/^(the|a|an)\s+/i, ''),
-            cleanQ.replace(/\bmanhwa\b|\bmanga\b/gi, '').trim(),
-            POPULAR_MANGA_MAP[cleanQ]
+            cleanQ.replace(/\bmanhwa\b|\bmanga\b/gi, '').trim()
         ].filter(q => q && q.length > 2);
 
-        let bestManga = null;
-        let highestScore = 0;
-
-        for (const q of [...new Set(queries)]) {
+        const candidateList = [];
+        for (const q of queries) {
             try {
-                const searchRes = await axios.get(`${API}/manga`, {
-                    params: { title: q, limit: 10 },
+                const res = await axios.get(`${API}/manga`, {
+                    params: {
+                        title: q,
+                        'order[relevance]': 'desc',
+                        limit: 10
+                    },
                     headers: UA,
-                    timeout: 7000
+                    timeout: 3000
                 });
-                const mangaList = searchRes.data.data || [];
 
+                const mangaList = res.data.data || [];
                 for (const manga of mangaList) {
                     const titleEn = manga.attributes.title?.en || Object.values(manga.attributes.title || {})[0] || '';
                     const altTitles = (manga.attributes.altTitles || []).map(t => Object.values(t)[0]).filter(Boolean);
                     const score = scoreTitleMatch(cleanQ, titleEn, altTitles);
 
-                    if (score > highestScore) {
-                        highestScore = score;
-                        bestManga = manga;
+                    if (score >= 0.85) {
+                        candidateList.push({ manga, score, titleEn });
                     }
                 }
-                if (highestScore >= 0.8) break;
             } catch(e) {}
         }
 
-        // STRICT MATCH GUARD: If match score is below 45%, DO NOT serve wrong manga!
-        if (!bestManga || highestScore < 0.45) {
-            console.log(`[MANGADEX] No high-confidence match for "${titleQuery}" (Highest score: ${highestScore.toFixed(2)})`);
+        candidateList.sort((a, b) => b.score - a.score);
+
+        if (candidateList.length === 0) {
+            console.log(`[MANGADEX] No match found for "${titleQuery}"`);
             return null;
         }
 
-        const mangaId = bestManga.id;
-        const officialTitle = bestManga.attributes.title.en || Object.values(bestManga.attributes.title)[0] || titleQuery;
-        console.log(`[MANGADEX] Matched "${titleQuery}" -> "${officialTitle}" (Confidence: ${Math.round(highestScore * 100)}%)`);
+        let chosenManga = null;
+        let chosenByNum = null;
+        let officialTitle = titleQuery;
 
-        // 2. Fetch all chapters in the feed
-        const feedRes = await axios.get(`${API}/manga/${mangaId}/feed`, {
-            params: {
-                'order[chapter]': 'asc',
-                limit: 150
-            },
-            headers: UA,
-            timeout: 8000
-        });
+        for (const item of candidateList) {
+            const manga = item.manga;
+            const mangaId = manga.id;
+            const titleEn = item.titleEn;
 
-        const items = feedRes.data.data || [];
-        if (items.length === 0) return null;
+            try {
+                const feedRes = await axios.get(`${API}/manga/${mangaId}/feed`, {
+                    params: {
+                        'order[chapter]': 'asc',
+                        limit: 250
+                    },
+                    headers: UA,
+                    timeout: 4000
+                });
 
-        // Group by chapter number (keep the one with real pages and English)
-        const byNum = new Map();
-        for (const item of items) {
-            const chNum = parseFloat(item.attributes.chapter);
-            const num = isNaN(chNum) ? 0 : chNum;
-            const pages = item.attributes.pages || 0;
-            const isEn = item.attributes.translatedLanguage === 'en';
-            const isExternal = !!item.attributes.externalUrl;
+                const items = feedRes.data.data || [];
+                const byNum = new Map();
 
-            if (pages > 0 && !isExternal) {
-                if (!byNum.has(num)) {
-                    byNum.set(num, item);
-                } else {
-                    const existing = byNum.get(num);
-                    const existingIsEn = existing.attributes.translatedLanguage === 'en';
-                    if (isEn && !existingIsEn) {
-                        byNum.set(num, item);
-                    } else if (pages > (existing.attributes.pages || 0)) {
-                        byNum.set(num, item);
+                for (const ch of items) {
+                    const num = parseFloat(ch.attributes.chapter);
+                    const pages = ch.attributes.pages || 0;
+                    const isExternal = !!ch.attributes.externalUrl;
+                    
+                    if (!isNaN(num) && pages > 0 && !isExternal) {
+                        if (!byNum.has(num) || (ch.attributes.translatedLanguage === 'en' && byNum.get(num).attributes.translatedLanguage !== 'en')) {
+                            byNum.set(num, ch);
+                        }
                     }
                 }
-            }
+
+                if (byNum.size > 0) {
+                    chosenManga = manga;
+                    chosenByNum = byNum;
+                    officialTitle = titleEn || titleQuery;
+                    console.log(`[MANGADEX] Found ${byNum.size} real scanlation chapters in "${officialTitle}" for "${titleQuery}"`);
+                    break;
+                }
+            } catch(e) {}
         }
 
-        const scannedMax = byNum.size > 0 ? Math.max(...[...byNum.keys()]) : 0;
-        const totalMaxCh = Math.max(scannedMax, targetMaxChapter || 0, 98);
+        if (!chosenByNum || chosenByNum.size === 0) {
+            console.log(`[MANGADEX] No chapters with images found in candidates for "${titleQuery}"`);
+            return null;
+        }
 
-        console.log(`[MANGADEX] Found ${byNum.size} real chapters for "${officialTitle}", building exact ${totalMaxCh} chapters (1..${totalMaxCh})`);
+        const byNum = chosenByNum;
+        const sortedNums = [...byNum.keys()].filter(n => n > 0).sort((a, b) => a - b);
+        if (sortedNums.length === 0) return null;
 
-        // 3. Build chapter list for reader from Chapter 1 to totalMaxCh (Exactly 98 chapters!)
+        console.log(`[MANGADEX] Found ${sortedNums.length} real scanlation chapters for "${officialTitle}"`);
+
+        // 3. Build chapter list with real scanlation pages
         const chapters = [];
-        const startCh = 1;
 
-        // Pre-fetch Chapter 1 and 2 panels right now so reading starts instantly
-        for (let num = startCh; num <= totalMaxCh; num++) {
-            const chItem = byNum.get(num) || byNum.get(parseFloat(num));
+        for (const num of sortedNums) {
+            const chItem = byNum.get(num);
+            const chapterId = chItem.id;
             let panelHtml = '';
 
-            if (chItem) {
-                const chapterId = chItem.id;
-                
-                // For the first 3 chapters, pre-fetch images immediately
-                if (num <= 3) {
-                    const pageUrls = await getChapterImagesCached(chapterId);
-                    if (pageUrls && pageUrls.length > 0) {
-                        const pages = pageUrls.map((url, idx) =>
-                            `<div style="text-align:center;margin:0;padding:0;line-height:0;background:#000;width:100%;">` +
-                            `<img src="${url}" alt="${officialTitle} Ch${num} Page${idx+1}" loading="lazy" decoding="async" ` +
-                            `style="width:100%;max-width:900px;display:block;margin:0 auto;height:auto;">` +
-                            `</div>`
-                        ).join('');
+            // For the first chapter, pre-fetch image URLs immediately so reading starts with 0 delay
+            if (num === sortedNums[0] || num === 1) {
+                const pageUrls = await getChapterImagesCached(chapterId);
+                if (pageUrls && pageUrls.length > 0) {
+                    const pages = pageUrls.map((url, idx) => {
+                        const proxied = `/api/proxy/image?url=${encodeURIComponent(url)}`;
+                        return `<div style="text-align:center;margin:0;padding:0;line-height:0;background:#05070a;width:100%;">` +
+                            `<img src="${proxied}" alt="${officialTitle} Ch${num} Page${idx+1}" loading="eager" decoding="async" referrerpolicy="no-referrer" ` +
+                            `style="width:100%;max-width:900px;display:block;margin:0 auto;height:auto;min-height:500px;background:#05070a;object-fit:contain;">` +
+                            `</div>`;
+                    }).join('');
 
-                        panelHtml = `
-                            <div style="background:#000;min-height:100vh;padding:0;margin:0 0 4rem 0;">
-                                <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;position:sticky;top:0;z-index:30;box-shadow:0 4px 25px rgba(0,0,0,0.9);">
-                                    <div style="display:inline-block;background:#0284c7;color:#fff;padding:4px 14px;border-radius:12px;font-size:0.75rem;font-weight:800;letter-spacing:0.5px;margin-bottom:0.4rem;">
-                                        CHAPTER ${num} OF ${totalMaxCh}
-                                    </div>
-                                    <h2 style="color:#f8fafc;font-size:1.4rem;margin:0.4rem 0 0 0;font-weight:800;">${officialTitle}</h2>
-                                    <span style="color:#64748b;font-size:0.8rem;">${pageUrls.length} Pages</span>
-                                </div>
-                                <div style="display:flex;flex-direction:column;align-items:center;background:#000;gap:0;padding:0;margin:0;width:100%;">
-                                    ${pages}
-                                </div>
-                            </div>`;
-                    }
-                }
-
-                // If not pre-fetched or beyond Ch 3, use the lazy trigger
-                if (!panelHtml) {
                     panelHtml = `
-                        <div class="lazy-manga-trigger" data-chapter-id="md-ch-${num}-${chapterId}" style="background:#000;min-height:70vh;padding:0;margin:0 0 4rem 0;cursor:pointer;">
-                            <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;">
+                        <div style="background:#000;min-height:100vh;padding:0;margin:0 0 4rem 0;">
+                            <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;position:sticky;top:0;z-index:30;box-shadow:0 4px 25px rgba(0,0,0,0.9);">
                                 <div style="display:inline-block;background:#0284c7;color:#fff;padding:4px 14px;border-radius:12px;font-size:0.75rem;font-weight:800;letter-spacing:0.5px;margin-bottom:0.4rem;">
-                                    CHAPTER ${num} OF ${totalMaxCh}
+                                    CHAPTER ${num} OF ${sortedNums.length}
                                 </div>
                                 <h2 style="color:#f8fafc;font-size:1.4rem;margin:0.4rem 0 0 0;font-weight:800;">${officialTitle}</h2>
-                                <span style="color:#38bdf8;font-size:0.85rem;font-weight:600;">⚡ Click or scroll to load Chapter ${num} panels</span>
+                                <span style="color:#64748b;font-size:0.8rem;">${pageUrls.length} Pages</span>
+                            </div>
+                            <div style="display:flex;flex-direction:column;align-items:center;background:#000;gap:0;padding:0;margin:0;width:100%;">
+                                ${pages}
                             </div>
                         </div>`;
                 }
-            } else {
-                // Chapters beyond initial scanlation feed (e.g. latest update chapters 49..98)
+            }
+
+            // For later chapters, use automatic lazy image loader
+            if (!panelHtml) {
                 panelHtml = `
-                    <div style="background:#000;min-height:100vh;padding:0;margin:0 0 4rem 0;">
-                        <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;position:sticky;top:0;z-index:30;box-shadow:0 4px 25px rgba(0,0,0,0.9);">
+                    <div class="lazy-manga-trigger" data-chapter-id="md-ch-${num}-${chapterId}" style="background:#000;min-height:70vh;padding:0;margin:0 0 4rem 0;cursor:pointer;">
+                        <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;">
                             <div style="display:inline-block;background:#0284c7;color:#fff;padding:4px 14px;border-radius:12px;font-size:0.75rem;font-weight:800;letter-spacing:0.5px;margin-bottom:0.4rem;">
-                                CHAPTER ${num} OF ${totalMaxCh}
+                                CHAPTER ${num} OF ${sortedNums.length}
                             </div>
                             <h2 style="color:#f8fafc;font-size:1.4rem;margin:0.4rem 0 0 0;font-weight:800;">${officialTitle}</h2>
-                            <span style="color:#10b981;font-size:0.8rem;font-weight:600;">✨ Latest Uploaded Chapter ${num}</span>
-                        </div>
-                        <div style="max-width:850px;margin:3rem auto;padding:2.5rem;background:#0d1117;border:1px solid #21262d;border-radius:12px;color:#e6edf3;text-align:center;">
-                            <h3 style="color:#58a6ff;margin-bottom:1rem;">Chapter ${num}</h3>
-                            <p style="color:#8b949e;line-height:1.8;">This chapter is part of the latest <strong>${totalMaxCh} Chapters</strong> release on Telegram.</p>
+                            <span style="color:#38bdf8;font-size:0.85rem;font-weight:600;">⚡ Click or scroll to load Chapter ${num} panels</span>
                         </div>
                     </div>`;
             }
 
             chapters.push({
                 title: `Chapter ${num}`,
-                chapterId: chItem ? `md-ch-${num}-${chItem.id}` : `md-ch-${num}-${mangaId}`,
+                chapterId: `md-ch-${num}-${chapterId}`,
                 html: panelHtml
             });
         }

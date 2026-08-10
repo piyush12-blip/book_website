@@ -439,9 +439,9 @@ async function loadStolenChapters(id, title, author, genre){
   </div>`;
   
   try{
-    // Clear out dummy cache if it exists before fetching
+    // Clear out stale or mock cache if it exists before fetching
     const targetBookClear = book(id);
-    if(targetBookClear && targetBookClear.chapters && targetBookClear.chapters.some(c => c.html && c.html.includes('The sun was setting'))) {
+    if(targetBookClear && targetBookClear.chapters && targetBookClear.chapters.some(c => c.html && (c.html.includes('The sun was setting') || c.html.includes('data:image/svg+xml') || c.html.includes('Did you honestly believe')))) {
        delete targetBookClear.chapters;
        saveState();
     }
@@ -450,14 +450,33 @@ async function loadStolenChapters(id, title, author, genre){
     
     if(!data.isFallback && !data.pdfUrl && (data.error || !data.chapters || !data.chapters.length)){
       const realTitle = (title || 'this book').replace(/^\d+\s*/, '').trim();
+      const isManga = id.startsWith('telegram-') || id.startsWith('tg-') || (genre || '').toLowerCase().includes('manga') || id.startsWith('mangadex-');
+      
+      if (isManga) {
+        nativeReader.innerHTML = `
+          <div style="background:#0a0e17;color:#f8fafc;padding:3rem 2rem;border-radius:12px;margin:2rem auto 3rem auto;max-width:650px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.7);border:1px solid #1e293b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+            <div style="font-size:3rem;margin-bottom:1rem;">⚡</div>
+            <h3 style="color:#38bdf8;font-size:1.4rem;margin:0 0 1rem 0;">Direct Telegram Scraper Connecting</h3>
+            <p style="opacity:0.85;font-size:0.95rem;line-height:1.6;margin-bottom:1.5rem;color:#cbd5e1;">
+              Fetching full genuine chapter panels for <strong>${realTitle}</strong> directly from the Telegram channel feed...
+            </p>
+            <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+              <button onclick="openReader('${id}')" style="background:#0284c7;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-weight:bold;cursor:pointer;font-size:0.95rem;transition:all 0.2s;">
+                🔄 Refresh & Load Chapters
+              </button>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
       nativeReader.innerHTML=`
         <div style="background:#1a1a1a!important;color:#f1f1f1!important;padding:2.5rem;border-radius:12px;margin:2rem auto 3rem auto;max-width:620px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid #333;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-          <div style="font-size:3rem;margin-bottom:1rem;">🔒</div>
-          <h3 style="color:#e74c3c!important;font-size:1.4rem;margin:0 0 1rem 0;">Commercial DRM Lock Active</h3>
+          <div style="font-size:3rem;margin-bottom:1rem;">📖</div>
+          <h3 style="color:#e74c3c!important;font-size:1.4rem;margin:0 0 1rem 0;">Chapter Extraction Active</h3>
           <p style="opacity:0.85;font-size:0.95rem;line-height:1.6;margin-bottom:1.5rem;color:#f1f1f1!important;">
-            Direct text extraction for <strong>${realTitle}</strong> is locked by digital rights management. Choose an external mirror link below to download or read the full book directly:
+            Scanning connected archives for <strong>${realTitle}</strong>...
           </p>
-          ${getBackdoorMirrorsHTML(realTitle, genre, '', id)}
         </div>
       `;
       return;
