@@ -326,6 +326,33 @@ async function searchTelegramIndex(query) {
     if (!query || query.trim().length < 2) return [];
     const cleanQ = query.trim();
 
+    let hasStrongMatch = false;
+    for (const entry of TELEGRAM_INDEX.values()) {
+        if (calculateMatchScore(cleanQ, entry.title) >= 85) {
+            hasStrongMatch = true;
+            break;
+        }
+    }
+
+    if (!hasStrongMatch) {
+        console.log(`[TELEGRAM INDEX] No strong local match for "${cleanQ}", performing live search...`);
+        const channels = getPriorityChannels();
+        await Promise.all(channels.map(async (ch) => {
+            try {
+                const url = `https://t.me/s/${ch}?q=${encodeURIComponent(cleanQ)}`;
+                const res = await axios.get(url, AXIOS_OPTS);
+                const html = res.data || '';
+                const blockRe = /<div class="tgme_widget_message[^"]*"[^>]*data-post="([^"]+)"[\s\S]*?(?=<div class="tgme_widget_message[^"]*"[^>]*data-post="|$)/gi;
+                const blocks = [...html.matchAll(blockRe)];
+                if (blocks.length > 0) {
+                    parseBlocksIntoIndex(blocks, ch);
+                }
+            } catch (err) {
+                // ignore timeout or 404
+            }
+        }));
+    }
+
     const results = [];
     for (const entry of TELEGRAM_INDEX.values()) {
         const score = calculateMatchScore(cleanQ, entry.title);
