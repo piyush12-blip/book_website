@@ -63,16 +63,18 @@ function normalizeKey(str) {
 function extractAllChapterNumbers(text) {
     if (!text) return [];
     const nums = [];
-    const re = /(?:cʜᴀᴘᴛᴇʀ|chapter|ch|\[c|\[ch\-?)[\s]*(\d+)/gi;
+    const re = /(?:cʜᴀᴘᴛᴇʀ|chapter|ch|\[c|\[ch\-?|\bc\b)[\s]*\.?\:?\-?\s*(\d+)/gi;
     let match;
     while ((match = re.exec(text)) !== null) {
         nums.push(parseInt(match[1], 10));
     }
-    const rangeMatch = text.match(/(\d+)\s*&\s*(\d+)/);
+    const rangeMatch = text.match(/(\d+)\s*(?:&|to|-|~|—)\s*(\d+)/i);
     if (rangeMatch) {
         nums.push(parseInt(rangeMatch[1], 10));
         nums.push(parseInt(rangeMatch[2], 10));
     }
+    const allNums = [...text.matchAll(/\b(\d+)\b/g)].map(m => parseInt(m[1], 10)).filter(n => n > 0 && n < 2000);
+    if (allNums.length > 0) nums.push(...allNums);
     return [...new Set(nums)];
 }
 
@@ -144,19 +146,19 @@ function extractTitleFromPost(plainText) {
     const updateMatch = plainText.match(/Updates\s+([\s\S]+?)\s*➥/i);
     if (updateMatch) {
         let t = cleanMangaTitle(updateMatch[1]);
-        if (t && t.length >= 2 && t.length <= 70) return t;
+        if (t && t.length >= 1 && t.length <= 150) return t;
     }
 
     const arrowMatch = plainText.match(/^([\s\S]+?)\s*➥/i);
     if (arrowMatch) {
         let t = cleanMangaTitle(arrowMatch[1]);
-        if (t && t.length >= 2 && t.length <= 70) return t;
+        if (t && t.length >= 1 && t.length <= 150) return t;
     }
 
     const docMatch = plainText.match(/(?:\[ch[\-\s]?\d+\]|\[c\d+\]|⇉\[c\d+\])\s*[\u22a0\s]*([\s\S]+?)(?:\[|\.pdf|\.cbz|$)/i);
     if (docMatch) {
         let t = cleanMangaTitle(docMatch[1]);
-        if (t && t.length >= 2 && t.length <= 70) return t;
+        if (t && t.length >= 1 && t.length <= 150) return t;
     }
 
     return null;
@@ -305,8 +307,8 @@ function calculateMatchScore(query, title) {
     if (tNorm.includes(qNorm) || qNorm.includes(tNorm)) return 90;
 
     const stopWords = new Set(['the','a','an','of','in','at','to','for','and','or','is','its','by','with']);
-    const qWords = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
-    const tWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
+    const qWords = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 0 && !stopWords.has(w));
+    const tWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 0 && !stopWords.has(w));
 
     if (qWords.length === 0) return 0;
 
@@ -318,8 +320,8 @@ function calculateMatchScore(query, title) {
     }
 
     const ratio = matchCount / qWords.length;
-    // Strict 70% threshold — prevents Title A from matching Title B
-    return ratio >= 0.7 ? Math.round(ratio * 90) : 0;
+    // Lower threshold to 50% so partial title searches match correctly
+    return ratio >= 0.5 ? Math.round(ratio * 90) : 0;
 }
 
 async function searchTelegramIndex(query) {

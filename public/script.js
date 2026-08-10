@@ -291,13 +291,24 @@ function renderDetail(){
     : `<div class="chapter-picker">
          <a data-action="read" data-book="${b.id}">
            <strong>⚡ Click to Load & Read Book</strong>
-           <span>Auto-fetches real text from global archives</span>
+           <span>Auto-fetches real chapters from global archives</span>
          </a>
        </div>`;
 
   const isMangaOrNovel = b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.genre?.toLowerCase().includes('manga') || b.genre?.toLowerCase().includes('novel');
-  const countLabel = isMangaOrNovel ? `${chapters.length || b.pages || 284} chapters` : `${b.pages} pages`;
-  g.innerHTML=`<aside class="detail-cover-wrap">${coverHTML(b,'detail-cover')}<button class="warm-button block" data-action="read" data-book="${b.id}">Start Reading</button></aside><article class="detail-copy"><p class="kicker">${formatBadge}</p><h2>${b.title}</h2><p class="author-line">${b.author} · ${formatBadge} · ${countLabel}</p><div class="detail-stars">${stars(b.rating)} <small>${b.rating}.0 · Reader Recommended</small></div><div class="detail-actions">${actions(b.id)}<button class="action-btn" data-action="read" data-book="${b.id}">Read now</button></div><p class="lead">${b.synopsis}</p>${chapterPickerHTML}<div class="synopsis-box"><h3>Synopsis</h3><p>${b.synopsis}</p></div><dl class="meta-list"><div><dt>Progress</dt><dd>${p}%</dd></div><div><dt>Notes</dt><dd>${(state.notes[b.id]||[]).length}</dd></div><div><dt>Status</dt><dd>${p>=100?'Finished':p>0?'In progress':'Unread'}</dd></div></dl></article>`;
+  const countLabel = isMangaOrNovel ? `${chapters.length || b.pages || 50} chapters` : `${b.pages} pages`;
+
+  // Clean title: separate dual-names with || or // into primary title + subtitle
+  const rawTitle = b.title || 'Untitled';
+  const parts = rawTitle.split(/\|\||\/\/|::/).map(s => s.trim()).filter(Boolean);
+  const mainTitle = parts[0] || rawTitle;
+  const altTitle = parts.length > 1 ? parts.slice(1).join(' · ') : '';
+
+  const titleHTML = altTitle 
+    ? `<h2 style="margin:0 0 4px;font-size:clamp(1.8rem, 3.8vw, 2.8rem);line-height:1.15;word-break:break-word;">${mainTitle}</h2><p style="margin:0 0 16px;font-size:1rem;color:#777;font-style:italic;font-weight:600;">Also known as: ${altTitle}</p>`
+    : `<h2 style="margin:0 0 14px;font-size:clamp(1.8rem, 3.8vw, 2.8rem);line-height:1.15;word-break:break-word;">${mainTitle}</h2>`;
+
+  g.innerHTML=`<aside class="detail-cover-wrap">${coverHTML(b,'detail-cover')}<button class="warm-button block" data-action="read" data-book="${b.id}">Start Reading</button></aside><article class="detail-copy"><p class="kicker">${formatBadge}</p>${titleHTML}<p class="author-line">${b.author} · ${formatBadge} · ${countLabel}</p><div class="detail-stars">${stars(b.rating)} <small>${b.rating}.0 · Reader Recommended</small></div><div class="detail-actions">${actions(b.id)}<button class="action-btn" data-action="read" data-book="${b.id}">Read now</button></div>${chapterPickerHTML}<div class="synopsis-box"><h3>Synopsis</h3><p>${b.synopsis || 'No synopsis available.'}</p></div><dl class="meta-list"><div><dt>Progress</dt><dd>${p}%</dd></div><div><dt>Notes</dt><dd>${(state.notes[b.id]||[]).length}</dd></div><div><dt>Status</dt><dd>${p>=100?'Finished':p>0?'In progress':'Unread'}</dd></div></dl></article>`;
 }
 function renderReader(){
   const g=document.querySelector('#reader .reader-grid');

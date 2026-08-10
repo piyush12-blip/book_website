@@ -185,7 +185,7 @@ async function getMasterManhwaChapters(titleQuery) {
     }
 
     const { source, chapters } = result;
-    const sorted = chapters.slice(0, 100); // Up to 100 chapters
+    const sorted = chapters; // Return ALL full chapters (no 100 chapter cut-off)
 
     // Pre-fetch Chapter 1 images so reader opens instantly with 0 delay!
     const firstCh = sorted[0];

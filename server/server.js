@@ -616,6 +616,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
 // ── SINGLE CHAPTER PANEL LOADER — UNIVERSAL (Webtoon + MangaDex + Local + Telegram) ────
 app.get('/api/manga/chapter/:chapterId', async (req, res) => {
     try {
+        const chapterId = req.params.chapterId || '';
         // 0. Master Manhwa Live URL Handler (manhwa-live-{encodedUrl})
         if (chapterId.startsWith('manhwa-live-')) {
             const rawUrl = decodeURIComponent(chapterId.replace('manhwa-live-', ''));
