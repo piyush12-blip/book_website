@@ -156,43 +156,10 @@ async function getMangaDexFeed(mangaId) {
         let validItems = items.filter(ch => (ch.attributes.pages || 0) > 0);
         let fallbackLang = null;
 
-        // 2. Fallback: if no English chapters exist, fetch all available languages
+        // 2. Fallback: if no English chapters exist, return empty
         if (validItems.length === 0) {
-            console.log(`[MANGADEX] No English chapters for ${mangaId}. Attempting language fallback...`);
-            feedRes = await axios.get(`${API}/manga/${mangaId}/feed`, {
-                params: {
-                    'order[chapter]': 'asc',
-                    limit: 500
-                },
-                headers: UA
-            });
-
-            items = feedRes.data.data;
-            validItems = items.filter(ch => (ch.attributes.pages || 0) > 0);
-
-            if (validItems.length > 0) {
-                const langCounts = {};
-                validItems.forEach(ch => {
-                    const l = ch.attributes.translatedLanguage;
-                    langCounts[l] = (langCounts[l] || 0) + 1;
-                });
-
-                const topLangCode = Object.keys(langCounts).sort((a, b) => langCounts[b] - langCounts[a])[0];
-                fallbackLang = LANG_NAMES[topLangCode] || topLangCode.toUpperCase();
-                validItems = validItems.filter(ch => ch.attributes.translatedLanguage === topLangCode);
-                console.log(`[MANGADEX] Falling back to ${fallbackLang} (${validItems.length} chapters)`);
-            }
-        }
-
-        if (validItems.length === 0) {
-            console.warn(`[MANGADEX] No direct scanlation chapters for ${mangaId}, generating complete chapter index...`);
-            const generatedChapters = Array.from({ length: 251 }, (_, idx) => ({
-                chapterId: `gen-${mangaId}-${idx}`,
-                num: idx,
-                title: `Chapter ${idx}`,
-                pagesCount: 20
-            }));
-            return { chapters: generatedChapters, fallbackLang: null };
+            console.log(`[MANGADEX] No English chapters for ${mangaId}.`);
+            return { chapters: [], fallbackLang: null };
         }
 
         const mapped = validItems.map(ch => {
@@ -442,6 +409,7 @@ async function fetchRealMangaChapters(titleQuery, targetMaxChapter) {
             try {
                 const feedRes = await axios.get(`${API}/manga/${mangaId}/feed`, {
                     params: {
+                        'translatedLanguage[]': 'en',
                         'order[chapter]': 'asc',
                         limit: 250
                     },
@@ -458,7 +426,7 @@ async function fetchRealMangaChapters(titleQuery, targetMaxChapter) {
                     const isExternal = !!ch.attributes.externalUrl;
                     
                     if (!isNaN(num) && pages > 0 && !isExternal) {
-                        if (!byNum.has(num) || (ch.attributes.translatedLanguage === 'en' && byNum.get(num).attributes.translatedLanguage !== 'en')) {
+                        if (!byNum.has(num)) {
                             byNum.set(num, ch);
                         }
                     }

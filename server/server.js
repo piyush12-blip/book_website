@@ -4,7 +4,7 @@ const path    = require('path');
 const axios   = require('axios');
 const fs      = require('fs');
 const { findEpubUrl, extractChaptersFromUrl, extractChaptersFromFile } = require('./epubParser');
-// MangaDex REMOVED — Telegram is the only manga source
+const { searchMangaDex } = require('./mangadex');
 const { searchRoyalRoad, getRoyalRoadChapters } = require('./royalroad');
 const { 
     indexTelegramChannels, 
@@ -80,14 +80,15 @@ app.get('/api/books/search', async (req, res) => {
         const tgIndexed = await searchTelegramIndex(cleanQuery).catch(() => []);
         const tgIndexedPrimary = primarySearch !== cleanQuery ? await searchTelegramIndex(primarySearch).catch(() => []) : [];
 
-        // 2. Fetch from iTunes, RoyalRoad, Google Books, and Telegram in parallel
-        const [itunesResp, webnovelResults, telegramRaw, googleBooksResp] = await Promise.all([
+        // 2. Fetch from iTunes, RoyalRoad, Google Books, Telegram, and MangaDex in parallel
+        const [itunesResp, webnovelResults, telegramRaw, googleBooksResp, mangadexRaw] = await Promise.all([
             axios.get(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanItunesQuery)}&entity=ebook&limit=25`)
                  .catch(() => ({ data: { results: [] } })),
             searchRoyalRoad(cleanQuery).catch(() => []),
             searchPrioritizedTelegram(cleanQuery).catch(() => []),
             axios.get(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(primarySearch)}&maxResults=15`)
-                 .catch(() => ({ data: { items: [] } }))
+                 .catch(() => ({ data: { items: [] } })),
+            searchMangaDex(cleanQuery).catch(() => [])
         ]);
 
         const COLORS = ['navy','teal','burgundy','midnight','sage','rust','ochre','brown','grey','ivory'];
@@ -249,6 +250,9 @@ app.get('/api/books/search', async (req, res) => {
 
         // 3. RoyalRoad → Priority 60
         webnovelResults.forEach(w => addToMap(w, 60));
+
+        // 3.5 MangaDex → Priority 90 (Below Telegram!)
+        (mangadexRaw || []).forEach(m => addToMap(m, 90));
 
         // 4. Google Books → Priority 50
         googleBooks.forEach(g => addToMap(g, 50));
@@ -424,8 +428,9 @@ app.get('/api/books/:id/chapters', async (req, res) => {
         .replace(/\s+/g, ' ')
         .trim() || rawQuery || 'Book';
     const cacheKey = `${id}:${cleanQuery}`;
-    // Completely clear stale RAM cache to ensure fresh direct reading logic is always served!
-    MEMORY_CACHE.chapters.delete(cacheKey);
+    if (MEMORY_CACHE.chapters.has(cacheKey)) {
+        return res.json(MEMORY_CACHE.chapters.get(cacheKey));
+    }
 
     const getUniversalChapters = require('./universalNovelEngine');
     try {
@@ -434,6 +439,21 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                         /manga|manhwa|manhua|webtoon|comic|spearman|resurrection|mount hua|solo leveling|jujutsu|demon slayer|chainsaw|blue lock|one piece|naruto|bleach|hero|leveling|assassin|swordmaster/i.test(cleanQuery);
 
         if (isManga) {
+            // --- STRICT ROUTING BASED ON ID ---
+            // If the user clicked a MangaDex search result, we ONLY check MangaDex!
+            if (id.startsWith('mangadex-')) {
+                const { fetchRealMangaChapters } = require('./mangadex');
+                const realStoryChapters = await fetchRealMangaChapters(cleanQuery, 98).catch(() => null);
+                if (realStoryChapters && realStoryChapters.length > 0) {
+                    console.log(`[CHAPTERS] Real Story Engine served ${realStoryChapters.length} genuine chapters for "${cleanQuery}" (MangaDex Strict)`);
+                    const payload = { chapters: realStoryChapters, type: 'manga', source: 'RealStoryPanelEngine' };
+                    MEMORY_CACHE.chapters.set(cacheKey, payload);
+                    return res.json(payload);
+                }
+                console.log(`[CHAPTERS] MangaDex strict route found no chapters for "${cleanQuery}".`);
+                return res.json({ chapters: [], type: 'manga', source: 'NoScansFound', isFallback: false });
+            }
+
             // ── GOD-LEVEL ASSASSIN: Only match exact series queries (never random titles with words 'god' or 'assassin')
             const qLow = cleanQuery.toLowerCase();
             const isExactAssassin = (qLow.includes('god') && qLow.includes('assassin')) ||
@@ -448,6 +468,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             }
 
             // 1. Check RAM Telegram index & per-title Telegram channels for instant chapter list (Top Priority)
+            const { getTelegramIndexChapters } = require('./telegramIndex');
             const indexedChapters = await getTelegramIndexChapters(cleanQuery).catch(() => null);
             if (indexedChapters && indexedChapters.length > 0) {
                 console.log(`[CHAPTERS] Served ${indexedChapters.length} exact chapters from Telegram RAM index for "${cleanQuery}"`);
@@ -456,7 +477,27 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 return res.json(payload);
             }
 
-            // 2. Live Telegram MTProto / Scraper fallback
+            // 2. ── MASTER MANHWA/MANGA ENGINE (MangaKatana, Mgeko, Thunderscans) ──
+            const { getMasterManhwaChapters } = require('./manhwaMasterEngine');
+            const masterManhwaChapters = await getMasterManhwaChapters(cleanQuery).catch(() => null);
+            if (masterManhwaChapters && masterManhwaChapters.length > 0) {
+                console.log(`[CHAPTERS] Master Manhwa Engine served ${masterManhwaChapters.length} genuine visual chapters for "${cleanQuery}"`);
+                const payload = { chapters: masterManhwaChapters, type: 'manga', source: 'MasterManhwaEngine' };
+                MEMORY_CACHE.chapters.set(cacheKey, payload);
+                return res.json(payload);
+            }
+
+            // 3. ── REAL MANGA/MANHWA STORY PANELS ENGINE (MangaDex Scanlations) ──
+            const { fetchRealMangaChapters } = require('./mangadex');
+            const realStoryChapters = await fetchRealMangaChapters(cleanQuery, 98).catch(() => null);
+            if (realStoryChapters && realStoryChapters.length > 0) {
+                console.log(`[CHAPTERS] Real Story Engine served ${realStoryChapters.length} genuine chapters for "${cleanQuery}"`);
+                const payload = { chapters: realStoryChapters, type: 'manga', source: 'RealStoryPanelEngine' };
+                MEMORY_CACHE.chapters.set(cacheKey, payload);
+                return res.json(payload);
+            }
+
+            // 4. Live Telegram MTProto / Scraper fallback
             const { getTelegramChaptersAndPanels } = require('./telegram');
             const tgChapters = await getTelegramChaptersAndPanels(cleanQuery).catch(() => null);
 
@@ -474,27 +515,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 return res.json(payload);
             }
 
-            // 3. ── MASTER MANHWA/MANGA ENGINE (Live Webtoon/Telegram Hubs: Mgeko, Thunderscans, MangaDex) ──
-            const { getMasterManhwaChapters } = require('./manhwaMasterEngine');
-            const masterManhwaChapters = await getMasterManhwaChapters(cleanQuery).catch(() => null);
-            if (masterManhwaChapters && masterManhwaChapters.length > 0) {
-                console.log(`[CHAPTERS] Master Manhwa Engine served ${masterManhwaChapters.length} genuine visual chapters for "${cleanQuery}"`);
-                const payload = { chapters: masterManhwaChapters, type: 'manga', source: 'MasterManhwaEngine' };
-                MEMORY_CACHE.chapters.set(cacheKey, payload);
-                return res.json(payload);
-            }
-
-            // 4. ── REAL MANGA/MANHWA STORY PANELS ENGINE (MangaDex Scanlations) ──
-            const { fetchRealMangaChapters } = require('./mangadex');
-            const realStoryChapters = await fetchRealMangaChapters(cleanQuery, 98).catch(() => null);
-            if (realStoryChapters && realStoryChapters.length > 0) {
-                console.log(`[CHAPTERS] Real Story Engine served ${realStoryChapters.length} genuine chapters for "${cleanQuery}"`);
-                const payload = { chapters: realStoryChapters, type: 'manga', source: 'RealStoryPanelEngine' };
-                MEMORY_CACHE.chapters.set(cacheKey, payload);
-                return res.json(payload);
-            }
-
-            // 4. ── UNIVERSAL TELEGRAM PDF COMIC ENGINE (Checks all downloaded manga PDFs) ──
+            // 5. ── UNIVERSAL TELEGRAM PDF COMIC ENGINE (Checks all downloaded manga PDFs) ──
             const { buildUniversalTelegramChapters } = require('./universalTelegramPdfEngine');
             const universalPdfChapters = await buildUniversalTelegramChapters(cleanQuery).catch(() => null);
             if (universalPdfChapters && universalPdfChapters.length > 0 && universalPdfChapters.some(c => c.html && c.html.includes('<img'))) {
@@ -765,6 +786,7 @@ app.get('/api/proxy/image', async (req, res) => {
         }
 
         let referer = 'https://mangadex.org/';
+        if (targetUrl.includes('mangakatana')) referer = 'https://mangakatana.com/';
         if (targetUrl.includes('manganato') || targetUrl.includes('mkklcdn')) referer = 'https://chapmanganato.to/';
         if (targetUrl.includes('mangafreak')) referer = 'https://mangafreak.net/';
         if (targetUrl.includes('asura')) referer = 'https://asuracomic.net/';

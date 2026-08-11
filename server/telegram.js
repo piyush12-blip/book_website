@@ -184,31 +184,21 @@ function parseChapterPosts(pageHtml, channelName, titleNeedle) {
     return [...byChNum.values()].sort((a, b) => a.chapterNum - b.chapterNum);
 }
 
-// ─── SEARCH ONE CHANNEL FOR CHAPTERS ──────────────────────────────────────────
-// Tries ?q= search on the channel, parses chapter posts
 async function searchChannelForChapters(channelName, titleQuery) {
-    // Manga_Cruise_Updates uses the clean title without special chars for best ?q= hits
     const qTitle = normTitle(titleQuery).replace(/\s+/g, ' ').trim();
+    if (!qTitle || qTitle.length < 3) return [];
 
-    // Try a few query variants to maximise hits
-    const queries = [
-        qTitle,
-        qTitle.split(' ').slice(0, 3).join(' '), // first 3 words
-        qTitle.split(' ').slice(0, 2).join(' ')  // first 2 words
-    ];
-
-    for (const q of queries) {
-        if (!q || q.length < 3) continue;
-        const url  = `https://t.me/s/${channelName}?q=${encodeURIComponent(q)}`;
+    try {
+        const url = `https://t.me/s/${channelName}?q=${encodeURIComponent(qTitle)}`;
         const html = await fetchHtml(url);
-        if (!html) continue;
+        if (!html) return [];
 
         const chapters = parseChapterPosts(html, channelName, titleQuery);
         if (chapters.length > 0) {
-            console.log(`[TG] Found ${chapters.length} chapters in @${channelName} for "${titleQuery}" (query: "${q}")`);
+            console.log(`[TG] Found ${chapters.length} chapters in @${channelName} for "${titleQuery}"`);
             return chapters;
         }
-    }
+    } catch(e) {}
     return [];
 }
 

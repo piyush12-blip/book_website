@@ -6,6 +6,119 @@ puppeteer.use(StealthPlugin());
 
 const MANHWA_CACHE = new Map();
 
+function isGenuineTitleMatch(query, candidateTitle, candidateUrl) {
+    const cleanQ = (query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const cleanCand = (candidateTitle || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const cleanUrl = (candidateUrl || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+    if (cleanCand.includes(cleanQ) || cleanQ.includes(cleanCand)) return true;
+    if (cleanUrl.includes(cleanQ.replace(/\s+/g, '-'))) return true;
+
+    const stopWords = new Set(['the', 'and', 'for', 'with', 'from', 'of', 'in', 'a', 'an', 'to', 'is', 'i', 'my', 'as', 's']);
+    const qWords = cleanQ.split(/\s+/).filter(w => w.length >= 2 && !stopWords.has(w));
+    if (qWords.length === 0) return false;
+
+    const candWords = new Set((cleanCand + ' ' + cleanUrl).split(/\s+/));
+    let matched = 0;
+    for (const w of qWords) {
+        if (candWords.has(w)) matched++;
+    }
+
+    if (qWords.length <= 2) return matched === qWords.length;
+    return (matched / qWords.length) >= 0.65;
+}
+
+// ── 0. DYNAMIC ACCURATE SCRAPER VIA MANGAKATANA (100% Genuine Title Matching) ────
+async function fetchMangaKatanaManhwa(titleQuery) {
+    const cleanQ = (titleQuery || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!cleanQ || cleanQ.length < 2) return null;
+
+    const searchTerms = [
+        cleanQ.replace(/\s+/g, '-'),
+        cleanQ.replace(/\s+/g, '+')
+    ];
+
+    for (const sTerm of searchTerms) {
+        try {
+            const sUrl = `https://mangakatana.com/?search=${sTerm}`;
+            const sRes = await axios.get(sUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                timeout: 6000
+            });
+            const $ = cheerio.load(sRes.data);
+
+            // 1. Direct comic detail page (when redirected to /manga/...)
+            const heading = $('h1.heading').text().trim();
+            const altName = $('.alt_name').text().trim();
+            const directChs = [];
+            $('.chapters .chapter a, .chapter a').each((i, el) => {
+                const href = $(el).attr('href') || '';
+                const text = $(el).text().trim();
+                const m = href.match(/\/c([0-9.]+)/i) || text.match(/chapter\s*([0-9.]+)/i);
+                if (m) directChs.push({ num: parseFloat(m[1]), href, text });
+            });
+
+            if (heading && directChs.length > 0 && isGenuineTitleMatch(cleanQ, heading + ' ' + altName, sRes.request?.res?.responseUrl || '')) {
+                const uniqueMap = new Map();
+                for (const c of directChs) {
+                    if (!uniqueMap.has(c.num)) uniqueMap.set(c.num, c);
+                }
+                const sortedNums = [...uniqueMap.keys()].sort((a, b) => a - b);
+                console.log(`[MANHWA-ENGINE] MangaKatana (Direct) verified "${heading}" for query "${titleQuery}" (${sortedNums.length} chapters)`);
+                return { source: 'MangaKatana', chapters: sortedNums.map(n => uniqueMap.get(n)) };
+            }
+
+            // 2. Search results list with smart precision ranking
+            const candidates = [];
+            $('.item').each((i, el) => {
+                const a = $(el).find('h3 a, .title a').first();
+                const href = a.attr('href');
+                const title = a.text().trim();
+                const alt = $(el).text().trim();
+                if (href && title && isGenuineTitleMatch(cleanQ, title + ' ' + alt, href)) {
+                    let score = 50;
+                    const cLow = title.toLowerCase().trim();
+                    if (cLow === cleanQ) score = 1000;
+                    else if (href.toLowerCase().includes(`/${cleanQ.replace(/\s+/g, '-')}.`)) score = 900;
+                    else if (cLow.startsWith(cleanQ)) score = 500 - (cLow.length - cleanQ.length);
+                    else score = 100 - Math.abs(cLow.length - cleanQ.length);
+                    candidates.push({ href, title, score });
+                }
+            });
+
+            candidates.sort((a, b) => b.score - a.score);
+            const matchedItem = candidates.length > 0 ? candidates[0] : null;
+
+            if (matchedItem) {
+                const detRes = await axios.get(matchedItem.href, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                    timeout: 6000
+                });
+                const $d = cheerio.load(detRes.data);
+                const dHeading = $d('h1.heading').text().trim() || matchedItem.title;
+                const dChs = [];
+                $d('.chapters .chapter a, .chapter a').each((i, el) => {
+                    const href = $(el).attr('href') || '';
+                    const text = $(el).text().trim();
+                    const m = href.match(/\/c([0-9.]+)/i) || text.match(/chapter\s*([0-9.]+)/i);
+                    if (m) dChs.push({ num: parseFloat(m[1]), href, text });
+                });
+
+                if (dChs.length > 0) {
+                    const uniqueMap = new Map();
+                    for (const c of dChs) {
+                        if (!uniqueMap.has(c.num)) uniqueMap.set(c.num, c);
+                    }
+                    const sortedNums = [...uniqueMap.keys()].sort((a, b) => a - b);
+                    console.log(`[MANHWA-ENGINE] MangaKatana verified "${dHeading}" for query "${titleQuery}" (${sortedNums.length} chapters)`);
+                    return { source: 'MangaKatana', chapters: sortedNums.map(n => uniqueMap.get(n)) };
+                }
+            }
+        } catch(e) {}
+    }
+    return null;
+}
+
 // ── 1. FAST SCRAPER VIA MGEKO CDN (Sub-second HTTP fetch) ───────────────────────
 async function fetchMgekoManhwa(titleQuery) {
     const slug = titleQuery.toLowerCase()
@@ -26,8 +139,12 @@ async function fetchMgekoManhwa(titleQuery) {
             });
             const html = res.data || '';
             const $ = cheerio.load(html);
-            const chapterLinks = [];
+            const pageTitle = $('h1').first().text().trim();
+            if (pageTitle && !isGenuineTitleMatch(titleQuery, pageTitle, url)) {
+                continue;
+            }
 
+            const chapterLinks = [];
             $('a').each((i, el) => {
                 const href = $(el).attr('href') || '';
                 const text = $(el).text().trim();
@@ -39,14 +156,13 @@ async function fetchMgekoManhwa(titleQuery) {
             });
 
             if (chapterLinks.length > 0) {
-                // Deduplicate by chapter number and sort ascending (Ch 1 -> Ch Max)
                 const uniqueChs = new Map();
                 for (const c of chapterLinks) {
                     if (!uniqueChs.has(c.num)) uniqueChs.set(c.num, c);
                 }
                 const sortedNums = [...uniqueChs.keys()].sort((a, b) => a - b);
                 
-                console.log(`[MANHWA-ENGINE] Mgeko matched "${titleQuery}" with ${sortedNums.length} chapters!`);
+                console.log(`[MANHWA-ENGINE] Mgeko verified "${pageTitle || titleQuery}" with ${sortedNums.length} chapters!`);
                 return { source: 'Mgeko', chapters: sortedNums.map(n => uniqueChs.get(n)) };
             }
         } catch(e) {}
@@ -85,6 +201,11 @@ async function fetchThunderscansManhwa(titleQuery) {
         for (const url of candidates) {
             try {
                 await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+                const pageTitle = await page.evaluate(() => document.querySelector('h1')?.innerText || '');
+                if (pageTitle && !isGenuineTitleMatch(titleQuery, pageTitle, url)) {
+                    continue;
+                }
+
                 const chapterLinks = await page.evaluate(() => {
                     const links = [];
                     document.querySelectorAll('a').forEach(a => {
@@ -104,7 +225,7 @@ async function fetchThunderscansManhwa(titleQuery) {
                         if (!uniqueChs.has(c.num)) uniqueChs.set(c.num, c);
                     }
                     const sortedNums = [...uniqueChs.keys()].sort((a, b) => a - b);
-                    console.log(`[MANHWA-ENGINE] Thunderscans matched "${titleQuery}" with ${sortedNums.length} chapters!`);
+                    console.log(`[MANHWA-ENGINE] Thunderscans verified "${pageTitle || titleQuery}" with ${sortedNums.length} chapters!`);
                     await page.close();
                     return { source: 'Thunderscans', chapters: sortedNums.map(n => uniqueChs.get(n)) };
                 }
@@ -126,9 +247,21 @@ async function getManhwaChapterPanels(chapterUrl) {
     try {
         // Fast path: Axios HTTP
         const res = await axios.get(chapterUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-            timeout: 5000
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Referer': 'https://mangakatana.com/' },
+            timeout: 6000
         });
+
+        // 1. Check MangaKatana thzq array
+        const m = res.data.match(/var\s+thzq\s*=\s*\[([\s\S]*?)\];/);
+        if (m) {
+            const urls = [...m[1].matchAll(/'(https:\/\/[^']+)'/g)].map(x => x[1]);
+            if (urls.length > 0) {
+                MANHWA_CACHE.set(chapterUrl, urls);
+                return urls;
+            }
+        }
+
+        // 2. Generic HTML img tags
         const html = res.data || '';
         const imgs = [...html.matchAll(/data-src="([^"]+)"|<img[^>]+src="([^"]+)"/gi)]
             .map(m => m[1] || m[2])
@@ -169,15 +302,27 @@ async function getManhwaChapterPanels(chapterUrl) {
     return [];
 }
 
-// ── 4. MAIN EXPORT: BUILD FULL CHAPTER SET FOR FRONTEND ────────────────────────
 async function getMasterManhwaChapters(titleQuery) {
     if (!titleQuery || titleQuery.length < 2) return null;
-    const cleanQ = titleQuery.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    
+    // Split multi-alias titles (e.g., "Return of the Mount Hua Sect || Return of the Flowery Mountain Sect")
+    const aliases = (titleQuery || '')
+        .split(/\s*\|\|\s*|\s*\|\s*|\s*\/\s*/)
+        .map(a => a.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase())
+        .filter(a => a.length >= 2);
 
-    // Try Fast Mgeko first, then Thunderscans
-    let result = await fetchMgekoManhwa(cleanQ);
-    if (!result) {
-        result = await fetchThunderscansManhwa(cleanQ);
+    if (aliases.length === 0) {
+        aliases.push(titleQuery.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim());
+    }
+
+    let result = null;
+    for (const q of aliases) {
+        result = await fetchMangaKatanaManhwa(q);
+        if (result) break;
+        result = await fetchMgekoManhwa(q);
+        if (result) break;
+        result = await fetchThunderscansManhwa(q);
+        if (result) break;
     }
 
     if (!result || !result.chapters || result.chapters.length === 0) {
@@ -185,7 +330,7 @@ async function getMasterManhwaChapters(titleQuery) {
     }
 
     const { source, chapters } = result;
-    const sorted = chapters; // Return ALL full chapters (no 100 chapter cut-off)
+    const sorted = chapters; // Return ALL full chapters (no chapter cut-off)
 
     // Pre-fetch Chapter 1 images so reader opens instantly with 0 delay!
     const firstCh = sorted[0];
