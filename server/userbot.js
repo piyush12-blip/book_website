@@ -351,10 +351,12 @@ function parseChapterNum(filename, caption) {
 const STORAGE_ROOT = path.join(__dirname, '../public/manga_storage');
 const { exec } = require('child_process');
 
+const EXTRACTOR_SCRIPT = path.join(__dirname, 'extract_pdf.py');
+
 function extractPdfToImages(pdfPath, targetDir) {
     return new Promise((resolve) => {
         if (fs.existsSync(targetDir)) {
-            const existing = fs.readdirSync(targetDir).filter(f => /\.(jpg|png|webp)$/i.test(f) && fs.statSync(path.join(targetDir, f)).size > 1000);
+            const existing = fs.readdirSync(targetDir).filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f) && fs.statSync(path.join(targetDir, f)).size > 1000);
             if (existing.length > 0) {
                 return resolve(existing);
             }
@@ -362,32 +364,12 @@ function extractPdfToImages(pdfPath, targetDir) {
 
         fs.mkdirSync(targetDir, { recursive: true });
 
-        const pyScript = `
-import fitz, os, sys
-try:
-    doc = fitz.open(sys.argv[1])
-    out_dir = sys.argv[2]
-    os.makedirs(out_dir, exist_ok=True)
-    for i, page in enumerate(doc):
-        mat = fitz.Matrix(1.8, 1.8)
-        pix = page.get_pixmap(matrix=mat, alpha=False)
-        pix.save(os.path.join(out_dir, f"page_{i+1:03d}.jpg"), "jpeg", 88)
-    print(f"EXTRACTED:{len(doc)}")
-except Exception as e:
-    print(f"ERROR:{e}")
-`;
-
-        const tempScriptPath = path.join(__dirname, `_temp_extract_${Date.now()}.py`);
-        fs.writeFileSync(tempScriptPath, pyScript, 'utf8');
-
-        exec(`python "${tempScriptPath}" "${pdfPath}" "${targetDir}"`, { timeout: 30000 }, (err, stdout) => {
-            try { fs.unlinkSync(tempScriptPath); } catch {}
+        exec(`python "${EXTRACTOR_SCRIPT}" "${pdfPath}" "${targetDir}"`, { timeout: 35000 }, (err, stdout, stderr) => {
             if (err) {
-                console.error('[USERBOT PDF] Extraction error:', err.message);
-                return resolve([]);
+                console.error('[USERBOT PDF] Extraction error:', stderr || err.message);
             }
-            const files = fs.readdirSync(targetDir).filter(f => /\.(jpg|png|webp)$/i.test(f));
-            console.log(`[USERBOT PDF] Extracted ${files.length} pages to ${targetDir}`);
+            const files = fs.readdirSync(targetDir).filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f));
+            console.log(`[USERBOT PDF] Turbo-extracted ${files.length} native pages to ${targetDir}`);
             resolve(files);
         });
     });
@@ -427,7 +409,7 @@ async function getChapterPdfPanels(channelId, messageId, chNum, titleKey) {
 
     // Check if already extracted (Instant cache hit - NO LOCK REQUIRED)
     if (fs.existsSync(targetDir)) {
-        const existing = fs.readdirSync(targetDir).filter(f => /\.(jpg|png|webp)$/i.test(f));
+        const existing = fs.readdirSync(targetDir).filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f));
         if (existing.length > 0) {
             triggerBackgroundPrefetch(client, channelId, parseFloat(chNum), slug, titleKey);
             return formatPanelHtml(existing, slug, chNum, titleKey);
@@ -438,7 +420,7 @@ async function getChapterPdfPanels(channelId, messageId, chNum, titleKey) {
     try {
         // Re-check after lock acquired
         if (fs.existsSync(targetDir)) {
-            const existing = fs.readdirSync(targetDir).filter(f => /\.(jpg|png|webp)$/i.test(f));
+            const existing = fs.readdirSync(targetDir).filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f));
             if (existing.length > 0) {
                 return formatPanelHtml(existing, slug, chNum, titleKey);
             }
@@ -457,18 +439,22 @@ async function getChapterPdfPanels(channelId, messageId, chNum, titleKey) {
         if (!fs.existsSync(tempPdfDir)) fs.mkdirSync(tempPdfDir, { recursive: true });
         const tempPdfPath = path.join(tempPdfDir, `temp_ch_${chNum}_${Date.now()}.pdf`);
 
-        console.log(`[USERBOT PDF] Downloading Chapter ${chNum} PDF from Telegram...`);
+        console.log(`[USERBOT PDF] Turbo downloading Chapter ${chNum} PDF from Telegram...`);
         let buffer = null;
         for (let attempt = 1; attempt <= 3; attempt++) {
             try {
                 buffer = await client.downloadMedia(msg.media, { 
                     dcId: msg.media.document?.dcId,
-                    workers: 1 
+                    workers: 4 
                 });
                 if (buffer && buffer.length > 1000) break;
             } catch (dlErr) {
-                console.warn(`[USERBOT PDF] Download attempt ${attempt} failed: ${dlErr.message}`);
-                await new Promise(r => setTimeout(r, 1000));
+                console.warn(`[USERBOT PDF] Turbo download attempt ${attempt} fallback: ${dlErr.message}`);
+                try {
+                    buffer = await client.downloadMedia(msg.media, { workers: 1 });
+                    if (buffer && buffer.length > 1000) break;
+                } catch {}
+                await new Promise(r => setTimeout(r, 600));
             }
         }
 

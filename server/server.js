@@ -130,10 +130,7 @@ app.get('/api/books/search', async (req, res) => {
             seenNormTitles.add(normT);
 
             const encodedHash = item.inviteHash ? encodeURIComponent(item.inviteHash) : 'nohash';
-            let coverImg = await Promise.race([
-                fetchRealCoverImage(item.title),
-                new Promise(r => setTimeout(() => r(null), 350))
-            ]).catch(() => null);
+            const coverImg = await fetchRealCoverImage(item.title).catch(() => null);
 
             candidateList.push({
                 id: `private-tg-${encodedHash}-${item.messageId}`,
@@ -157,6 +154,10 @@ app.get('/api/books/search', async (req, res) => {
             const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             if (seenNormTitles.has(normT)) continue;
             seenNormTitles.add(normT);
+            if (!item.image) {
+                item.image = await fetchRealCoverImage(item.title).catch(() => null);
+                if (item.image) item.cover = 'has-image teal';
+            }
             candidateList.push(item);
         }
 
@@ -165,6 +166,10 @@ app.get('/api/books/search', async (req, res) => {
             const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             if (seenNormTitles.has(normT)) continue;
             seenNormTitles.add(normT);
+            if (!item.image) {
+                item.image = await fetchRealCoverImage(item.title).catch(() => null);
+                if (item.image) item.cover = 'has-image teal';
+            }
             candidateList.push(item);
         }
 

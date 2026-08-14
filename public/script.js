@@ -215,10 +215,10 @@ async function renderSearch(){
 
       // Filter list by selected category tab if set
       let filteredList = uniqueList;
-      if (activeFilter === 'manga') filteredList = uniqueList.filter(b => b.genre?.toLowerCase().includes('manga') || b.id.startsWith('telegram-'));
+      if (activeFilter === 'manga') filteredList = uniqueList.filter(b => b.genre?.toLowerCase().includes('manga') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || b.id.startsWith('mangadex-'));
       if (activeFilter === 'novel') filteredList = uniqueList.filter(b => b.genre?.toLowerCase().includes('novel') || b.id.startsWith('royalroad-'));
       if (activeFilter === 'adult') filteredList = uniqueList.filter(b => b.genre?.toLowerCase().includes('adult') || b.title?.toLowerCase().includes('pornhwa') || b.title?.toLowerCase().includes('doujinshi'));
-      if (activeFilter === 'book') filteredList = uniqueList.filter(b => !b.id.startsWith('royalroad-') && !b.id.startsWith('telegram-'));
+      if (activeFilter === 'book') filteredList = uniqueList.filter(b => !b.id.startsWith('royalroad-') && !b.id.startsWith('telegram-') && !b.id.startsWith('private-tg-') && !b.id.startsWith('mangadex-'));
       if (filteredList.length === 0) filteredList = uniqueList;
 
       results.innerHTML = categoriesBar + filteredList.map(b => {
