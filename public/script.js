@@ -461,19 +461,19 @@ async function loadStolenChapters(id, title, author, genre){
     
     if(!data.isFallback && !data.pdfUrl && (data.error || !data.chapters || !data.chapters.length)){
       const realTitle = (title || 'this book').replace(/^\d+\s*/, '').trim();
-      const isManga = id.startsWith('telegram-') || id.startsWith('tg-') || (genre || '').toLowerCase().includes('manga') || id.startsWith('mangadex-');
+      const isManga = id.startsWith('telegram-') || id.startsWith('tg-') || id.startsWith('private-tg-') || (genre || '').toLowerCase().includes('manga') || id.startsWith('mangadex-');
       
       if (isManga) {
         nativeReader.innerHTML = `
-          <div style="background:#0a0e17;color:#f8fafc;padding:3rem 2rem;border-radius:12px;margin:2rem auto 3rem auto;max-width:650px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.7);border:1px solid #1e293b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-            <div style="font-size:3rem;margin-bottom:1rem;">⚡</div>
-            <h3 style="color:#38bdf8;font-size:1.4rem;margin:0 0 1rem 0;">Direct Telegram Scraper Connecting</h3>
+          <div style="background:#0a0e17;color:#f8fafc;padding:3rem 2rem;border-radius:16px;margin:2rem auto 3rem auto;max-width:650px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.7);border:1px solid #1e293b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+            <div style="font-size:3rem;margin-bottom:1rem;">🎨</div>
+            <h3 style="color:#38bdf8;font-size:1.4rem;margin:0 0 0.8rem 0;font-weight:800;">${realTitle}</h3>
             <p style="opacity:0.85;font-size:0.95rem;line-height:1.6;margin-bottom:1.5rem;color:#cbd5e1;">
-              Fetching full genuine chapter panels for <strong>${realTitle}</strong> directly from the Telegram channel feed...
+              Scanning Telegram and scanlation channels for genuine story panels...
             </p>
             <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
               <button onclick="openReader('${id}')" style="background:#0284c7;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-weight:bold;cursor:pointer;font-size:0.95rem;transition:all 0.2s;">
-                🔄 Refresh & Load Chapters
+                🔄 Refresh & Check Channels
               </button>
             </div>
           </div>
@@ -482,12 +482,18 @@ async function loadStolenChapters(id, title, author, genre){
       }
 
       nativeReader.innerHTML=`
-        <div style="background:#1a1a1a!important;color:#f1f1f1!important;padding:2.5rem;border-radius:12px;margin:2rem auto 3rem auto;max-width:620px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid #333;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-          <div style="font-size:3rem;margin-bottom:1rem;">📖</div>
-          <h3 style="color:#e74c3c!important;font-size:1.4rem;margin:0 0 1rem 0;">Chapter Extraction Active</h3>
-          <p style="opacity:0.85;font-size:0.95rem;line-height:1.6;margin-bottom:1.5rem;color:#f1f1f1!important;">
-            Scanning connected archives for <strong>${realTitle}</strong>...
+        <div style="background:#0a0e17;color:#f8fafc;padding:3rem 2rem;border-radius:16px;margin:2rem auto 3rem auto;max-width:640px;text-align:center;border:1px solid #1e293b;box-shadow:0 20px 40px rgba(0,0,0,0.6);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+          <div style="font-size:3rem;margin-bottom:1rem;">📚</div>
+          <h3 style="color:#f8fafc;font-size:1.4rem;margin:0 0 0.8rem 0;font-weight:700;">${realTitle}</h3>
+          <p style="color:#94a3b8;font-size:0.95rem;line-height:1.6;margin-bottom:1.5rem;">
+            This volume is not currently in the open-access public domain archive.<br>
+            To read this book immediately, place its <strong>.epub</strong> or <strong>.pdf</strong> file in your <em>Downloads</em> or <em>Documents</em> folder—it will be detected and loaded automatically!
           </p>
+          <div style="display:flex;gap:10px;justify-content:center;">
+            <button onclick="openReader('${id}')" style="background:#0284c7;color:#fff;border:none;padding:10px 22px;border-radius:8px;font-weight:700;cursor:pointer;font-size:0.9rem;">
+              🔄 Re-check Archives
+            </button>
+          </div>
         </div>
       `;
       return;
@@ -569,35 +575,77 @@ async function loadStolenChapters(id, title, author, genre){
       drawerNav.innerHTML = `<div class="drawer-head"><p class="kicker">Contents (${data.chapters.length} Ch)</p><button data-reader-action="toggle-contents">×`+`</button></div><div class="chapter-picker-list">${chapterNavHTML}</div>`;
     }
 
-    // Attach click & scroll intersection listeners to lazy-manga-triggers for automatic image loading
-    document.querySelectorAll('.lazy-manga-trigger').forEach(trigger => {
-      const loadImages = async () => {
-        if (trigger.dataset.loading) return;
-        trigger.dataset.loading = 'true';
-        const chapterId = trigger.dataset.chapterId;
-        trigger.innerHTML = '<p style="text-align:center;padding:2rem;opacity:.6;">🖼️ Loading chapter images...</p>';
-        try {
-          const r = await fetch(`/api/manga/chapter/${chapterId}`);
-          const res = await r.json();
-          if (res.html) {
-            trigger.outerHTML = res.html;
-          } else {
-            trigger.innerHTML = '<p style="text-align:center;padding:2rem;">Failed to load images.</p>';
-          }
-        } catch {
-          trigger.innerHTML = '<p style="text-align:center;padding:2rem;">Error loading images.</p>';
+    // ── Sequential & Priority Manga Chapter Loader ──
+    let isDownloadingActive = false;
+    const downloadQueue = [];
+
+    async function processDownloadQueue() {
+      if (isDownloadingActive || downloadQueue.length === 0) return;
+      isDownloadingActive = true;
+      const nextTrigger = downloadQueue.shift();
+      await executeChapterLoad(nextTrigger);
+      isDownloadingActive = false;
+      processDownloadQueue();
+    }
+
+    async function executeChapterLoad(trigger) {
+      if (!trigger || trigger.dataset.loaded === 'true') return;
+      const chapterId = trigger.dataset.chapterId;
+      trigger.innerHTML = `
+        <div style="background:#0a0e17;padding:2rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;margin:0 auto;">
+          <div style="display:inline-block;width:28px;height:28px;border:3px solid #0284c7;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:0.8rem;"></div>
+          <h3 style="color:#f8fafc;font-size:1.05rem;margin:0 0 0.3rem 0;font-weight:700;">Loading Chapter Pages...</h3>
+          <p style="color:#64748b;font-size:0.8rem;margin:0;">Extracting high-definition panels from Telegram</p>
+        </div>`;
+
+      try {
+        const url = `/api/manga/chapter/${encodeURIComponent(chapterId)}?title=${encodeURIComponent(realTitle)}`;
+        const r = await fetch(url);
+        const res = await r.json();
+        if (res.html) {
+          trigger.dataset.loaded = 'true';
+          trigger.outerHTML = res.html;
+        } else {
+          trigger.innerHTML = `
+            <div style="background:#0a0e17;padding:1.5rem;text-align:center;border:1px solid #334155;border-radius:8px;cursor:pointer;">
+              <p style="color:#ef4444;margin:0 0 0.5rem 0;font-size:0.9rem;">⚠️ Chapter extraction took too long.</p>
+              <button onclick="this.parentElement.parentElement.dataset.queued=''; queueChapterLoad(this.parentElement.parentElement);" style="background:#0284c7;color:#fff;border:none;padding:6px 16px;border-radius:6px;font-size:0.8rem;cursor:pointer;font-weight:600;">⚡ Click to Retry Chapter</button>
+            </div>`;
         }
-      };
+      } catch (e) {
+        trigger.innerHTML = `
+          <div style="background:#0a0e17;padding:1.5rem;text-align:center;border:1px solid #334155;border-radius:8px;cursor:pointer;">
+            <p style="color:#ef4444;margin:0 0 0.5rem 0;font-size:0.9rem;">⚠️ Network interruption.</p>
+            <button onclick="this.parentElement.parentElement.dataset.queued=''; queueChapterLoad(this.parentElement.parentElement);" style="background:#0284c7;color:#fff;border:none;padding:6px 16px;border-radius:6px;font-size:0.8rem;cursor:pointer;font-weight:600;">⚡ Click to Retry Chapter</button>
+          </div>`;
+      }
+    }
 
-      trigger.addEventListener('click', loadImages);
+    window.queueChapterLoad = function(trigger) {
+      if (!trigger || trigger.dataset.queued === 'true' || trigger.dataset.loaded === 'true') return;
+      trigger.dataset.queued = 'true';
+      downloadQueue.push(trigger);
+      processDownloadQueue();
+    };
 
-      if ('IntersectionObserver' in window) {
+    const allTriggers = Array.from(document.querySelectorAll('.lazy-manga-trigger'));
+
+    // Automatically load Chapter 1 (or the first chapter) immediately
+    if (allTriggers.length > 0) {
+      window.queueChapterLoad(allTriggers[0]);
+    }
+
+    // Attach IntersectionObserver and click listeners to remaining chapters
+    allTriggers.forEach((trigger, idx) => {
+      trigger.addEventListener('click', () => window.queueChapterLoad(trigger));
+
+      if (idx > 0 && 'IntersectionObserver' in window) {
         const observer = new IntersectionObserver((entries) => {
           if (entries[0].isIntersecting) {
             observer.disconnect();
-            loadImages();
+            window.queueChapterLoad(trigger);
           }
-        }, { rootMargin: '350px' });
+        }, { rootMargin: '100px' });
         observer.observe(trigger);
       }
     });

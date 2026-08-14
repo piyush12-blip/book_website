@@ -25,7 +25,7 @@ function isGenuineTitleMatch(query, candidateTitle, candidateUrl) {
     }
 
     if (qWords.length <= 2) return matched === qWords.length;
-    return (matched / qWords.length) >= 0.65;
+    return (matched / qWords.length) >= 0.85;
 }
 
 // ── 0. DYNAMIC ACCURATE SCRAPER VIA MANGAKATANA (100% Genuine Title Matching) ────
@@ -247,31 +247,72 @@ async function getManhwaChapterPanels(chapterUrl) {
     try {
         // Fast path: Axios HTTP
         const res = await axios.get(chapterUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Referer': 'https://mangakatana.com/' },
-            timeout: 6000
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 
+                'Referer': 'https://google.com/' 
+            },
+            timeout: 8000
         });
 
-        // 1. Check MangaKatana thzq array
-        const m = res.data.match(/var\s+thzq\s*=\s*\[([\s\S]*?)\];/);
+        const html = res.data || '';
+
+        // 1. Check ts_reader.run (WordPress MangaReader themes: Thunderscans, Reaper, Asura, Flame, Cosmic)
+        const tsMatch = html.match(/ts_reader\.run\(([\s\S]*?)\);/);
+        if (tsMatch) {
+            try {
+                const data = JSON.parse(tsMatch[1]);
+                const tsImages = (data.sources || []).flatMap(s => s.images || []).filter(s => typeof s === 'string' && s.startsWith('http'));
+                if (tsImages.length > 0) {
+                    console.log(`[MANHWA-ENGINE] ts_reader extracted ${tsImages.length} HD story panels from ${chapterUrl}`);
+                    MANHWA_CACHE.set(chapterUrl, tsImages);
+                    return tsImages;
+                }
+            } catch(e) {}
+        }
+
+        // 2. Check MangaKatana thzq array
+        const m = html.match(/var\s+thzq\s*=\s*\[([\s\S]*?)\];/);
         if (m) {
             const urls = [...m[1].matchAll(/'(https:\/\/[^']+)'/g)].map(x => x[1]);
             if (urls.length > 0) {
+                console.log(`[MANHWA-ENGINE] thzq extracted ${urls.length} story panels from ${chapterUrl}`);
                 MANHWA_CACHE.set(chapterUrl, urls);
                 return urls;
             }
         }
 
-        // 2. Generic HTML img tags
-        const html = res.data || '';
-        const imgs = [...html.matchAll(/data-src="([^"]+)"|<img[^>]+src="([^"]+)"/gi)]
-            .map(m => m[1] || m[2])
-            .filter(s => /\.(jpg|png|webp|jpeg)/i.test(s) && !s.includes('logo') && !s.includes('icon') && !s.includes('avatar') && !s.includes('banner'));
+        // 3. Cheerio DOM targeted image selectors
+        const $ = cheerio.load(html);
+        const targetedImgs = [];
+        $('#readerarea img, .reading-content img, .entry-content img, .page-break img, .wp-manga-chapter-img, .read-container img, #chapter-content img').each((i, el) => {
+            const src = $(el).attr('data-src') || $(el).attr('data-lazy-src') || $(el).attr('data-original') || $(el).attr('src') || '';
+            const cleanSrc = src.trim();
+            if (cleanSrc && /\.(jpg|png|webp|jpeg)/i.test(cleanSrc) && 
+                !cleanSrc.includes('logo') && !cleanSrc.includes('icon') && !cleanSrc.includes('avatar') && !cleanSrc.includes('banner') && !cleanSrc.includes('gravatar')) {
+                targetedImgs.push(cleanSrc);
+            }
+        });
+
+        if (targetedImgs.length >= 3) {
+            console.log(`[MANHWA-ENGINE] DOM selectors extracted ${targetedImgs.length} story panels from ${chapterUrl}`);
+            MANHWA_CACHE.set(chapterUrl, targetedImgs);
+            return targetedImgs;
+        }
+
+        // 4. Generic HTML img fallback
+        const imgs = [...html.matchAll(/data-src="([^"]+)"|data-lazy-src="([^"]+)"|<img[^>]+src="([^"]+)"/gi)]
+            .map(m => m[1] || m[2] || m[3])
+            .filter(s => s && /\.(jpg|png|webp|jpeg)/i.test(s) && 
+                !s.includes('logo') && !s.includes('icon') && !s.includes('avatar') && !s.includes('banner') && !s.includes('gravatar') && !s.includes('207x300') && !s.includes('210x300'));
 
         if (imgs.length >= 3) {
+            console.log(`[MANHWA-ENGINE] Regex extracted ${imgs.length} story panels from ${chapterUrl}`);
             MANHWA_CACHE.set(chapterUrl, imgs);
             return imgs;
         }
-    } catch(e) {}
+    } catch(e) {
+        console.warn(`[MANHWA-ENGINE] Fast HTTP extract failed for ${chapterUrl}: ${e.message}`);
+    }
 
     // Fallback: Puppeteer for dynamic/protected images
     try {
@@ -283,9 +324,9 @@ async function getManhwaChapterPanels(chapterUrl) {
 
         const imgs = await page.evaluate(() => {
             const list = [];
-            document.querySelectorAll('img').forEach(img => {
-                const src = img.src || img.getAttribute('data-src') || '';
-                if (src && /\.(jpg|png|webp|jpeg)/i.test(src) && !src.includes('logo') && !src.includes('icon') && !src.includes('banner')) {
+            document.querySelectorAll('#readerarea img, .reading-content img, .page-break img, img').forEach(img => {
+                const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || '';
+                if (src && /\.(jpg|png|webp|jpeg)/i.test(src) && !src.includes('logo') && !src.includes('icon') && !src.includes('banner') && !src.includes('avatar') && !src.includes('gravatar')) {
                     list.push(src);
                 }
             });
@@ -294,10 +335,13 @@ async function getManhwaChapterPanels(chapterUrl) {
 
         await page.close();
         if (imgs.length > 0) {
+            console.log(`[MANHWA-ENGINE] Puppeteer extracted ${imgs.length} story panels from ${chapterUrl}`);
             MANHWA_CACHE.set(chapterUrl, imgs);
             return imgs;
         }
-    } catch(e) {}
+    } catch(e) {
+        console.error(`[MANHWA-ENGINE] Puppeteer error for ${chapterUrl}: ${e.message}`);
+    }
 
     return [];
 }

@@ -1,19 +1,29 @@
 {
-  "comment": "LO's priority adult & manga Telegram channels. Managed directly by ENI!",
-  "joinedChannels": [
-    "pornhwa_flix",
-    "PornhwaFlix",
-    "pornhwa_flare",
-    "PornhwaFlare",
-    "doujinshi_flix",
-    "DoujinshiFlix",
-    "inyeon_manhwa",
+  "comment": "LO's curated Telegram channels. Tier 1 Main searched first, Tier 2 searched if not found.",
+  "mainChannels": [
+    "Manga_Horizon",
     "Manga_Cruise_Updates",
-    "MangaCruise",
-    "OngoingSkylines",
-    "manhwa_zone",
-    "manhwa_english",
-    "manga_archive",
-    "mangahub_english"
+    "Manhwa_Ocean_Updates",
+    "Romance_Manhwa_Archive"
+  ],
+  "remainingChannels": [
+    "Manhwa_Cruise",
+    "pornhwa_flix",
+    "pornhwa_flare",
+    "doujinshi_flix",
+    "inyeon_manhwa",
+    "manga_archive"
+  ],
+  "joinedChannels": [
+    "Manga_Horizon",
+    "Manga_Cruise_Updates",
+    "Manhwa_Ocean_Updates",
+    "Romance_Manhwa_Archive",
+    "Manhwa_Cruise",
+    "pornhwa_flix",
+    "pornhwa_flare",
+    "doujinshi_flix",
+    "inyeon_manhwa",
+    "manga_archive"
   ]
 }

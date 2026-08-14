@@ -31,3 +31,18 @@ server/test_*.cjs
 server/probe*.js
 server/probe*.cjs
 
+# Telegram Session — NEVER commit this, contains your login!
+server/tg_session.txt
+server/*.session
+*.session
+
+# Environment secrets
+.env
+.env.*
+server/.env
+server/tg_login.cjs
+scratch_*.cjs
+*.pdf
+public/manga_storage/*
+!public/manga_storage/.gitkeep
+

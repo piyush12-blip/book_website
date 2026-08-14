@@ -57,19 +57,23 @@ function titleMatchScore(haystack, needle) {
     const n = normTitle(needle);
     if (!h || !n) return 0;
     if (h === n) return 100;
-    if (h.includes(n) || n.includes(h)) return 90;
 
-    // Keyword overlap — only ignore generic articles and prepositions
     const stopWords = new Set(['the','a','an','of','in','at','to','for','and','or','is','its','by','with']);
     const nWords = n.split(' ').filter(w => w.length > 1 && !stopWords.has(w));
-    const hWords = h.split(' ').filter(w => w.length > 1 && !stopWords.has(w));
+    const hWords = new Set(h.split(' ').filter(w => w.length > 1));
+
     if (!nWords.length) return 0;
 
-    const matches = nWords.filter(w => h.includes(w)).length;
-    const reverseMatches = hWords.filter(w => n.includes(w)).length;
-    const fwd  = (matches / nWords.length) * 80;
-    const back = hWords.length > 0 ? (reverseMatches / hWords.length) * 80 : 0;
-    return Math.round(Math.max(fwd, back));
+    // Strict check: Every key word in needle MUST exist in haystack
+    for (const w of nWords) {
+        if (!hWords.has(w) && !h.includes(w)) {
+            return 0; // Missing critical keyword (e.g. 'wonderland' not in 'borderland')
+        }
+    }
+
+    if (h.startsWith(n)) return 95;
+    if (h.includes(n)) return 90;
+    return 80;
 }
 
 // ─── CHAPTER NUMBER EXTRACTOR ──────────────────────────────────────────────────
@@ -257,65 +261,72 @@ async function getTelegramChaptersAndPanels(titleQuery) {
 }
 
 // ─── SEARCH RESULT (for the search bar) ───────────────────────────────────────
-// Returns a simple list of title hits for the search UI
+// Returns a simple list of title hits for the search UI fast in parallel (<1s)
 async function searchPrioritizedTelegram(title) {
     const norm = normTitle(title);
     if (!norm) return [];
 
-    const allChannels = [...new Set([...PRIMARY_CHANNELS, ...getJoinedChannels(), ...SECONDARY_CHANNELS])];
+    const primaryAndJoined = [...new Set([...PRIMARY_CHANNELS, ...getJoinedChannels()])];
 
-    for (const ch of allChannels) {
-        const url  = `https://t.me/s/${ch}?q=${encodeURIComponent(normTitle(title))}`;
-        const html = await fetchHtml(url);
-        if (!html) continue;
+    const fetchPromises = primaryAndJoined.map(async ch => {
+        try {
+            const url = `https://t.me/s/${ch}?q=${encodeURIComponent(norm)}`;
+            const html = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 1500 })
+                .then(r => r.data)
+                .catch(() => null);
+            if (!html) return null;
 
-        // Look for doc titles and post texts that match
-        const docMatches = [...html.matchAll(/class="tgme_widget_message_document_title"[^>]*>([^<]+)/gi)];
-        for (const m of docMatches) {
-            const score = titleMatchScore(m[1], title);
-            if (score >= 50) {
-                const cleanedTitle = normTitle(m[1]).split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                return [{
-                    title: cleanedTitle || title,
-                    channel: `@${ch}`,
-                    link: `https://t.me/s/${ch}`,
-                    source: 'TelegramJoined',
-                    isJoined: true,
-                    channelName: ch
-                }];
+            // Look for doc titles that match
+            const docMatches = [...html.matchAll(/class="tgme_widget_message_document_title"[^>]*>([^<]+)/gi)];
+            for (const m of docMatches) {
+                const score = titleMatchScore(m[1], title);
+                if (score >= 50) {
+                    const cleanedTitle = normTitle(m[1]).split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    return {
+                        title: cleanedTitle || title,
+                        channel: `@${ch}`,
+                        link: `https://t.me/s/${ch}`,
+                        source: 'TelegramJoined',
+                        isJoined: true,
+                        channelName: ch
+                    };
+                }
             }
-        }
 
-        const textMatches = [...html.matchAll(/class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)];
-        for (const m of textMatches) {
-            const rawBody = m[1];
-            const txt = rawBody.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
-            if (txt.includes('Index Channel') || txt.includes('◪') || txt.includes('Backup channel')) continue;
+            const textMatches = [...html.matchAll(/class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)];
+            for (const m of textMatches) {
+                const rawBody = m[1];
+                const txt = rawBody.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+                if (txt.includes('Index Channel') || txt.includes('◪') || txt.includes('Backup channel')) continue;
 
-            const score = titleMatchScore(txt, title);
-            if (score >= 50) {
-                // Try clean title extractor
-                let cleanExtracted = (txt.match(/Updates\s+([\s\S]+?)\s*➥/i) || txt.match(/^([\s\S]+?)\s*➥/i) || [])[1];
-                if (cleanExtracted) cleanExtracted = cleanTitle(cleanExtracted);
+                const score = titleMatchScore(txt, title);
+                if (score >= 50) {
+                    let cleanExtracted = (txt.match(/Updates\s+([\s\S]+?)\s*➥/i) || txt.match(/^([\s\S]+?)\s*➥/i) || [])[1];
+                    if (cleanExtracted) cleanExtracted = cleanTitle(cleanExtracted);
 
-                const finalTitle = (cleanExtracted && cleanExtracted.length >= 2 && cleanExtracted.length <= 60)
-                    ? cleanExtracted
-                    : normTitle(txt).split(' ').filter(w => w.length > 2).slice(0, 5).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    const finalTitle = (cleanExtracted && cleanExtracted.length >= 2 && cleanExtracted.length <= 60)
+                        ? cleanExtracted
+                        : normTitle(txt).split(' ').filter(w => w.length > 2).slice(0, 5).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
-                if (!finalTitle || finalTitle.length < 2) continue;
-
-                console.log(`[TELEGRAM] Priority hit in @${ch} for "${title}" → "${finalTitle}"`);
-                return [{
-                    title: finalTitle,
-                    channel: `@${ch}`,
-                    link: `https://t.me/s/${ch}`,
-                    source: 'TelegramJoined',
-                    isJoined: true,
-                    channelName: ch
-                }];
+                    if (finalTitle && finalTitle.length >= 2) {
+                        return {
+                            title: finalTitle,
+                            channel: `@${ch}`,
+                            link: `https://t.me/s/${ch}`,
+                            source: 'TelegramJoined',
+                            isJoined: true,
+                            channelName: ch
+                        };
+                    }
+                }
             }
-        }
-    }
+        } catch(e) {}
+        return null;
+    });
+
+    const results = await Promise.all(fetchPromises);
+    const valid = results.filter(Boolean);
+    if (valid.length > 0) return [valid[0]];
 
     return [];
 }

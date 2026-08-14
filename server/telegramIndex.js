@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 
 const CHANNELS_CONFIG_PATH = path.join(__dirname, 'channels.json');
-const PRIMARY_CHANNELS = ['Manga_Cruise_Updates', 'MangaCruise'];
+const PRIMARY_CHANNELS = ['Manga_Cruise_Updates', 'MangaCruise', 'Manga_horizon'];
 
 function getPriorityChannels() {
     try {
@@ -320,40 +320,30 @@ function calculateMatchScore(query, title) {
     }
 
     const ratio = matchCount / qWords.length;
-    // Lower threshold to 50% so partial title searches match correctly
-    return ratio >= 0.5 ? Math.round(ratio * 90) : 0;
+    // Strict threshold: all significant keywords in the query must be found in the title
+    return ratio >= 0.85 ? Math.round(ratio * 90) : 0;
 }
 
 async function searchTelegramIndex(query) {
     if (!query || query.trim().length < 2) return [];
     const cleanQ = query.trim();
 
-    let hasStrongMatch = false;
-    for (const entry of TELEGRAM_INDEX.values()) {
-        if (calculateMatchScore(cleanQ, entry.title) >= 85) {
-            hasStrongMatch = true;
-            break;
-        }
-    }
-
-    if (!hasStrongMatch) {
-        console.log(`[TELEGRAM INDEX] No strong local match for "${cleanQ}", performing live search...`);
-        const channels = getPriorityChannels();
-        await Promise.all(channels.map(async (ch) => {
-            try {
-                const url = `https://t.me/s/${ch}?q=${encodeURIComponent(cleanQ)}`;
-                const res = await axios.get(url, AXIOS_OPTS);
-                const html = res.data || '';
-                const blockRe = /<div class="tgme_widget_message[^"]*"[^>]*data-post="([^"]+)"[\s\S]*?(?=<div class="tgme_widget_message[^"]*"[^>]*data-post="|$)/gi;
-                const blocks = [...html.matchAll(blockRe)];
-                if (blocks.length > 0) {
-                    parseBlocksIntoIndex(blocks, ch);
-                }
-            } catch (err) {
-                // ignore timeout or 404
+    console.log(`[TELEGRAM INDEX] Performing live search across channels for "${cleanQ}" to find older or archived posts...`);
+    const channels = getPriorityChannels();
+    await Promise.all(channels.map(async (ch) => {
+        try {
+            const url = `https://t.me/s/${ch}?q=${encodeURIComponent(cleanQ)}`;
+            const res = await axios.get(url, AXIOS_OPTS);
+            const html = res.data || '';
+            const blockRe = /<div class="tgme_widget_message[^"]*"[^>]*data-post="([^"]+)"[\s\S]*?(?=<div class="tgme_widget_message[^"]*"[^>]*data-post="|$)/gi;
+            const blocks = [...html.matchAll(blockRe)];
+            if (blocks.length > 0) {
+                parseBlocksIntoIndex(blocks, ch);
             }
-        }));
-    }
+        } catch (err) {
+            // ignore timeout or 404
+        }
+    }));
 
     const results = [];
     for (const entry of TELEGRAM_INDEX.values()) {

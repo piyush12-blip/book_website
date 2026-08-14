@@ -48,6 +48,31 @@ const POPULAR_MANGA_MAP = {
     'nano machine': 'Nano Machine'
 };
 
+function isAccurateMangaDexMatch(query, title, altTitles = []) {
+    const stopWords = new Set(['in', 'of', 'the', 'a', 'an', 'to', 'and', 'for', 'with', 'on', 'at', 'is', 'by']);
+    const cleanQ = (query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
+    if (!cleanQ) return false;
+
+    const allCandidateTitles = [title, ...altTitles]
+        .map(t => typeof t === 'string' ? t : (t?.en || t?.['en-us'] || Object.values(t || {})[0]))
+        .filter(Boolean)
+        .map(t => t.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim());
+
+    const qTokens = cleanQ.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
+    if (qTokens.length === 0) return true;
+
+    for (const t of allCandidateTitles) {
+        if (t === cleanQ || t.includes(cleanQ) || cleanQ.includes(t)) return true;
+        const tTokens = new Set(t.split(/\s+/).filter(w => w.length > 1));
+        let matchCount = 0;
+        for (const token of qTokens) {
+            if (tTokens.has(token) || t.includes(token)) matchCount++;
+        }
+        if (matchCount === qTokens.length) return true;
+    }
+    return false;
+}
+
 async function searchMangaDex(query) {
     try {
         const cleanQ = (query || '').toLowerCase().trim();
@@ -57,8 +82,9 @@ async function searchMangaDex(query) {
             params: {
                 title: mappedQuery,
                 'includes[]': ['cover_art', 'author', 'artist'],
+                'availableTranslatedLanguage[]': ['en'],
                 'order[relevance]': 'desc',
-                limit: 8
+                limit: 15
             },
             headers: UA
         });
@@ -69,16 +95,24 @@ async function searchMangaDex(query) {
                 params: {
                     title: query,
                     'includes[]': ['cover_art', 'author', 'artist'],
+                    'availableTranslatedLanguage[]': ['en'],
                     'order[relevance]': 'desc',
-                    limit: 8
+                    limit: 15
                 },
                 headers: UA
             });
         }
 
+        const rawList = res.data.data || [];
+        const filteredList = rawList.filter(manga => {
+            const altEn = manga.attributes.altTitles || [];
+            const mainTitle = manga.attributes.title.en || Object.values(manga.attributes.title)[0] || '';
+            return isAccurateMangaDexMatch(query, mainTitle, altEn);
+        });
+
         const COLORS = ['navy','teal','burgundy','midnight','sage','rust','ochre','brown','grey','ivory'];
 
-        return (res.data.data || []).map((manga, i) => {
+        return filteredList.map((manga, i) => {
             const color  = COLORS[i % COLORS.length];
             const altEn  = (manga.attributes.altTitles || []).find(t => t.en)?.en 
                         || (manga.attributes.altTitles || []).find(t => t['en-us'])?.['en-us'];
@@ -313,8 +347,8 @@ async function getChapterImagesCached(chapterId) {
     return null;
 }
 
-// ─── STRICT TITLE MATCH SCORER ────────────────────────────────────────────────
-// Calculates Dice coefficient similarity between searched query and manga title
+// ─── STRICT TITLE MATCH SCORER ────────────────────────────────────────────
+// Strongly prefers EXACT matches, and penalizes titles with extra words.
 function scoreTitleMatch(query, candidateTitle, altTitles) {
     if (!query || !candidateTitle) return 0;
     const clean = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -328,6 +362,7 @@ function scoreTitleMatch(query, candidateTitle, altTitles) {
 
     for (const title of allCandidateTitles) {
         const tClean = clean(title);
+        // Exact match — perfect score
         if (qClean === tClean) return 1.0;
 
         const cTokens = tClean.split(' ').filter(t => t.length > 1 && !stopWords.has(t));
@@ -335,17 +370,171 @@ function scoreTitleMatch(query, candidateTitle, altTitles) {
 
         let matched = 0;
         for (const token of qTokens) {
-            if (cTokens.includes(token) || cTokens.some(ct => ct === token)) {
-                matched++;
-            }
+            if (cTokens.includes(token)) matched++;
         }
 
-        // Dice coefficient: 2 * intersection / (|A| + |B|)
+        // Dice coefficient
         const dice = (2 * matched) / (qTokens.length + cTokens.length);
-        if (dice > highestScore) highestScore = dice;
+
+        // KEY FIX: Penalize heavily if candidate has extra words not in query
+        // e.g. query="Alice in Borderland" vs candidate="Alice in Borderland RETRY"
+        // Extra tokens that DON'T appear in the query lower the score significantly
+        const extraTokens = cTokens.filter(t => !qTokens.includes(t)).length;
+        const penalty = extraTokens > 0 ? Math.max(0, 1 - (extraTokens * 0.35)) : 1.0;
+        const finalScore = dice * penalty;
+
+        if (finalScore > highestScore) highestScore = finalScore;
     }
 
     return highestScore;
+}
+
+async function buildChaptersListFromMap(byNum, officialTitle) {
+    const sortedNums = [...byNum.keys()].filter(n => n > 0).sort((a, b) => a - b);
+    if (sortedNums.length === 0) return null;
+
+    console.log(`[MANGADEX] Building ${sortedNums.length} real scanlation chapters for "${officialTitle}"`);
+
+    const chapters = [];
+    const firstNum = sortedNums[0];
+    let expectedNext = 1;
+
+    for (const num of sortedNums) {
+        const intNum = Math.floor(num);
+        while (expectedNext < intNum) {
+            chapters.push({
+                title: `Chapter ${expectedNext} (Missing)`,
+                chapterId: `md-missing-${expectedNext}`,
+                html: `
+                    <div style="background:#000;min-height:70vh;padding:4rem 1.5rem;text-align:center;color:#64748b;display:flex;flex-direction:column;justify-content:center;align-items:center;">
+                        <div style="font-size:3rem;margin-bottom:1rem;">⚠️</div>
+                        <h2 style="color:#f8fafc;margin:0 0 0.5rem 0;">Chapter ${expectedNext} is Missing</h2>
+                        <p style="max-width:400px;line-height:1.6;">This chapter was either removed from MangaDex by the translation group, or it has not been uploaded yet.</p>
+                    </div>
+                `
+            });
+            expectedNext++;
+        }
+
+        const chItem = byNum.get(num);
+        const chapterId = chItem.id;
+        let panelHtml = '';
+        const isDecimal = num % 1 !== 0;
+        const displayLabel = isDecimal ? `CHAPTER ${num} (Extra)` : `CHAPTER ${num}`;
+
+        // For the first chapter, pre-fetch image URLs immediately so reading starts with 0 delay
+        if (num === firstNum || num === 1) {
+            const pageUrls = await getChapterImagesCached(chapterId);
+            if (pageUrls && pageUrls.length > 0) {
+                const pages = pageUrls.map((url, idx) => {
+                    const proxied = `/api/proxy/image?url=${encodeURIComponent(url)}`;
+                    return `<div style="text-align:center;margin:0;padding:0;line-height:0;background:#05070a;width:100%;">` +
+                        `<img src="${proxied}" alt="${officialTitle} Ch${num} Page${idx+1}" loading="eager" decoding="async" referrerpolicy="no-referrer" ` +
+                        `style="width:100%;max-width:900px;display:block;margin:0 auto;height:auto;min-height:500px;background:#05070a;object-fit:contain;">` +
+                        `</div>`;
+                }).join('');
+
+                panelHtml = `
+                    <div style="background:#000;min-height:100vh;padding:0;margin:0 0 4rem 0;">
+                        <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;position:sticky;top:0;z-index:30;box-shadow:0 4px 25px rgba(0,0,0,0.9);">
+                            <div style="display:inline-block;background:#0284c7;color:#fff;padding:4px 14px;border-radius:12px;font-size:0.75rem;font-weight:800;letter-spacing:0.5px;margin-bottom:0.4rem;">
+                                ${displayLabel}
+                            </div>
+                            <h2 style="color:#f8fafc;font-size:1.4rem;margin:0.4rem 0 0 0;font-weight:800;">${officialTitle}</h2>
+                            <span style="color:#64748b;font-size:0.8rem;">${pageUrls.length} Pages</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;align-items:center;background:#000;gap:0;padding:0;margin:0;width:100%;">
+                            ${pages}
+                        </div>
+                    </div>`;
+            }
+        }
+
+        // For later chapters, use automatic lazy image loader
+        if (!panelHtml) {
+            panelHtml = `
+                <div class="lazy-manga-trigger" data-chapter-id="md-ch-${num}-${chapterId}" style="background:#000;min-height:70vh;padding:0;margin:0 0 4rem 0;cursor:pointer;">
+                    <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;">
+                        <div style="display:inline-block;background:#0284c7;color:#fff;padding:4px 14px;border-radius:12px;font-size:0.75rem;font-weight:800;letter-spacing:0.5px;margin-bottom:0.4rem;">
+                            ${displayLabel}
+                        </div>
+                        <h2 style="color:#f8fafc;font-size:1.4rem;margin:0.4rem 0 0 0;font-weight:800;">${officialTitle}</h2>
+                        <span style="color:#38bdf8;font-size:0.85rem;font-weight:600;">⚡ Click or scroll to load Chapter ${num} panels</span>
+                    </div>
+                </div>`;
+        }
+
+        chapters.push({
+            title: isDecimal ? `Chapter ${num} (Extra)` : `Chapter ${num}`,
+            chapterId: `md-ch-${num}-${chapterId}`,
+            html: panelHtml
+        });
+        
+        if (!isDecimal) {
+            expectedNext = intNum + 1;
+        }
+    }
+
+    return chapters;
+}
+
+// ── Direct ID Chapter Extractor (Instant precision when manga ID is known) ─────
+async function fetchRealMangaChaptersById(mangaId, targetMaxChapter) {
+    try {
+        if (!mangaId) return null;
+        const cleanId = mangaId.replace(/^mangadex-/, '');
+
+        // 1. Get official manga title from MangaDex
+        const mRes = await axios.get(`${API}/manga/${cleanId}`, { headers: UA, timeout: 5000 });
+        const manga = mRes.data?.data;
+        if (!manga) return null;
+
+        const altEn = (manga.attributes.altTitles || []).find(t => t.en)?.en 
+                   || (manga.attributes.altTitles || []).find(t => t['en-us'])?.['en-us'];
+        const officialTitle = altEn 
+                           || manga.attributes.title?.en 
+                           || Object.values(manga.attributes.title || {})[0] 
+                           || 'Manga';
+
+        // 2. Fetch chapter feed (English first, all languages fallback)
+        let feedRes = await axios.get(`${API}/manga/${cleanId}/feed`, {
+            params: {
+                'translatedLanguage[]': 'en',
+                'order[chapter]': 'asc',
+                limit: 500
+            },
+            headers: UA,
+            timeout: 5000
+        });
+
+        let items = feedRes.data?.data || [];
+        if (items.length === 0) {
+            feedRes = await axios.get(`${API}/manga/${cleanId}/feed`, {
+                params: { 'order[chapter]': 'asc', limit: 500 },
+                headers: UA,
+                timeout: 5000
+            });
+            items = feedRes.data?.data || [];
+        }
+
+        const byNum = new Map();
+        for (const ch of items) {
+            const num = parseFloat(ch.attributes.chapter);
+            const pages = ch.attributes.pages || 0;
+            const isExternal = !!ch.attributes.externalUrl;
+            if (!isNaN(num) && pages > 0 && !isExternal) {
+                if (!byNum.has(num)) {
+                    byNum.set(num, ch);
+                }
+            }
+        }
+
+        if (byNum.size === 0) return null;
+        return buildChaptersListFromMap(byNum, officialTitle);
+    } catch(e) {
+        console.error(`[MANGADEX] fetchRealMangaChaptersById error for "${mangaId}":`, e.message);
+        return null;
+    }
 }
 
 // ── Full End-to-End Chapter Panel Extractor ────────────────────────────────────
@@ -383,7 +572,7 @@ async function fetchRealMangaChapters(titleQuery, targetMaxChapter) {
                     const altTitles = (manga.attributes.altTitles || []).map(t => Object.values(t)[0]).filter(Boolean);
                     const score = scoreTitleMatch(cleanQ, titleEn, altTitles);
 
-                    if (score >= 0.85) {
+                    if (score >= 0.45) {
                         candidateList.push({ manga, score, titleEn });
                     }
                 }
@@ -397,7 +586,6 @@ async function fetchRealMangaChapters(titleQuery, targetMaxChapter) {
             return null;
         }
 
-        let chosenManga = null;
         let chosenByNum = null;
         let officialTitle = titleQuery;
 
@@ -411,7 +599,7 @@ async function fetchRealMangaChapters(titleQuery, targetMaxChapter) {
                     params: {
                         'translatedLanguage[]': 'en',
                         'order[chapter]': 'asc',
-                        limit: 250
+                        limit: 500
                     },
                     headers: UA,
                     timeout: 4000
@@ -424,8 +612,10 @@ async function fetchRealMangaChapters(titleQuery, targetMaxChapter) {
                     const num = parseFloat(ch.attributes.chapter);
                     const pages = ch.attributes.pages || 0;
                     const isExternal = !!ch.attributes.externalUrl;
-                    
-                    if (!isNaN(num) && pages > 0 && !isExternal) {
+                    const lang = ch.attributes.translatedLanguage || '';
+
+                    // STRICT: only English chapters with actual pages
+                    if (!isNaN(num) && pages > 0 && !isExternal && lang === 'en') {
                         if (!byNum.has(num)) {
                             byNum.set(num, ch);
                         }
@@ -433,7 +623,6 @@ async function fetchRealMangaChapters(titleQuery, targetMaxChapter) {
                 }
 
                 if (byNum.size > 0) {
-                    chosenManga = manga;
                     chosenByNum = byNum;
                     officialTitle = titleEn || titleQuery;
                     console.log(`[MANGADEX] Found ${byNum.size} real scanlation chapters in "${officialTitle}" for "${titleQuery}"`);
@@ -447,70 +636,7 @@ async function fetchRealMangaChapters(titleQuery, targetMaxChapter) {
             return null;
         }
 
-        const byNum = chosenByNum;
-        const sortedNums = [...byNum.keys()].filter(n => n > 0).sort((a, b) => a - b);
-        if (sortedNums.length === 0) return null;
-
-        console.log(`[MANGADEX] Found ${sortedNums.length} real scanlation chapters for "${officialTitle}"`);
-
-        // 3. Build chapter list with real scanlation pages
-        const chapters = [];
-
-        for (const num of sortedNums) {
-            const chItem = byNum.get(num);
-            const chapterId = chItem.id;
-            let panelHtml = '';
-
-            // For the first chapter, pre-fetch image URLs immediately so reading starts with 0 delay
-            if (num === sortedNums[0] || num === 1) {
-                const pageUrls = await getChapterImagesCached(chapterId);
-                if (pageUrls && pageUrls.length > 0) {
-                    const pages = pageUrls.map((url, idx) => {
-                        const proxied = `/api/proxy/image?url=${encodeURIComponent(url)}`;
-                        return `<div style="text-align:center;margin:0;padding:0;line-height:0;background:#05070a;width:100%;">` +
-                            `<img src="${proxied}" alt="${officialTitle} Ch${num} Page${idx+1}" loading="eager" decoding="async" referrerpolicy="no-referrer" ` +
-                            `style="width:100%;max-width:900px;display:block;margin:0 auto;height:auto;min-height:500px;background:#05070a;object-fit:contain;">` +
-                            `</div>`;
-                    }).join('');
-
-                    panelHtml = `
-                        <div style="background:#000;min-height:100vh;padding:0;margin:0 0 4rem 0;">
-                            <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;position:sticky;top:0;z-index:30;box-shadow:0 4px 25px rgba(0,0,0,0.9);">
-                                <div style="display:inline-block;background:#0284c7;color:#fff;padding:4px 14px;border-radius:12px;font-size:0.75rem;font-weight:800;letter-spacing:0.5px;margin-bottom:0.4rem;">
-                                    CHAPTER ${num} OF ${sortedNums.length}
-                                </div>
-                                <h2 style="color:#f8fafc;font-size:1.4rem;margin:0.4rem 0 0 0;font-weight:800;">${officialTitle}</h2>
-                                <span style="color:#64748b;font-size:0.8rem;">${pageUrls.length} Pages</span>
-                            </div>
-                            <div style="display:flex;flex-direction:column;align-items:center;background:#000;gap:0;padding:0;margin:0;width:100%;">
-                                ${pages}
-                            </div>
-                        </div>`;
-                }
-            }
-
-            // For later chapters, use automatic lazy image loader
-            if (!panelHtml) {
-                panelHtml = `
-                    <div class="lazy-manga-trigger" data-chapter-id="md-ch-${num}-${chapterId}" style="background:#000;min-height:70vh;padding:0;margin:0 0 4rem 0;cursor:pointer;">
-                        <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;">
-                            <div style="display:inline-block;background:#0284c7;color:#fff;padding:4px 14px;border-radius:12px;font-size:0.75rem;font-weight:800;letter-spacing:0.5px;margin-bottom:0.4rem;">
-                                CHAPTER ${num} OF ${sortedNums.length}
-                            </div>
-                            <h2 style="color:#f8fafc;font-size:1.4rem;margin:0.4rem 0 0 0;font-weight:800;">${officialTitle}</h2>
-                            <span style="color:#38bdf8;font-size:0.85rem;font-weight:600;">⚡ Click or scroll to load Chapter ${num} panels</span>
-                        </div>
-                    </div>`;
-            }
-
-            chapters.push({
-                title: `Chapter ${num}`,
-                chapterId: `md-ch-${num}-${chapterId}`,
-                html: panelHtml
-            });
-        }
-
-        return chapters;
+        return buildChaptersListFromMap(chosenByNum, officialTitle);
     } catch (e) {
         console.error(`[MANGADEX] fetchRealMangaChapters error for "${titleQuery}":`, e.message);
         return null;
@@ -543,5 +669,5 @@ async function getMangaDexChapterImages(chapterId) {
     }
 }
 
-module.exports = { searchMangaDex, getMangaDexFeed, getMangaDexChapterImages, fetchRealMangaChapters, getChapterImagesCached };
+module.exports = { searchMangaDex, getMangaDexFeed, getMangaDexChapterImages, fetchRealMangaChapters, fetchRealMangaChaptersById, getChapterImagesCached };
 

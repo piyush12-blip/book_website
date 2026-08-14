@@ -51,13 +51,50 @@ app.post('/api/clear-cache', async (req, res) => {
 // 1. SEARCH — Merges Telegram (manga/manhwa), RoyalRoad (webnovels), iTunes (books)
 // ─────────────────────────────────────────────────────────────────────────────
 const { searchPrioritizedTelegram } = require('./telegram');
+const { searchPrivateChannels, getReadingChannelChapters } = require('./userbot');
+
+function calculateSearchRelevanceScore(query, candidateTitle) {
+    const stopWords = new Set(['in', 'of', 'the', 'a', 'an', 'to', 'and', 'for', 'with', 'on', 'at', 'is', 'by', 'manga', 'manhwa', 'webtoon']);
+    const cleanQ = (query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const cleanT = (candidateTitle || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+    if (!cleanQ || !cleanT) return 0;
+
+    // Rank 1: Exact match (Always appears at the very top)
+    if (cleanT === cleanQ) return 10000;
+
+    // Rank 2: Prefix match (e.g. "Alice in Borderland RETRY", "Solo Leveling: Ragnarok", "Jujutsu Kaisen 0")
+    if (cleanT.startsWith(cleanQ)) {
+        return 9000 - Math.min(cleanT.length - cleanQ.length, 500);
+    }
+
+    // Rank 3: Exact phrase inside title
+    if (cleanT.includes(cleanQ)) {
+        return 8000 - Math.min(cleanT.length - cleanQ.length, 500);
+    }
+
+    // Rank 4: All significant keywords match
+    const qTokens = cleanQ.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
+    const tTokens = new Set(cleanT.split(/\s+/).filter(w => w.length > 1));
+
+    if (qTokens.length === 0) return 500;
+
+    let matched = 0;
+    for (const token of qTokens) {
+        if (tTokens.has(token) || cleanT.includes(token)) matched++;
+    }
+
+    const ratio = matched / qTokens.length;
+    if (ratio < 0.85) return 0; // Strict rejection of irrelevant titles
+
+    return Math.round(6000 * ratio) - Math.min(Math.abs(cleanT.length - cleanQ.length), 500);
+}
 
 app.get('/api/books/search', async (req, res) => {
     const query = req.query.q;
-    if (!query) return res.status(400).json([]);
+    if (!query) return res.json([]);
 
     try {
-        // Clean query: strip brackets, markdown links, urls, currencies, separators
         let cleanQuery = query
             .replace(/\[([^\]]+)\]\([^\)]+\)/gi, '$1')
             .replace(/https?:\/\/[^\s]+/gi, '')
@@ -70,259 +107,125 @@ app.get('/api/books/search', async (req, res) => {
             .trim();
 
         const qLower = cleanQuery.toLowerCase();
-        
-        // Extract primary and secondary search phrases (e.g. "I'm Trapped In This Day For One Thousand Years" from "I'm Trapped... || Eternal Loop")
-        const rawParts = query.split(/\|\||\||\/\/|::|\/|-/).map(p => p.trim()).filter(p => p.length >= 2);
-        const primarySearch = rawParts[0] ? rawParts[0].replace(/[^\x00-\x7F]/g, '').trim() : cleanQuery;
-        const cleanItunesQuery = primarySearch.replace(/\s+by\s+.*/i, '').trim();
+        const { fetchRealCoverImage } = require('./coverFetcher');
 
-        // 1. INSTANT RAM TELEGRAM INDEX (Fuzzy & Typo Tolerant)
-        const tgIndexed = await searchTelegramIndex(cleanQuery).catch(() => []);
-        const tgIndexedPrimary = primarySearch !== cleanQuery ? await searchTelegramIndex(primarySearch).catch(() => []) : [];
-
-        // 2. Fetch from iTunes, RoyalRoad, Google Books, Telegram, and MangaDex in parallel
-        const [itunesResp, webnovelResults, telegramRaw, googleBooksResp, mangadexRaw] = await Promise.all([
-            axios.get(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanItunesQuery)}&entity=ebook&limit=25`)
-                 .catch(() => ({ data: { results: [] } })),
-            searchRoyalRoad(cleanQuery).catch(() => []),
-            searchPrioritizedTelegram(cleanQuery).catch(() => []),
-            axios.get(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(primarySearch)}&maxResults=15`)
-                 .catch(() => ({ data: { items: [] } })),
+        // ─────────────────────────────────────────────────────────────────────
+        // ADVANCED MULTI-RESULT SMART AGGREGATOR & HIERARCHICAL RANKER
+        // 1. Searches Telegram (Tier 1 Main & Tier 2 Archive) and MangaDex in parallel
+        // 2. Ranks exact title at Rank #1, direct sequels/spin-offs at Rank #2, related at Rank #3+
+        // ─────────────────────────────────────────────────────────────────────
+        const [privateRaw, tgIndexed, mangadexRaw] = await Promise.all([
+            searchPrivateChannels(cleanQuery).catch(() => []),
+            searchTelegramIndex(cleanQuery).catch(() => []),
             searchMangaDex(cleanQuery).catch(() => [])
         ]);
 
-        const COLORS = ['navy','teal','burgundy','midnight','sage','rust','ochre','brown','grey','ivory'];
+        const candidateList = [];
+        const seenNormTitles = new Set();
 
-        const itunesRaw = (itunesResp.data.results || []).sort((a, b) => {
-            const tA = (a.trackName || '').toLowerCase();
-            const tB = (b.trackName || '').toLowerCase();
-            const scoreA = tA === qLower ? 100 : tA.startsWith(qLower) ? 50 : tA.includes(qLower) ? 25 : 0;
-            const scoreB = tB === qLower ? 100 : tB.startsWith(qLower) ? 50 : tB.includes(qLower) ? 25 : 0;
-            if (scoreA !== scoreB) return scoreB - scoreA;
-            return volumeNumber(a.trackName || '') - volumeNumber(b.trackName || '');
-        });
+        // 1. Process Telegram Main Channel Results
+        for (const item of (privateRaw || [])) {
+            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (seenNormTitles.has(normT)) continue;
+            seenNormTitles.add(normT);
 
-        let itunesResults = itunesRaw.map((book, i) => {
-            const color    = COLORS[i % COLORS.length];
-            const title    = book.trackName   || 'Unknown Title';
-            const author   = book.artistName  || 'Unknown Author';
-            let coverUrl = book.artworkUrl100
-                ? book.artworkUrl100.replace('100x100bb', '600x600bb')
-                : null;
-            if (coverUrl && coverUrl.includes('nocover')) coverUrl = null;
+            const encodedHash = item.inviteHash ? encodeURIComponent(item.inviteHash) : 'nohash';
+            let coverImg = await Promise.race([
+                fetchRealCoverImage(item.title),
+                new Promise(r => setTimeout(() => r(null), 350))
+            ]).catch(() => null);
 
-            let synopsis = (book.description || `A work by ${author}.`).replace(/<[^>]*>?/gm, '');
-
-            const slug = (book.trackName || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 30);
-            return {
-                id:       `itunes-${book.trackId}-${slug}`,
-                title,
-                author,
-                cover:    coverUrl ? `has-image ${color}` : color,
-                image:    coverUrl,
-                lines:    title.split(' ').slice(0,3).join('<br>'),
-                genre:    book.genres?.[0] || 'Novel',
-                mood:     'Classic',
-                pages:    300,
-                rating:   Math.round(book.averageUserRating || 4),
-                synopsis,
-                hasEpub:  true
-            };
-        });
-
-        // Parse Google Books Results for web novels, light novels, published books
-        const googleBooks = (googleBooksResp.data.items || []).map((item, i) => {
-            const info = item.volumeInfo || {};
-            const title = info.title || 'Unknown Title';
-            const author = (info.authors || ['Published Author'])[0];
-            const coverUrl = info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail || null;
-            const color = COLORS[i % COLORS.length];
-            const pages = info.pageCount || 284;
-            const categories = info.categories || ['Fiction'];
-            const slug = title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30);
-
-            return {
-                id: `itunes-gb-${item.id}-${slug}`,
-                title,
-                author,
-                cover: coverUrl ? `has-image ${color}` : color,
-                image: coverUrl,
-                lines: title.split(' ').slice(0, 3).join('<br>'),
-                genre: categories[0] || 'Novel',
-                mood: 'Engaging',
-                pages,
-                rating: 5,
-                synopsis: info.description || `${title} by ${author}.`,
-                hasEpub: true
-            };
-        });
-
-        // Filter out third-party summaries, study guides, workbooks from iTunes search
-        itunesResults = itunesResults.filter(b => {
-            const t = b.title.toLowerCase();
-            const isSummary = t.includes('summary') || t.includes('study guide') || t.includes('guide:') || t.includes('workbook') || t.includes('notes') || t.includes('takeaways') || t.includes('one-page') || t.includes('analysis');
-            return !isSummary;
-        });
-
-        // ── Smart Deduplication & Unified Result Builder ──────────────────────
-        function normTitle(t) {
-            if (!t) return '';
-            const ascii = t.replace(/[^\x00-\x7F]/g, '');
-            return ascii
-                .toLowerCase()
-                .replace(/vol(?:ume)?\.?\s*\d+/gi, '')
-                .replace(/chapter\s*\d+/gi, '')
-                .replace(/[^a-z0-9]/g, '')
-                .trim();
-        }
-
-        const titleMap = new Map();
-
-        function addToMap(item, priority) {
-            const key = normTitle(item.title);
-            if (!key) return;
-            const existing = titleMap.get(key);
-            if (!existing || priority > existing._priority) {
-                titleMap.set(key, { ...item, _priority: priority });
-            } else if (existing && item.telegramLink && !existing.telegramLink) {
-                existing.telegramLink = item.telegramLink;
-            }
-        }
-
-        // 0. Local Scraped & Downloaded Manga PDFs → Top Priority (160)
-        const { scanDownloadedMangaPdfs } = require('./universalTelegramPdfEngine');
-        const localPdfs = scanDownloadedMangaPdfs();
-        localPdfs.forEach(pdf => {
-            if (!pdf.title) return;
-            const cleanT = pdf.title;
-            const chs = Math.max(pdf.chapterNum || 1, 50);
-            addToMap({
-                id: `telegram-${pdf.slug || cleanT.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-                title: cleanT,
+            candidateList.push({
+                id: `private-tg-${encodedHash}-${item.messageId}`,
+                title: item.title,
                 author: 'Manga / Manhwa',
-                cover: 'teal',
-                image: null,
-                lines: cleanT.split(' ').slice(0, 3).join('<br>'),
+                cover: coverImg ? 'has-image teal' : 'midnight',
+                image: coverImg,
+                lines: item.title.split(' ').slice(0, 3).join('<br>'),
                 genre: 'Manga',
-                mood: 'Trending',
-                pages: chs,
+                mood: 'Exclusive',
+                pages: 87,
                 rating: 5,
-                synopsis: `${cleanT} (${chs} full chapters available).`,
-                hasEpub: true
-            }, 160);
-        });
-
-        // 1. RAM Indexed Telegram Results → Priority (150)
-        [...tgIndexed, ...tgIndexedPrimary].forEach(item => addToMap(item, 150));
-
-        // 2. Telegram Scraped Live hits → Priority 100
-        (telegramRaw || []).forEach(tItem => {
-            const cleanedTitle = (tItem.title || '')
-                .replace(/[^\x00-\x7F]/g, '')
-                .replace(/- telegram manga.*/i, '')
-                .replace(/- animmaster.*/i, '')
-                .replace(/- vault search.*/i, '')
-                .replace(/- post from.*/i, '')
-                .replace(/\s*@\w+\s*/g, '')
-                .replace(/\s+/g, ' ')
-                .trim() || tItem.title.replace(/[^\x00-\x7F]/g, '').trim();
-
-            const isGodAssassin = cleanedTitle.toLowerCase().includes('assassin') && cleanedTitle.toLowerCase().includes('shadow');
-            const totalChs = isGodAssassin ? 133 : (tItem.pages || 133);
-
-            addToMap({
-                id: `telegram-${cleanedTitle.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30)}`,
-                title: cleanedTitle,
-                author: 'Manga / Manhwa',
-                cover: 'teal',
-                image: null,
-                lines: cleanedTitle.split(' ').slice(0, 3).join('<br>'),
-                genre: 'Manga',
-                mood: 'Trending',
-                pages: totalChs,
-                rating: 5,
-                synopsis: `${cleanedTitle} (${totalChs} full chapters available).`,
+                synopsis: (item.text || '').substring(0, 200),
                 hasEpub: true,
-                telegramLink: tItem.link,
-                telegramChannel: tItem.channel
-            }, 100);
-        });
-
-        // 3. RoyalRoad → Priority 60
-        webnovelResults.forEach(w => addToMap(w, 60));
-
-        // 3.5 MangaDex → Priority 90 (Below Telegram!)
-        (mangadexRaw || []).forEach(m => addToMap(m, 90));
-
-        // 4. Google Books → Priority 50
-        googleBooks.forEach(g => addToMap(g, 50));
-
-        // 5. iTunes → Priority 40
-        itunesResults.forEach(b => addToMap(b, 40));
-
-        // Build final results array from map with clean metadata
-        const { fetchRealCoverImage } = require('./coverFetcher');
-
-        const results = await Promise.all([...titleMap.values()].map(async r => {
-            const { _priority, _score, ...clean } = r;
-
-            let cleanAuthor = (clean.author || 'Manga / Manhwa')
-                .replace(/@\w+/g, '')
-                .replace(/\btelegram\b/gi, '')
-                .replace(/\b(channel|joined main|global vault|royal road author)\b/gi, '')
-                .trim();
-            if (!cleanAuthor || cleanAuthor.length < 2) cleanAuthor = 'Manga / Manhwa';
-
-            // Ensure cover image is populated if available
-            if (!clean.image) {
-                const fetchedCover = await fetchRealCoverImage(clean.title).catch(() => null);
-                if (fetchedCover) {
-                    clean.image = fetchedCover;
-                    clean.cover = 'has-image teal';
-                }
-            }
-
-            // Accurate chapter counts & clean titles per real source
-            const tl = clean.title.toLowerCase();
-            if (tl.includes('assassin') && (tl.includes('shadow') || tl.includes('strongest') || tl.includes('god'))) {
-                clean.title = "God-level Assassin, I'm the Shadow";
-                clean.pages = 133;
-            } else if (tl.includes('trapped in this day') || tl.includes('thousand years')) {
-                clean.pages = 284;
-            } else if (clean.pages === 284 && !tl.includes('trapped') && !tl.includes('loop')) {
-                // Don't force 284 onto unrelated titles — keep their real page count
-                // (only override was for the two specific series above)
-            }
-
-            return {
-                ...clean,
-                author: cleanAuthor
-            };
-        }));
-
-        // Sort by match quality and priority
-        function calculateSearchScore(title, q) {
-            const tNorm = (title || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
-            const qNorm = (q || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
-            if (tNorm.trim() === qNorm.trim()) return 10000;
-            if (tNorm.includes(qNorm.trim()) || qNorm.includes(tNorm.trim())) return 5000;
-            const qWords = qNorm.split(/\s+/).filter(w => w.length > 1);
-            if (qWords.length === 0) return 0;
-            let count = 0;
-            for (const w of qWords) {
-                if (tNorm.includes(w)) count++;
-            }
-            return (count / qWords.length) * 2000;
+                privateInviteHash: item.inviteHash
+            });
         }
 
-        results.sort((a, b) => {
-            const scoreA = calculateSearchScore(a.title, primarySearch);
-            const scoreB = calculateSearchScore(b.title, primarySearch);
-            if (scoreA !== scoreB) return scoreB - scoreA;
-            return (b._priority || 0) - (a._priority || 0);
-        });
+        // 2. Process Telegram Alternative Channels
+        for (const item of (tgIndexed || [])) {
+            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (seenNormTitles.has(normT)) continue;
+            seenNormTitles.add(normT);
+            candidateList.push(item);
+        }
 
-        res.json(results);
+        // 3. Process MangaDex Scanlations (e.g. Spin-offs, Retries, related series)
+        for (const item of (mangadexRaw || [])) {
+            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (seenNormTitles.has(normT)) continue;
+            seenNormTitles.add(normT);
+            candidateList.push(item);
+        }
+
+        // If we found manga/manhwa results, score and rank them hierarchically!
+        if (candidateList.length > 0) {
+            const scored = candidateList
+                .map(item => ({ item, score: calculateSearchRelevanceScore(cleanQuery, item.title) }))
+                .filter(r => r.score > 0)
+                .sort((a, b) => b.score - a.score)
+                .map(r => r.item);
+
+            if (scored.length > 0) {
+                return res.json(scored.slice(0, 15));
+            }
+        }
+
+        // 4. Fallback to Novels / Gutenberg / iTunes / Google Books if not a manga
+        const [webnovelResults, itunesResp, googleBooksResp] = await Promise.all([
+            searchRoyalRoad(cleanQuery).catch(() => []),
+            axios.get(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanQuery)}&entity=ebook&limit=5`, { timeout: 2500 }).catch(() => ({ data: { results: [] } })),
+            axios.get(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(cleanQuery)}&maxResults=5`, { timeout: 2500 }).catch(() => ({ data: { items: [] } }))
+        ]);
+
+        for (const w of (webnovelResults || [])) {
+            const normT = (w.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!seenNormTitles.has(normT)) {
+                seenNormTitles.add(normT);
+                candidateList.push(w);
+            }
+        }
+
+        for (const book of (itunesResp.data.results || [])) {
+            const title = book.trackName || cleanQuery;
+            const normT = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!seenNormTitles.has(normT)) {
+                seenNormTitles.add(normT);
+                let coverUrl = book.artworkUrl100 ? book.artworkUrl100.replace('100x100bb', '600x600bb') : null;
+                candidateList.push({
+                    id: `itunes-${book.trackId}-${cleanQuery.replace(/[^a-z0-9]/g, '-').slice(0, 30)}`,
+                    title,
+                    author: book.artistName || 'Author',
+                    cover: coverUrl ? 'has-image navy' : 'navy',
+                    image: coverUrl,
+                    lines: title.split(' ').slice(0, 3).join('<br>'),
+                    genre: book.genres?.[0] || 'Novel',
+                    mood: 'Classic',
+                    pages: 300,
+                    rating: 5,
+                    synopsis: (book.description || '').replace(/<[^>]*>?/gm, '').substring(0, 200),
+                    hasEpub: true
+                });
+            }
+        }
+
+        const scoredFallback = candidateList
+            .map(item => ({ item, score: calculateSearchRelevanceScore(cleanQuery, item.title) }))
+            .filter(r => r.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .map(r => r.item);
+
+        return res.json(scoredFallback.slice(0, 15));
     } catch (err) {
         console.error('[SEARCH] Error:', err.message);
         res.status(500).json([]);
@@ -333,6 +236,11 @@ app.get('/api/books/search', async (req, res) => {
 // 2. CHAPTER LIST ENDPOINT
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/favicon.ico', (req, res) => res.status(204).end());
+
+// ── Private Channel Chapter Images (legacy compat stub — superseded by getReadingChannelChapters)
+app.get('/api/private-chapters', async (req, res) => {
+    res.json({ panels: [] });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2.5 LOCAL DOWNLOAD POLLING ENDPOINT (Auto-load without refresh)
@@ -406,7 +314,6 @@ app.get('/api/books/:id/chapters', async (req, res) => {
     let rawQuery = (req.query.q || id)
         .replace(/^itunes-\d+-?/, '')
         .replace(/itunes-/g, '')
-        .replace(/-/g, ' ')
         .replace(/telegram manga cruise vault.*$/i, '')
         .replace(/animmaster vault.*$/i, '')
         .replace(/@\w+/g, '')
@@ -434,24 +341,56 @@ app.get('/api/books/:id/chapters', async (req, res) => {
 
     const getUniversalChapters = require('./universalNovelEngine');
     try {
-        // ── TELEGRAM-ONLY MANGA/MANHWA LOGIC ─────────────────────────────────────────────────────
-        const isManga = id.startsWith('mangadex-') || id.startsWith('telegram-') || id.startsWith('webtoon-') || 
-                        /manga|manhwa|manhua|webtoon|comic|spearman|resurrection|mount hua|solo leveling|jujutsu|demon slayer|chainsaw|blue lock|one piece|naruto|bleach|hero|leveling|assassin|swordmaster/i.test(cleanQuery);
+        // ── MANGA/MANHWA ROUTING ──────────────────────────────────────────────────────
+        // Any id prefixed private-tg-, telegram-, mangadex- is always a manga/manhwa.
+        // For other IDs, detect by common keywords.
+        const isManga = id.startsWith('mangadex-') || id.startsWith('telegram-') ||
+                        id.startsWith('private-tg-') || id.startsWith('webtoon-') ||
+                        /manga|manhwa|manhua|webtoon|comic|spearman|resurrection|mount hua|solo leveling|jujutsu|demon slayer|chainsaw|blue lock|one piece|naruto|bleach|hero|leveling|assassin|swordmaster|borderland|dungeon|delicious/i.test(cleanQuery);
 
-        if (isManga) {
-            // --- STRICT ROUTING BASED ON ID ---
-            // If the user clicked a MangaDex search result, we ONLY check MangaDex!
+        if (isManga || id.startsWith('private-tg-') || id.startsWith('telegram-') || id.startsWith('mangadex-')) {
+            // --- 0. PRIVATE TELEGRAM (Manga Horizon) RESULTS ---
+            // Manga Horizon posts are ANNOUNCEMENT CARDS with inline buttons.
+            // The button contains an invite link to the ACTUAL per-title reading channel.
+            // We extract that invite hash from the encoded ID and join the reading channel.
+            if (id.startsWith('private-tg-')) {
+                // ID format: private-tg-{encodedInviteHash}-{messageId}
+                const hashMatch = id.match(/^private-tg-([^-]+(?:-[^-]+)*)-\d+$/);
+                const encodedHash = hashMatch?.[1];
+                const inviteHash = encodedHash && encodedHash !== 'nohash' ? decodeURIComponent(encodedHash) : null;
+
+                if (inviteHash) {
+                    console.log(`[CHAPTERS] Fetching reading channel chapters for "${cleanQuery}" via invite hash...`);
+                    const tgChapters = await getReadingChannelChapters(inviteHash, cleanQuery).catch(() => []);
+                    if (tgChapters && tgChapters.length > 0) {
+                        console.log(`[CHAPTERS] Reading channel served ${tgChapters.length} genuine chapters for "${cleanQuery}"`);
+                        const payload = { chapters: tgChapters, type: 'manga', source: 'PrivateTelegramReading' };
+                        MEMORY_CACHE.chapters.set(cacheKey, payload);
+                        return res.json(payload);
+                    }
+                }
+                console.log(`[CHAPTERS] No invite hash or empty reading channel for "${cleanQuery}" — falling through to scan engines`);
+            }
+
+            // --- 1. MANGADEX BY EXACT UUID (fastest, most accurate) ---
             if (id.startsWith('mangadex-')) {
-                const { fetchRealMangaChapters } = require('./mangadex');
-                const realStoryChapters = await fetchRealMangaChapters(cleanQuery, 98).catch(() => null);
+                const { fetchRealMangaChapters, fetchRealMangaChaptersById } = require('./mangadex');
+                const mdId = id.replace(/^mangadex-/, '').trim();
+                let realStoryChapters = null;
+
+                if (/^[a-f0-9-]{36}$/i.test(mdId)) {
+                    realStoryChapters = await fetchRealMangaChaptersById(mdId, 98).catch(() => null);
+                }
+                if (!realStoryChapters || realStoryChapters.length === 0) {
+                    realStoryChapters = await fetchRealMangaChapters(cleanQuery, 98).catch(() => null);
+                }
+
                 if (realStoryChapters && realStoryChapters.length > 0) {
-                    console.log(`[CHAPTERS] Real Story Engine served ${realStoryChapters.length} genuine chapters for "${cleanQuery}" (MangaDex Strict)`);
+                    console.log(`[CHAPTERS] MangaDex Engine served ${realStoryChapters.length} genuine chapters for "${cleanQuery}" (ID: ${mdId})`);
                     const payload = { chapters: realStoryChapters, type: 'manga', source: 'RealStoryPanelEngine' };
                     MEMORY_CACHE.chapters.set(cacheKey, payload);
                     return res.json(payload);
                 }
-                console.log(`[CHAPTERS] MangaDex strict route found no chapters for "${cleanQuery}".`);
-                return res.json({ chapters: [], type: 'manga', source: 'NoScansFound', isFallback: false });
             }
 
             // ── GOD-LEVEL ASSASSIN: Only match exact series queries (never random titles with words 'god' or 'assassin')
@@ -585,7 +524,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             console.error('[CHAPTERS] Error checking local downloads:', e.message);
         }
 
-        // 2. Automated Universal Multi-Source Internet Fetcher (Handles ALL books automatically)
+        // 2. Automated Universal Multi-Source Internet Fetcher (Internet Archive)
         const { autoFetchBookFromInternet } = require('./universalInternetFetcher');
         const autoResult = await autoFetchBookFromInternet(cleanQuery, '', id);
 
@@ -609,21 +548,31 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             }
         }
 
-        // If it's any comic/manga/manhwa, never return novel text!
-        if (id.startsWith('mangadex-') || id.startsWith('telegram-') || id.startsWith('webtoon-') || /manga|manhwa|manhua|webtoon|comic|spearman|resurrection/i.test(cleanQuery)) {
-            return res.json({ chapters: [], type: 'manga', source: 'NoScansFound', isFallback: false });
+        // 3. Project Gutenberg Authentic Public Domain Text Scraper (100% Genuine Chapters)
+        const { fetchGutenbergChapters } = require('./gutendex');
+        const gutenbergRes = await fetchGutenbergChapters(cleanQuery, '').catch(() => null);
+        if (gutenbergRes && gutenbergRes.chapters && gutenbergRes.chapters.length > 0) {
+            console.log(`[SERVER] Gutenberg served ${gutenbergRes.chapters.length} authentic chapters for: "${cleanQuery}"`);
+            const payload = { chapters: gutenbergRes.chapters, type: 'book', source: 'Gutenberg', isFallback: false };
+            MEMORY_CACHE.chapters.set(cacheKey, payload);
+            return res.json(payload);
         }
 
-        // Always fallback to direct inline reading chapters! No download buttons, no external links!
-        const universalChapters = getUniversalChapters(cleanQuery, '', '');
-        const payload = { 
-            chapters: universalChapters, 
-            type: 'book', 
-            source: 'UniversalEngine', 
-            isFallback: false 
-        };
-        MEMORY_CACHE.chapters.set(cacheKey, payload);
-        return res.json(payload);
+        // 4. Dedicated Verified Novel Providers (Shadow Slave, Locke Lamora, etc.)
+        const dedicatedChapters = getUniversalChapters(cleanQuery, '', '');
+        if (dedicatedChapters && dedicatedChapters.length > 0) {
+            const payload = { 
+                chapters: dedicatedChapters, 
+                type: 'book', 
+                source: 'DedicatedProvider', 
+                isFallback: false 
+            };
+            MEMORY_CACHE.chapters.set(cacheKey, payload);
+            return res.json(payload);
+        }
+
+        // If not found in any authentic source, return clean empty result (NEVER FAKE TEXT!)
+        return res.json({ chapters: [], type: 'book', source: 'NoTextFound', isFallback: false });
 
     } catch (err) {
         console.error('[CHAPTERS] Error:', err.message);
@@ -638,6 +587,24 @@ app.get('/api/books/:id/chapters', async (req, res) => {
 app.get('/api/manga/chapter/:chapterId', async (req, res) => {
     try {
         const chapterId = req.params.chapterId || '';
+
+        // -1. Private Telegram Channel PDF Chapter (private-pdf-{channelId}-{messageId}-{chNum})
+        if (chapterId.startsWith('private-pdf-')) {
+            const m = chapterId.match(/^private-pdf-(-?\d+)-(\d+)-([\d\.]+)$/);
+            if (m) {
+                const channelId = m[1];
+                const messageId = m[2];
+                const chNum = m[3];
+                const title = req.query.title || req.query.q || 'Manga';
+
+                const { getChapterPdfPanels } = require('./userbot');
+                const panelHtml = await getChapterPdfPanels(channelId, messageId, chNum, title);
+                if (panelHtml) {
+                    return res.json({ html: panelHtml });
+                }
+            }
+        }
+
         // 0. Master Manhwa Live URL Handler (manhwa-live-{encodedUrl})
         if (chapterId.startsWith('manhwa-live-')) {
             const rawUrl = decodeURIComponent(chapterId.replace('manhwa-live-', ''));

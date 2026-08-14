@@ -11,48 +11,6 @@
     "lines": "The<br>Silent<br>Hours",
     "image": "assets/covers/silent-hours.svg",
     "synopsis": "The Silent Hours is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -67,48 +25,6 @@
     "lines": "Wuthering<br>Heights",
     "image": "assets/covers/wuthering-heights.svg",
     "synopsis": "Wuthering Heights is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -123,48 +39,6 @@
     "lines": "Moby<br>Dick",
     "image": "assets/covers/moby-dick.svg",
     "synopsis": "Moby Dick is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -179,48 +53,6 @@
     "lines": "The Siant<br>Hours",
     "image": "assets/covers/siant-hours.svg",
     "synopsis": "The Siant Hours is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -235,48 +67,6 @@
     "lines": "De<br>Romans",
     "image": "assets/covers/de-romans.svg",
     "synopsis": "De Romans is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -291,48 +81,6 @@
     "lines": "Morley<br>Frans",
     "image": "assets/covers/morley-frans.svg",
     "synopsis": "Morley Frans is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -347,48 +95,6 @@
     "lines": "The<br>Midssnet",
     "image": "assets/covers/midssnet.svg",
     "synopsis": "The Midssnet is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -403,48 +109,6 @@
     "lines": "Womering<br>Heights",
     "image": "assets/covers/womering-heights.svg",
     "synopsis": "Womering Heights is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -459,48 +123,6 @@
     "lines": "Quiet<br>Paper",
     "image": "assets/covers/quiet-paper.svg",
     "synopsis": "Quiet Paper is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Books"
   },
   {
@@ -515,48 +137,6 @@
     "lines": "Echoes<br>of the<br>Past",
     "image": "assets/covers/echoes-past.svg",
     "synopsis": "Echoes of the Past is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -571,48 +151,6 @@
     "lines": "The<br>Midnight<br>Library",
     "image": "assets/covers/midnight-library.svg",
     "synopsis": "The Midnight Library is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -627,48 +165,6 @@
     "lines": "The<br>Livns<br>Visiam",
     "image": "assets/covers/livns-visiam.svg",
     "synopsis": "The Livns Visiam is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -683,48 +179,6 @@
     "lines": "The<br>Unravmish<br>Book",
     "image": "assets/covers/unravmish-book.svg",
     "synopsis": "The Unravmish Book is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -739,48 +193,6 @@
     "lines": "Isleath of<br>Sphoniat",
     "image": "assets/covers/sphoniat.svg",
     "synopsis": "Isleath of Sphoniat is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -795,48 +207,6 @@
     "lines": "The<br>Trearnbook",
     "image": "assets/covers/trearnbook.svg",
     "synopsis": "The Trearnbook is presented in the warm Bibliothèque reader with structured chapters, saved progress, notes, and editorial recommendations.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Turning",
-        "minutes": 18,
-        "content": [
-          "The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.",
-          "Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall."
-        ],
-        "quote": "Some rooms are not silent because they are empty, but because every object inside them remembers what was said."
-      },
-      {
-        "id": "chapter-2",
-        "title": "A Note in Sepia",
-        "minutes": 16,
-        "content": [
-          "The second chapter opens with a letter folded into the atlas, its ink browned by years of patient secrecy.",
-          "Every shelf seemed to lean closer as the clue took shape."
-        ],
-        "quote": "A margin note can be smaller than a whisper and still alter the room."
-      },
-      {
-        "id": "chapter-3",
-        "title": "The Orchard Path",
-        "minutes": 20,
-        "content": [
-          "Past the glasshouse, the orchard path disappeared beneath wet leaves and the low perfume of apples.",
-          "Here the story slows into footsteps, memory, and the discipline of looking again."
-        ],
-        "quote": "Truth rarely arrives as thunder; more often it taps at the window."
-      },
-      {
-        "id": "chapter-4",
-        "title": "Letters Unsent",
-        "minutes": 22,
-        "content": [
-          "The final bundle of letters had never been posted. Their envelopes were blank, but each carried the weight of an address everyone knew.",
-          "By morning, the house would no longer be innocent of its own history."
-        ],
-        "quote": "What remains unread does not remain unfelt."
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -851,32 +221,6 @@
     "lines": "Alice’s<br>Adventures",
     "image": "assets/covers/alice-wonderland.svg",
     "synopsis": "Public-domain demo edition with original Alice text excerpt and a John Tenniel illustration placed inside the chapter flow.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "Down the Rabbit-Hole",
-        "minutes": 14,
-        "publicDomain": true,
-        "source": "Project Gutenberg / Lewis Carroll",
-        "content": [
-          "Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do. Once or twice she had peeped into the book her sister was reading, but it had no pictures or conversations in it, “and what is the use of a book,” thought Alice “without pictures or conversations?”",
-          "So she was considering in her own mind, as well as she could, for the hot day made her feel very sleepy and stupid, whether the pleasure of making a daisy-chain would be worth the trouble of getting up and picking the daisies."
-        ],
-        "image": "assets/illustrations/alice-rabbit.gif",
-        "imageCaption": "John Tenniel illustration, public-domain Project Gutenberg edition.",
-        "quote": "Oh dear! Oh dear! I shall be too late!"
-      },
-      {
-        "id": "chapter-2",
-        "title": "The Pool of Tears",
-        "minutes": 16,
-        "content": [
-          "Curiouser and curiouser! The room and the rules of ordinary size had become impossible to trust.",
-          "The text demonstrates how an illustration can sit naturally between paragraphs inside the reader."
-        ],
-        "quote": "Who in the world am I?"
-      }
-    ],
     "format": "Novels"
   },
   {
@@ -891,19 +235,7 @@
     "cover": "midnight",
     "lines": "Moonlit<br>Archive",
     "image": "assets/covers/moonlit-archive.svg",
-    "synopsis": "A quiet manga-style mystery about a night librarian cataloguing memories that turn into ink.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "Panel One: The Key Drawer",
-        "minutes": 10,
-        "content": [
-          "The archive opened only after midnight, when the catalogue cards rearranged themselves into small panels of light.",
-          "Sana followed the silver gutter between frames and found the first key drawn in blue ink."
-        ],
-        "quote": "Some stories read from left to right; some read from silence to memory."
-      }
-    ]
+    "synopsis": "A quiet manga-style mystery about a night librarian cataloguing memories that turn into ink."
   },
   {
     "id": "paper-crown",
@@ -917,19 +249,7 @@
     "cover": "rust",
     "lines": "The<br>Paper<br>Crown",
     "image": "assets/covers/paper-crown.svg",
-    "synopsis": "A warm manhwa-inspired court story where a paper artisan is asked to forge a crown that can remember promises.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The Artisan’s Commission",
-        "minutes": 11,
-        "content": [
-          "The palace messenger arrived with a box of ivory paper and a royal seal pressed too deeply into wax.",
-          "Every sheet inside was blank, yet each one felt heavier than law."
-        ],
-        "quote": "A crown made of paper can still cut the hand that wears it."
-      }
-    ]
+    "synopsis": "A warm manhwa-inspired court story where a paper artisan is asked to forge a crown that can remember promises."
   },
   {
     "id": "tea-house-panels",
@@ -943,19 +263,7 @@
     "cover": "sage",
     "lines": "Tea House<br>Panels",
     "image": "assets/covers/tea-house-panels.svg",
-    "synopsis": "A gentle illustrated slice-of-life volume about a tea house where customers leave stories instead of coins.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "The First Cup",
-        "minutes": 9,
-        "content": [
-          "The bell above the tea house door rang softly, as if it were afraid to disturb the steam.",
-          "On the counter, a blank panel waited for the day’s first story."
-        ],
-        "quote": "The smallest cup can hold an entire afternoon."
-      }
-    ]
+    "synopsis": "A gentle illustrated slice-of-life volume about a tea house where customers leave stories instead of coins."
   },
   {
     "id": "lantern-poems",
@@ -969,18 +277,6 @@
     "cover": "ochre",
     "lines": "Lantern<br>Poems",
     "image": "assets/covers/lantern-poems.svg",
-    "synopsis": "A slim poetry collection for the More shelf: luminous fragments, short forms, and quiet evening pieces.",
-    "chapters": [
-      {
-        "id": "chapter-1",
-        "title": "Small Lanterns",
-        "minutes": 7,
-        "content": [
-          "A lantern does not argue with the dark. It simply keeps its little weather of gold.",
-          "Each poem in this section is meant to be read slowly, with room around it."
-        ],
-        "quote": "Light is a sentence the night agrees to read."
-      }
-    ]
+    "synopsis": "A slim poetry collection for the More shelf: luminous fragments, short forms, and quiet evening pieces."
   }
 ]
