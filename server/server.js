@@ -54,7 +54,7 @@ const { searchPrioritizedTelegram } = require('./telegram');
 const { searchPrivateChannels, getReadingChannelChapters } = require('./userbot');
 
 function calculateSearchRelevanceScore(query, candidateTitle) {
-    const stopWords = new Set(['in', 'of', 'the', 'a', 'an', 'to', 'and', 'for', 'with', 'on', 'at', 'is', 'by', 'manga', 'manhwa', 'webtoon']);
+    const stopWords = new Set(['in', 'of', 'the', 'a', 'an', 'to', 'and', 'for', 'with', 'on', 'at', 'is', 'by', 'manga', 'manhwa', 'webtoon', 'comic', 'novel', 'read', 'chapter', 'online', 'free', 'raw']);
     const cleanQ = (query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     const cleanT = (candidateTitle || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -68,14 +68,14 @@ function calculateSearchRelevanceScore(query, candidateTitle) {
         return 9000 - Math.min(cleanT.length - cleanQ.length, 500);
     }
 
-    // Rank 3: Exact phrase inside title
-    if (cleanT.includes(cleanQ)) {
-        return 8000 - Math.min(cleanT.length - cleanQ.length, 500);
+    // Rank 3: Exact phrase inside title or title inside query
+    if (cleanT.includes(cleanQ) || cleanQ.includes(cleanT)) {
+        return 8000 - Math.min(Math.abs(cleanT.length - cleanQ.length), 500);
     }
 
-    // Rank 4: All significant keywords match
+    // Rank 4: Significant keyword matching
     const qTokens = cleanQ.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
-    const tTokens = new Set(cleanT.split(/\s+/).filter(w => w.length > 1));
+    const tTokens = new Set(cleanT.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w)));
 
     if (qTokens.length === 0) return 500;
 
@@ -85,9 +85,9 @@ function calculateSearchRelevanceScore(query, candidateTitle) {
     }
 
     const ratio = matched / qTokens.length;
-    if (ratio < 0.85) return 0; // Strict rejection of irrelevant titles
+    if (ratio === 0 && matched === 0) return 50;
 
-    return Math.round(6000 * ratio) - Math.min(Math.abs(cleanT.length - cleanQ.length), 500);
+    return Math.round(5000 * ratio) - Math.min(Math.abs(cleanT.length - cleanQ.length), 500);
 }
 
 app.get('/api/books/search', async (req, res) => {
@@ -176,8 +176,13 @@ app.get('/api/books/search', async (req, res) => {
         // If we found manga/manhwa results, score and rank them hierarchically!
         if (candidateList.length > 0) {
             const scored = candidateList
-                .map(item => ({ item, score: calculateSearchRelevanceScore(cleanQuery, item.title) }))
-                .filter(r => r.score > 0)
+                .map(item => {
+                    let score = calculateSearchRelevanceScore(cleanQuery, item.title);
+                    // Telegram (our joined channels) is always Tier-1 priority above external scrapers like MangaDex
+                    if (item.id.startsWith('private-tg-')) score += 8000;
+                    else if (item.id.startsWith('telegram-')) score += 5000;
+                    return { item, score };
+                })
                 .sort((a, b) => b.score - a.score)
                 .map(r => r.item);
 

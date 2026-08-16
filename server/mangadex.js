@@ -68,7 +68,7 @@ function isAccurateMangaDexMatch(query, title, altTitles = []) {
         for (const token of qTokens) {
             if (tTokens.has(token) || t.includes(token)) matchCount++;
         }
-        if (matchCount === qTokens.length) return true;
+        if (matchCount / qTokens.length >= 0.40 || (matchCount >= 1 && qTokens.length <= 2)) return true;
     }
     return false;
 }
@@ -435,14 +435,7 @@ async function buildChaptersListFromMap(byNum, officialTitle) {
                 }).join('');
 
                 panelHtml = `
-                    <div style="background:#000;min-height:100vh;padding:0;margin:0 0 4rem 0;">
-                        <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;position:sticky;top:0;z-index:30;box-shadow:0 4px 25px rgba(0,0,0,0.9);">
-                            <div style="display:inline-block;background:#0284c7;color:#fff;padding:4px 14px;border-radius:12px;font-size:0.75rem;font-weight:800;letter-spacing:0.5px;margin-bottom:0.4rem;">
-                                ${displayLabel}
-                            </div>
-                            <h2 style="color:#f8fafc;font-size:1.4rem;margin:0.4rem 0 0 0;font-weight:800;">${officialTitle}</h2>
-                            <span style="color:#64748b;font-size:0.8rem;">${pageUrls.length} Pages</span>
-                        </div>
+                    <div style="background:#000;min-height:100vh;padding:0;margin:0 0 2rem 0;">
                         <div style="display:flex;flex-direction:column;align-items:center;background:#000;gap:0;padding:0;margin:0;width:100%;">
                             ${pages}
                         </div>

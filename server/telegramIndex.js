@@ -302,26 +302,29 @@ function calculateMatchScore(query, title) {
     const qNorm = normalizeKey(query);
     const tNorm = normalizeKey(title);
     if (!qNorm || !tNorm) return 0;
-    if (tNorm === qNorm) return 100;
-    if (tNorm.startsWith(qNorm) || qNorm.startsWith(tNorm)) return 95;
-    if (tNorm.includes(qNorm) || qNorm.includes(tNorm)) return 90;
+    if (tNorm === qNorm) return 1000;
+    if (tNorm.startsWith(qNorm) || qNorm.startsWith(tNorm)) return 950;
+    if (tNorm.includes(qNorm) || qNorm.includes(tNorm)) return 900;
 
-    const stopWords = new Set(['the','a','an','of','in','at','to','for','and','or','is','its','by','with']);
-    const qWords = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 0 && !stopWords.has(w));
-    const tWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 0 && !stopWords.has(w));
+    const stopWords = new Set(['the','a','an','of','in','at','to','for','and','or','is','its','by','with','manga','manhwa','webtoon','making','open','opened','opening','read','chapter']);
+    const qWords = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
+    const tWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
 
     if (qWords.length === 0) return 0;
 
     let matchCount = 0;
     for (const qw of qWords) {
-        if (tWords.some(tw => tw === qw || tw.startsWith(qw) || qw.startsWith(tw))) {
+        if (tWords.some(tw => tw === qw || tw.includes(qw) || qw.includes(tw))) {
             matchCount++;
         }
     }
 
     const ratio = matchCount / qWords.length;
-    // Strict threshold: all significant keywords in the query must be found in the title
-    return ratio >= 0.85 ? Math.round(ratio * 90) : 0;
+    // If at least 1-2 primary keywords match (e.g. 'harem' and 'hell'), match it with high score
+    if (matchCount >= 2 || ratio >= 0.40 || (matchCount >= 1 && qWords.length <= 2)) {
+        return Math.round(500 + ratio * 400);
+    }
+    return 0;
 }
 
 async function searchTelegramIndex(query) {

@@ -170,7 +170,17 @@ async function renderSearch(){
 
   try {
     const res = await fetch(`/api/books/search?q=${encodeURIComponent(q)}`, { signal: searchAbortController.signal });
-    const list = await res.json();
+    const remoteList = await res.json().catch(() => []);
+
+    // Also match available local catalogue items
+    const qLower = q.toLowerCase();
+    const localMatches = BOOKS.filter(b => 
+      (b.title && b.title.toLowerCase().includes(qLower)) || 
+      (b.author && b.author.toLowerCase().includes(qLower)) ||
+      (b.genre && b.genre.toLowerCase().includes(qLower))
+    );
+
+    const list = [...(remoteList || []), ...localMatches];
 
     if (list && list.length > 0) {
       // Deduplicate results by normalized title so only ONE clean card is shown per title!
@@ -347,8 +357,7 @@ function renderReader(){
   const notesPanel=`<aside class="reader-notes ${r.notesOpen?'open':''}"><header><h3>Notebook</h3><button data-reader-action="toggle-notes">×</button></header>${notes.length?notes.map((n,i)=>`<article><time>${new Date(n.at).toLocaleDateString()}</time><p>${n.text}</p><button data-reader-action="delete-note" data-note-index="${i}">Delete</button></article>`).join(''):'<div class="empty-state"><h3>No notes yet.</h3><p>Write a private margin note below. It will appear here and in your sync export.</p></div>'}</aside>`;
   const epubPanel=`<section class="epub-panel ${r.epubMode?'open':''}"><header><h3>EPUB mode</h3><p>Upload a legal/public-domain EPUB or a file you own. EPUB.js will render it here when available.</p><label class="import-label">Upload EPUB<input type="file" id="epub-upload" accept=".epub,application/epub+zip"></label></header><div id="epub-viewer"><div class="empty-state"><h3>No EPUB loaded.</h3><p>This static prototype can render local EPUB files through EPUB.js when opened on a local server and internet/CDN is available.</p></div></div></section>`;
   const rawChTitle = (chapters[idx]||selected).title || '';
-  const cleanChLabel = rawChTitle.toLowerCase().startsWith('chapter') ? rawChTitle : `Chapter ${idx+1}: ${rawChTitle}`;
-  g.innerHTML=`<aside class="chapter-list reader-drawer ${r.navOpen?'open':''}"><div class="drawer-head"><p class="kicker">Contents</p><button data-reader-action="toggle-contents">×</button></div><input class="chapter-search" id="chapter-search" placeholder="Search chapters…">${chapterNav}</aside><article class="reader-paper theme-${r.theme} ${r.focus?'focus-mode':''} reader-mode-${r.mode} ${isManga?'manga-reader-paper':''}" style="--reader-font:${r.font}px;--reader-line:${r.line}"><div class="reader-settings compact-reader-settings" aria-label="Reader controls"><button data-action="back-step" style="font-weight:700;color:var(--brand,#111);margin-right:6px">← Back</button><button data-reader-action="toggle-contents">Contents</button><button data-action="font-down">A−</button><button data-action="font-up">A+</button><button class="${r.theme==='paper'?'active':''}" data-action="theme" data-theme="paper">Paper</button><button class="${r.theme==='sepia'?'active':''}" data-action="theme" data-theme="sepia">Sepia</button><button class="${r.theme==='night'?'active':''}" data-action="theme" data-theme="night">Brown</button><button class="${r.theme==='black'?'active':''}" data-action="theme" data-theme="black">Black</button><select data-action="line"><option value="1.7" ${r.line==1.7?'selected':''}>Tight</option><option value="2" ${r.line==2?'selected':''}>Classic</option><option value="2.25" ${r.line==2.25?'selected':''}>Open</option></select><button class="${r.mode==='continuous'?'active':''}" data-action="reader-mode" data-mode="continuous">Scroll</button><button class="${r.mode==='single'?'active':''}" data-action="reader-mode" data-mode="single">One</button>${isManga?`<button class="${r.mangaMode==='webtoon'?'active':''}" data-reader-action="manga-mode" data-mode="webtoon">Webtoon</button><button class="${r.mangaMode==='paged'?'active':''}" data-reader-action="manga-mode" data-mode="paged">Paged</button><button class="${r.mangaDirection==='rtl'?'active':''}" data-reader-action="manga-direction">RTL</button>`:''}<button class="${state.highlighted[b.id]?'active':''}" data-action="highlight" data-book="${b.id}">Highlight</button><button class="${r.notesOpen?'active':''}" data-reader-action="toggle-notes">Notes</button><button class="${r.epubMode?'active':''}" data-reader-action="toggle-epub">EPUB</button><button class="${r.focus?'active':''}" data-action="focus-reader">Focus</button><button data-action="fullscreen-reader">Fullscreen</button></div><div class="reader-status"><strong>${b.title}</strong><span data-current-chapter>${cleanChLabel}</span><i><b style="width:${p}%" data-reader-progress></b></i></div>${epubPanel}<div class="native-reader ${r.epubMode?'is-dimmed':''}">${content}</div><div class="reader-bottom"><button data-action="prev-page" data-book="${b.id}">Previous</button><i><b style="width:${p}%" data-reader-progress-bottom></b></i><button data-action="next-page" data-book="${b.id}">${r.mode==='continuous'?'Mark next chapter':'Next Chapter'}</button></div><div class="note-box"><label for="reader-note">Private note</label><textarea id="reader-note" placeholder="Write a quiet margin note…"></textarea><footer><small>${notes.length} saved note(s)</small><button class="warm-button" data-action="save-note" data-book="${b.id}">Save note</button></footer></div></article>${notesPanel}`;
+  g.innerHTML=`<aside class="chapter-list reader-drawer ${r.navOpen?'open':''}"><div class="drawer-head"><p class="kicker">Contents</p><button data-reader-action="toggle-contents">×</button></div><input class="chapter-search" id="chapter-search" placeholder="Search chapters…">${chapterNav}</aside><article class="reader-paper theme-${r.theme} ${r.focus?'focus-mode':''} reader-mode-${r.mode} ${isManga?'manga-reader-paper':''}" style="--reader-font:${r.font}px;--reader-line:${r.line}">${epubPanel}<div class="native-reader ${r.epubMode?'is-dimmed':''}">${content}</div><div class="reader-bottom"><button data-action="prev-page" data-book="${b.id}">Previous</button><i><b style="width:${p}%" data-reader-progress-bottom></b></i><button data-action="next-page" data-book="${b.id}">${r.mode==='continuous'?'Mark next chapter':'Next Chapter'}</button></div><div class="note-box"><label for="reader-note">Private note</label><textarea id="reader-note" placeholder="Write a quiet margin note…"></textarea><footer><small>${notes.length} saved note(s)</small><button class="warm-button" data-action="save-note" data-book="${b.id}">Save note</button></footer></div></article>${notesPanel}`;
   document.body.classList.toggle('reader-focus', !!r.focus && document.querySelector('#reader')?.classList.contains('active-view'));
   setTimeout(()=>{setupReaderScroll();setupAutoHideReaderControls();},50);
   
@@ -629,39 +638,87 @@ async function loadStolenChapters(id, title, author, genre){
     };
 
     const allTriggers = Array.from(document.querySelectorAll('.lazy-manga-trigger'));
+    const targetIdx = Math.max(0, Math.min(data.chapters.length - 1, state.activeChapter || 0));
 
-    // Automatically load Chapter 1 (or the first chapter) immediately
-    if (allTriggers.length > 0) {
-      window.queueChapterLoad(allTriggers[0]);
+    // Automatically load the clicked chapter IMMEDIATELY with top priority!
+    if (allTriggers.length > 0 && allTriggers[targetIdx]) {
+      window.queueChapterLoad(allTriggers[targetIdx]);
+      // Also prefetch subsequent chapter quietly
+      if (allTriggers[targetIdx + 1]) {
+        window.queueChapterLoad(allTriggers[targetIdx + 1]);
+      }
     }
 
-    // Attach IntersectionObserver and click listeners to remaining chapters
+    // Attach IntersectionObserver and click listeners to all chapters
     allTriggers.forEach((trigger, idx) => {
       trigger.addEventListener('click', () => window.queueChapterLoad(trigger));
 
-      if (idx > 0 && 'IntersectionObserver' in window) {
+      if (idx !== targetIdx && 'IntersectionObserver' in window) {
         const observer = new IntersectionObserver((entries) => {
           if (entries[0].isIntersecting) {
             observer.disconnect();
             window.queueChapterLoad(trigger);
           }
-        }, { rootMargin: '100px' });
+        }, { rootMargin: '200px' });
         observer.observe(trigger);
       }
     });
 
-    toast(`${isMangaLoad ? '🎨' : '📚'} Loaded ${data.chapters.length} chapters — ${title}`);
+    const flLabel = document.querySelector('#manga-floating-ch-label');
+    if (flLabel) flLabel.textContent = `Ch. ${targetIdx + 1} / ${data.chapters.length}`;
+
+    toast(`${isMangaLoad ? '🎨' : '📚'} Loaded ${data.chapters.length} chapters — ${realTitle}`);
+    setTimeout(() => scrollReaderChapter(targetIdx), 150);
     setupReaderScroll();
   } catch(err){
     nativeReader.innerHTML=`<div style="padding:2rem;text-align:center"><h3>Error: ${err.message}</h3></div>`;
   }
 }
+
+window.jumpToChapter = function(targetIdx) {
+  const b = book(state.currentBook);
+  const total = (b?.chapters || []).length;
+  if (targetIdx < 0 || targetIdx >= total) return;
+  state.activeChapter = targetIdx;
+  saveState();
+  updateReaderDom();
+  history.replaceState({ v: 'reader' }, '', `#/read/${state.currentBook}/${targetIdx + 1}`);
+
+  const flLabel = document.querySelector('#manga-floating-ch-label');
+  if (flLabel) flLabel.textContent = `Ch. ${targetIdx + 1} / ${total}`;
+
+  const trigger = document.querySelector(`#chapter-${targetIdx + 1} .lazy-manga-trigger`);
+  if (trigger) {
+    window.queueChapterLoad(trigger);
+  }
+  const nextTrigger = document.querySelector(`#chapter-${targetIdx + 2} .lazy-manga-trigger`);
+  if (nextTrigger) {
+    window.queueChapterLoad(nextTrigger);
+  }
+  scrollReaderChapter(targetIdx);
+};
+
 function renderLibrary(){const root=document.querySelector('.library-results');if(!root)return;document.querySelectorAll('.shelf-tabs button').forEach(b=>b.classList.toggle('active',b.dataset.shelf===state.activeShelf));let ids=[],label=state.activeShelf;if(label==='saved')ids=state.saved;if(label==='liked')ids=state.liked;if(label==='progress')ids=BOOKS.filter(b=>pct(b.id)>0&&pct(b.id)<100).map(b=>b.id);root.innerHTML=ids.length?ids.map(id=>{const b=book(id),p=pct(id);return `<article class="library-book" data-book="${id}">${coverHTML(b,'recent-cover')}<div><h3>${b.title}</h3><p>${b.author}</p><span class="progress-label"><i class="progress"><b style="width:${p}%"></b></i>${p}% read</span></div>${actions(id)}</article>`}).join(''):`<div class="empty-library"><h3>No ${label} books yet.</h3><p>Use Save and Like anywhere in the app. The homepage remains clean while this shelf stores the full collection.</p></div>`}
 function renderProfile(){const p=document.querySelector('.dashboard-panel');if(!p)return;const finished=Object.values(state.progress).filter(v=>+v>=100).length,avg=state.saved.length?Math.round(state.saved.reduce((s,id)=>s+pct(id),0)/state.saved.length):0;p.innerHTML=`<p class="kicker">Personal library</p><h2>Dashboard</h2><div class="dash-stats"><article><span>Saved books</span><strong>${state.saved.length}</strong><small>personal shelf</small></article><article><span>Liked books</span><strong>${state.liked.length}</strong><small>taste profile</small></article><article><span>Average progress</span><strong>${avg}%</strong><small>${finished} finished</small></article></div><div class="annotation-panel"><h3>Recent activity</h3>${state.recent.length?state.recent.slice(0,3).map(id=>`<p>Opened <strong>${book(id).title}</strong> · ${pct(id)}% complete.</p>`).join(''):'<p>No reading activity yet. Open a book and the dashboard will begin tracking automatically.</p>'}</div>`}
 function renderExplore(){const c=document.querySelector('.explore-content'),sum=document.querySelector('.explore-summary');if(!c)return;document.querySelectorAll('.explore-controls button').forEach(b=>b.classList.toggle('active',b.dataset.exploreFilter===state.exploreFilter));const t=tasteProfile(),topGenre=Object.entries(t.genres).sort((a,b)=>b[1]-a[1])[0]?.[0]||'classic fiction';if(sum)sum.innerHTML=`<strong>${recommendations(1)[0].title}</strong><span>Best next read · based on ${topGenre}</span>`;const bookGrid=(items,title,sub)=>`<section class="explore-block"><header><h3>${title}</h3><p>${sub}</p></header><div class="explore-books">${items.map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author} · ${b.mood}</p><span class="book-type-badge">${b.format||inferFormat(b)}</span>${actions(b.id)}</article>`).join('')}</div></section>`;const authors=unique(BOOKS.map(b=>b.author)).map(a=>({name:a,count:BOOKS.filter(b=>b.author===a).length,match:t.authors[a]||0})).sort((a,b)=>b.match-a.match||b.count-a.count);const moods=unique(BOOKS.map(b=>b.mood));const cats=[['Books','Essays, nonfiction, study volumes, and general reading.'],['Novels','Long-form fiction, classics, mysteries, romance, fantasy, and literary stories.'],['Manga & Manhwa','Panel-based illustrated reading, manga-inspired volumes, and manhwa-style series.'],['More','Poetry, short forms, drama, anthologies, and formats outside the first three shelves.']];if(state.exploreFilter==='categories')c.innerHTML=`<section class="explore-block"><header><h3>Reading categories</h3><p>Separate discovery rooms. Items never duplicate into the wrong shelf.</p></header><div class="category-grid">${cats.map(([name,desc])=>`<div class="category-card" data-category="${name}"><div><strong>${name}</strong><p>${desc}</p></div><span>${BOOKS.filter(b=>(b.format||inferFormat(b))===name).length} titles</span></div>`).join('')}</div></section>`;else if(state.exploreFilter==='authors')c.innerHTML=`<section class="explore-block"><header><h3>Authors</h3><p>Click an author to see their books.</p></header><div class="author-grid">${authors.map(a=>`<div class="author-card" data-author="${a.name}"><strong>${a.name}</strong><span>${a.count} book${a.count>1?'s':''}${a.match?' · matches your taste':''}</span></div>`).join('')}</div></section>`;else if(state.exploreFilter==='moods')c.innerHTML=`<section class="explore-block"><header><h3>Moods</h3><p>Editorial discovery by feeling.</p></header><div class="mood-grid">${moods.map(m=>`<div class="mood-card" data-mood="${m}"><strong>${m}</strong><span>${BOOKS.filter(b=>b.mood===m).length} volume(s)</span></div>`).join('')}</div></section>`;else if(state.exploreFilter==='new')c.innerHTML=bookGrid([...BOOKS].reverse().slice(0,9),'New finds','Fresh volumes from the quiet shelves.');else c.innerHTML=bookGrid(recommendations(8),'Recommended for you','Scored by liked books, saved authors, recent reading, genre, mood, and unfinished progress.')+bookGrid(BOOKS.filter(b=>pct(b.id)>0&&pct(b.id)<100).slice(0,6),'Continue discovering','Books you already started receive priority.')}
 function renderAll(){renderReadingList();renderFeatured();renderRecent();renderSidebarStats();renderDetail();renderReader();renderLibrary();renderProfile();renderExplore();renderSettings();applyAppTheme();}
 function setNav(v){navLinks.forEach(a=>a.removeAttribute('aria-current'));searchButton?.removeAttribute('aria-current');document.querySelector('[data-open-settings]')?.removeAttribute('aria-current');if(v==='home')document.querySelector('.nav a[href="#explore"]')?.setAttribute('aria-current','page');if(v==='library-view')document.querySelector('.nav a[href="#library"]')?.setAttribute('aria-current','page');if(v==='explore-view')document.querySelector('.nav a[href="#explore"]')?.setAttribute('aria-current','page');if(v==='reader')document.querySelector('.nav a[href="#reading-now"]')?.setAttribute('aria-current','page');if(v==='profile')document.querySelector('.nav a[href="#profile"]')?.setAttribute('aria-current','page');if(v==='settings')document.querySelector('[data-open-settings]')?.setAttribute('aria-current','page');if(v==='search')searchButton?.setAttribute('aria-current','page')}
-function showView(v='home',push=true){sections.forEach(s=>s.classList.remove('active-view'));document.body.classList.toggle('reader-focus', v==='reader' && !!state.reader.focus);if(v==='home'){app.classList.remove('view-mode');setNav('home');if(push)history.pushState({v},'','#explore');scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});return}const target=document.getElementById(v);if(!target)return showView('home',push);app.classList.add('view-mode');target.classList.add('active-view');setNav(v);if(push)history.pushState({v},'',`#${v}`);scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});if(v==='search')setTimeout(()=>document.querySelector('#book-search')?.focus(),300)}
+function showView(v='home',push=true){
+  sections.forEach(s=>s.classList.remove('active-view'));
+  if (v !== 'reader') {
+    document.body.classList.remove('is-manga-mode');
+  }
+  document.body.classList.toggle('reader-focus', v==='reader' && !!state.reader.focus);
+  if(v==='home'){app.classList.remove('view-mode');setNav('home');if(push)history.pushState({v},'','#explore');scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});return}
+  const target=document.getElementById(v);
+  if(!target)return showView('home',push);
+  app.classList.add('view-mode');
+  target.classList.add('active-view');
+  setNav(v);
+  if(push)history.pushState({v},'',`#${v}`);
+  scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});
+  if(v==='search')setTimeout(()=>document.querySelector('#book-search')?.focus(),300)
+}
 function openBook(id){
   // Inject cached search book into BOOKS array FIRST so book(id) finds it correctly
   const cached = state.cachedBooks[id];
@@ -675,9 +732,16 @@ function openBook(id){
 }
 window.openBook = openBook;
 
-function openReader(id=state.currentBook){
+function openReader(id=state.currentBook, targetChapterIdx = 0){
   state.currentBook=id;
+  state.activeChapter=targetChapterIdx;
   const b=book(id);
+  const isManga = b && (b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || b.id.startsWith('mangadex-') || (b.genre || '').toLowerCase().includes('manga') || (b.format || '').toLowerCase().includes('manga'));
+  if (isManga) {
+    document.body.classList.add('is-manga-mode');
+  } else {
+    document.body.classList.remove('is-manga-mode');
+  }
   state.reader.mode='continuous';
   state.reader.navOpen=false;
   state.reader.notesOpen=false;
@@ -686,128 +750,352 @@ function openReader(id=state.currentBook){
   saveState();
   renderAll();
   showView('reader');
-  history.replaceState({v:'reader'},'',`#/read/${id}/${(state.activeChapter||0)+1}`);
+  history.replaceState({v:'reader'},'',`#/read/${id}/${targetChapterIdx+1}`);
   const isExternal = b && (b.genre === 'searched' || b.genre === 'Manga' || b.genre === 'Web Novel' || b.id.includes('-'));
   if(isExternal || !b.chapters || !b.chapters.length || b.chapters.some(c=>!c.html)){
     setTimeout(()=>loadStolenChapters(b.id, b.title, b.author, b.genre), 50);
   } else {
-    setTimeout(()=>scrollReaderChapter(state.activeChapter||0),120);
+    setTimeout(()=>scrollReaderChapter(targetChapterIdx),120);
   }
 }
 function toggleSave(id){state.saved=saved(id)?state.saved.filter(x=>x!==id):[id,...state.saved];saveState();renderAll();toast(saved(id)?'Saved to your reading list.':'Removed from your saved shelf.')}
 function toggleLike(id){state.liked=liked(id)?state.liked.filter(x=>x!==id):[id,...state.liked];saveState();renderAll();toast(liked(id)?'Added to liked books.':'Removed from liked books.')}
 
-
+let isProgrammaticScrolling = false;
 
 function scrollReaderChapter(index=state.activeChapter||0){
+  isProgrammaticScrolling = true;
   const el=document.querySelector(`#chapter-${Number(index)+1}`);
-  if(el) el.scrollIntoView({behavior:prefersReducedMotion?'auto':'smooth', block:'start'});
+  if(el) {
+    el.scrollIntoView({behavior:prefersReducedMotion?'auto':'smooth', block:'start'});
+  }
+  setTimeout(() => { isProgrammaticScrolling = false; }, 800);
 }
+
 function updateReaderDom(){
   const b=book(state.currentBook), chapters=b.chapters||[], idx=state.activeChapter||0, progress=pct(b.id);
   document.querySelectorAll('.chapter-list a').forEach((a,i)=>a.classList.toggle('active',i===idx));
   const label=document.querySelector('[data-current-chapter]');
   if(label&&chapters[idx]) label.textContent=`Chapter ${idx+1}: ${chapters[idx].title}`;
+  const flLabel = document.querySelector('#manga-floating-ch-label');
+  if (flLabel && chapters.length) flLabel.textContent = `Ch. ${idx+1} / ${chapters.length}`;
   document.querySelectorAll('[data-reader-progress], [data-reader-progress-bottom]').forEach(el=>el.style.width=progress+'%');
+  
+  const fontDisp = document.querySelector('#quick-font-display');
+  if (fontDisp) fontDisp.textContent = `${state.reader.font||19}px`;
 }
+
 let readerScrollTimer;
 function setupReaderScroll(){
   const paper=document.querySelector('#reader.active-view .reader-paper.reader-mode-continuous');
   if(!paper) return;
-  const blocks=[...paper.querySelectorAll('.chapter-block')];
-  if(!blocks.length) return;
+  let lastY = window.scrollY;
+  let scrollDimTimer;
+
   const onScroll=()=>{
+    // Auto-dim floating controls when actively scrolling down in manga mode
+    if (document.body.classList.contains('is-manga-mode')) {
+      const topPill = document.querySelector('.manga-top-pill');
+      const sideDock = document.querySelector('.manga-side-dock');
+      const currentY = window.scrollY;
+      if (currentY > lastY + 15 && currentY > 100) {
+        if (topPill) topPill.style.opacity = '0.2';
+        if (sideDock) sideDock.style.opacity = '0.2';
+      } else if (currentY < lastY - 10) {
+        if (topPill) topPill.style.opacity = '1';
+        if (sideDock) sideDock.style.opacity = '1';
+      }
+      lastY = currentY;
+      clearTimeout(scrollDimTimer);
+      scrollDimTimer = setTimeout(() => {
+        if (topPill) topPill.style.opacity = '1';
+        if (sideDock) sideDock.style.opacity = '1';
+      }, 1200);
+    }
+
+    if (isProgrammaticScrolling) return;
+
     clearTimeout(readerScrollTimer);
     readerScrollTimer=setTimeout(()=>{
-      const midpoint=window.innerHeight*0.38;
-      let idx=0;
-      blocks.forEach((block,i)=>{ if(block.getBoundingClientRect().top < midpoint) idx=i; });
-      const b=book(state.currentBook);
-      const nextProgress=Math.round(((idx+1)/blocks.length)*100);
-      if(idx!==state.activeChapter || nextProgress>pct(b.id)){
-        state.activeChapter=idx;
-        state.progress[b.id]=Math.max(pct(b.id), nextProgress);
-        state.recent=[b.id,...state.recent.filter(x=>x!==b.id)].slice(0,6);
-        saveState();
-        updateReaderDom();
-        history.replaceState({v:'reader'},'',`#/read/${b.id}/${idx+1}`);
+      const blocks=[...paper.querySelectorAll('.chapter-block')];
+      if(!blocks.length) return;
+      const midpoint=window.innerHeight*0.4;
+      
+      let foundIdx = -1;
+      // Strict intersection: find block that currently spans across the viewport midpoint
+      for (let i = 0; i < blocks.length; i++) {
+        const rect = blocks[i].getBoundingClientRect();
+        if (rect.top <= midpoint && rect.bottom >= midpoint) {
+          foundIdx = i;
+          break;
+        }
       }
-    },80);
+
+      if (foundIdx === -1) {
+        // Fallback: block closest to top of screen
+        let minDist = Infinity;
+        blocks.forEach((block, i) => {
+          const rect = block.getBoundingClientRect();
+          const dist = Math.abs(rect.top - midpoint);
+          if (dist < minDist && rect.height > 50) {
+            minDist = dist;
+            foundIdx = i;
+          }
+        });
+      }
+
+      if (foundIdx >= 0) {
+        const b=book(state.currentBook);
+        const nextProgress=Math.round(((foundIdx+1)/blocks.length)*100);
+        if(foundIdx!==state.activeChapter || nextProgress>pct(b.id)){
+          state.activeChapter=foundIdx;
+          state.progress[b.id]=Math.max(pct(b.id), nextProgress);
+          state.recent=[b.id,...state.recent.filter(x=>x!==b.id)].slice(0,6);
+          saveState();
+          updateReaderDom();
+          history.replaceState({v:'reader'},'',`#/read/${b.id}/${foundIdx+1}`);
+        }
+      }
+    },100);
   };
   window.removeEventListener('scroll', setupReaderScroll._handler);
   setupReaderScroll._handler=onScroll;
   window.addEventListener('scroll', onScroll, {passive:true});
 }
 
-
-let epubBookInstance, epubRendition, autoHideTimer;
-function setupAutoHideReaderControls(){
-  const paper=document.querySelector('#reader.active-view .reader-paper.focus-mode');
-  document.body.classList.remove('reader-controls-hidden');
-  clearTimeout(autoHideTimer);
-  if(!paper) return;
-  const show=()=>{document.body.classList.remove('reader-controls-hidden');clearTimeout(autoHideTimer);autoHideTimer=setTimeout(()=>document.body.classList.add('reader-controls-hidden'),2600)};
-  if(setupAutoHideReaderControls._show){['mousemove','touchstart','keydown','scroll'].forEach(evt=>window.removeEventListener(evt, setupAutoHideReaderControls._show));}
-  setupAutoHideReaderControls._show=show;
-  ['mousemove','touchstart','keydown','scroll'].forEach(evt=>window.addEventListener(evt, show, {passive:true}));
-  show();
-}
-function loadEpubFile(file){
-  const viewer=document.querySelector('#epub-viewer');
-  if(!viewer || !file) return;
-  if(!window.ePub){viewer.innerHTML='<div class="empty-state"><h3>EPUB.js is not loaded.</h3><p>Open through the local server with internet enabled, or bundle EPUB.js in the React version.</p></div>';return;}
-  viewer.innerHTML='';
-  const url=URL.createObjectURL(file);
-  try{
-    epubBookInstance=window.ePub(url);
-    epubRendition=epubBookInstance.renderTo('epub-viewer',{width:'100%',height:window.innerHeight*0.72,spread:'none'});
-    epubRendition.display();
-    epubRendition.on('relocated', loc=>{ if(loc?.start?.percentage){state.progress[state.currentBook]=Math.round(loc.start.percentage*100);saveState();updateReaderDom();} });
-    toast('EPUB loaded locally.');
-  }catch(err){viewer.innerHTML='<div class="empty-state"><h3>Could not open EPUB.</h3><p>Please try another legal EPUB file.</p></div>';}
-}
-
-function applyAppTheme(){const root=document.documentElement;root.classList.remove('app-night');const choice=state.appTheme||'system';root.dataset.theme=choice;const night=choice==='night'||(choice==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(night)root.classList.add('app-night')}
-function renderSettings(){document.querySelectorAll('[data-theme-choice]').forEach(b=>b.classList.toggle('active',b.dataset.themeChoice===(state.appTheme||'system')));const f=document.querySelector('#setting-font'),fo=document.querySelector('#setting-font-out'),l=document.querySelector('#setting-line'),a=document.querySelector('#account-status'),name=document.querySelector('#account-name');if(f){f.value=state.reader.font;fo.textContent=state.reader.font+'px'}if(l)l.value=state.reader.line;if(a)a.textContent=state.account?'Signed in as '+state.account:'Not signed in — using this browser only.';if(name&&!name.value)name.value=state.account||''}
-function exportState(){const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='bibliotheque-sync.json';a.click();URL.revokeObjectURL(url);toast('Sync file exported.')}
-function inferFormat(b){const g=(b.genre||'').toLowerCase();if(b.format)return b.format;if(g.includes('manga')||g.includes('manhwa'))return 'Manga & Manhwa';if(g.includes('poetry')||g.includes('drama')||g.includes('short'))return 'More';if(g.includes('essays')||g.includes('nonfiction')||b.id==='quiet-paper')return 'Books';return 'Novels'}
-function normalizeBooks(){BOOKS=BOOKS.map(b=>({...b,format:inferFormat(b),image:b.image||`assets/covers/${b.id}.svg`,chapters:b.chapters||[{id:'chapter-1',title:'The First Turning',minutes:18,content:['The rain began before the carriage crossed the outer gate, a fine grey needling that made the house appear farther away than it was.','Inside, the library held its breath. Dust lay softly on the long table, on the green-shaded lamps, on the brass ladder fixed to the eastern wall.'],quote:'Some rooms are not silent because they are empty, but because every object inside them remembers what was said.'},{id:'chapter-2',title:'A Note in Sepia',minutes:16,content:['The second chapter opens with a letter folded into the atlas.','Every shelf seemed to lean closer as the clue took shape.'],quote:'A margin note can be smaller than a whisper and still alter the room.'}]}));const fallbackCats=[{id:'moonlit-archive',title:'Moonlit Archive',author:'Sana Kuroi',genre:'manga',mood:'Moonlit',format:'Manga & Manhwa',pages:214,rating:4,cover:'midnight',lines:'Moonlit<br>Archive',image:'assets/covers/moonlit-archive.svg',synopsis:'A quiet manga-style mystery about a night librarian cataloguing memories that turn into ink.',chapters:[{id:'chapter-1',title:'Panel One: The Key Drawer',minutes:10,content:['The archive opened only after midnight, when the catalogue cards rearranged themselves into small panels of light.','Sana followed the silver gutter between frames and found the first key drawn in blue ink.'],quote:'Some stories read from left to right; some read from silence to memory.'}]},{id:'paper-crown',title:'The Paper Crown',author:'Min Seo Han',genre:'manhwa',mood:'Royal',format:'Manga & Manhwa',pages:238,rating:5,cover:'rust',lines:'The<br>Paper<br>Crown',image:'assets/covers/paper-crown.svg',synopsis:'A warm manhwa-inspired court story where a paper artisan is asked to forge a crown that can remember promises.',chapters:[{id:'chapter-1',title:'The Artisan’s Commission',minutes:11,content:['The palace messenger arrived with a box of ivory paper and a royal seal pressed too deeply into wax.','Every sheet inside was blank, yet each one felt heavier than law.'],quote:'A crown made of paper can still cut the hand that wears it.'}]},{id:'tea-house-panels',title:'Tea House Panels',author:'Aiko Ren',genre:'manga',mood:'Tender',format:'Manga & Manhwa',pages:180,rating:4,cover:'sage',lines:'Tea House<br>Panels',image:'assets/covers/tea-house-panels.svg',synopsis:'A gentle illustrated slice-of-life volume about a tea house where customers leave stories instead of coins.',chapters:[{id:'chapter-1',title:'The First Cup',minutes:9,content:['The bell above the tea house door rang softly, as if it were afraid to disturb the steam.','On the counter, a blank panel waited for the day’s first story.'],quote:'The smallest cup can hold an entire afternoon.'}]},{id:'lantern-poems',title:'Lantern Poems',author:'Ira Vale',genre:'poetry',mood:'Luminous',format:'More',pages:96,rating:4,cover:'ochre',lines:'Lantern<br>Poems',image:'assets/covers/lantern-poems.svg',synopsis:'A slim poetry collection for the More shelf: luminous fragments, short forms, and quiet evening pieces.',chapters:[{id:'chapter-1',title:'Small Lanterns',minutes:7,content:['A lantern does not argue with the dark. It simply keeps its little weather of gold.','Each poem in this section is meant to be read slowly, with room around it.'],quote:'Light is a sentence the night agrees to read.'}]}];fallbackCats.forEach(x=>{if(!BOOKS.some(b=>b.id===x.id))BOOKS.push(x)});if(!BOOKS.some(b=>b.id==='alice-wonderland'))BOOKS.push({id:'alice-wonderland',title:'Alice’s Adventures in Wonderland',author:'Lewis Carroll',cover:'ivory',lines:'Alice’s<br>Adventures',genre:'public domain classic',mood:'Whimsical',pages:192,rating:5,image:'assets/covers/alice-wonderland.svg',synopsis:'Public-domain demo edition with original Alice text excerpt and a John Tenniel illustration placed inside the chapter flow.',chapters:[{id:'chapter-1',title:'Down the Rabbit-Hole',minutes:14,publicDomain:true,source:'Project Gutenberg / Lewis Carroll',content:['Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do. Once or twice she had peeped into the book her sister was reading, but it had no pictures or conversations in it, “and what is the use of a book,” thought Alice “without pictures or conversations?”','So she was considering in her own mind, as well as she could, for the hot day made her feel very sleepy and stupid.'],image:'assets/illustrations/alice-rabbit.gif',imageCaption:'John Tenniel illustration, public-domain Project Gutenberg edition.',quote:'Oh dear! Oh dear! I shall be too late!'}]})}
-async function loadBooksJson(){try{const res=await fetch('books.json',{cache:'no-store'});if(res.ok){BOOKS=await res.json()}}catch(e){console.warn('Using inline book fallback. Run a local server to load books.json.',e)}normalizeBooks()}
-
-navLinks.forEach(a=>a.addEventListener('click',e=>{e.preventDefault();const h=a.getAttribute('href');if(h==='#library')showView('library-view');if(h==='#explore')showView('explore-view');if(h==='#reading-now')openReader();if(h==='#profile')showView('profile')}));
-document.querySelector('.brand')?.addEventListener('click',e=>{e.preventDefault();showView('home')});document.querySelector('.user')?.addEventListener('click',()=>showView('profile'));searchButton?.addEventListener('click',()=>showView('search'));document.querySelector('[data-open-settings]')?.addEventListener('click',()=>showView('settings'));
-document.addEventListener('click',e=>{const action=e.target.closest('[data-action]');if(action){e.preventDefault();e.stopPropagation();const id=action.dataset.book||state.currentBook,a=action.dataset.action;if(a==='back-step'){if(window.history.length>1){window.history.back();}else{showView('book-detail');}}if(a==='save')toggleSave(id);if(a==='like')toggleLike(id);if(a==='read')openReader(id);if(a==='open-book'){const cachedB=state.cachedBooks[id];if(cachedB&&!BOOKS.some(b=>b.id===id)){BOOKS.push(cachedB);}openBook(id);return;}if(a==='next-page'){state.progress[id]=Math.min(100,pct(id)+Math.ceil(100/Math.max(1,(book(id).chapters||[]).length)));state.activeChapter=Math.min(((book(id).chapters||[]).length-1), (state.activeChapter||0)+1);state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100);toast(`${book(id).title} is now ${pct(id)}% complete.`)}if(a==='prev-page'){state.activeChapter=Math.max(0,(state.activeChapter||0)-1);state.progress[id]=Math.max(0,pct(id)-8);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100)}if(a==='font-up'){state.reader.font=Math.min(24,state.reader.font+1);saveState();renderReader()}if(a==='font-down'){state.reader.font=Math.max(15,state.reader.font-1);saveState();renderReader()}if(a==='theme'){state.reader.theme=action.dataset.theme;saveState();renderReader()}if(a==='reader-mode'){state.reader.mode=action.dataset.mode;saveState();renderReader();setTimeout(()=>scrollReaderChapter(state.activeChapter||0),80)}if(a==='focus-reader'){state.reader.focus=!state.reader.focus;saveState();renderReader();document.body.classList.toggle('reader-focus',!!state.reader.focus);toast(state.reader.focus?'Focus reading on.':'Focus reading off.')}if(a==='fullscreen-reader'){const el=document.querySelector('#reader');if(!document.fullscreenElement&&el?.requestFullscreen){el.requestFullscreen();state.reader.focus=true;}else if(document.exitFullscreen){document.exitFullscreen();state.reader.focus=false;}saveState();renderReader()}if(a==='highlight'){state.highlighted[id]=!state.highlighted[id];saveState();renderReader()}if(a==='open-chapter'){state.currentBook=id;state.activeChapter=Number(action.dataset.chapterIndex||0);state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);saveState();renderAll();showView('reader');history.replaceState({v:'reader'},'',`#/read/${id}/${state.activeChapter+1}`);setTimeout(()=>scrollReaderChapter(state.activeChapter),120)}if(a==='signin-local'){const name=document.querySelector('#account-name')?.value.trim();state.account=name||'Local reader';saveState();renderAll();toast('Signed in locally.')}if(a==='signout-local'){state.account=null;saveState();renderAll();toast('Signed out locally.')}if(a==='export-state'){exportState()}if(a==='app-theme'){state.appTheme=action.dataset.themeChoice||'system';saveState();applyAppTheme();renderSettings();toast(`Theme set to ${state.appTheme}.`)}if(a==='save-note'){const text=document.querySelector('#reader-note')?.value.trim();if(text){state.notes[id]=[...(state.notes[id]||[]),{text,at:new Date().toISOString()}];saveState();renderAll();toast('Margin note saved.')}}return}const view=e.target.closest('[data-view]');if(view){e.preventDefault();showView(view.dataset.view);return}const shelf=e.target.closest('.shelf-tabs button');if(shelf){state.activeShelf=shelf.dataset.shelf;saveState();renderLibrary();return}const exp=e.target.closest('.explore-controls button');if(exp){state.exploreFilter=exp.dataset.exploreFilter;saveState();renderExplore();return}const themeChoice=e.target.closest('[data-theme-choice]');if(themeChoice){state.appTheme=themeChoice.dataset.themeChoice;saveState();renderSettings();applyAppTheme();return}const filter=e.target.closest('.filter-row button');if(filter){state.searchFilter=filter.dataset.filter;saveState();renderSearch();return}const author=e.target.closest('[data-author]');if(author){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${author.dataset.author}</h3><p>Author shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.author===author.dataset.author).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.genre}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const mood=e.target.closest('[data-mood]');if(mood){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${mood.dataset.mood}</h3><p>Mood shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.mood===mood.dataset.mood).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const cat=e.target.closest('[data-category]');if(cat){const name=cat.dataset.category;document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${name}</h3><p>Dedicated shelf for ${name.toLowerCase()} only.</p></header><div class="explore-books">${BOOKS.filter(b=>(b.format||inferFormat(b))===name).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author} · ${b.mood}</p><span class="book-type-badge">${b.format||inferFormat(b)}</span>${actions(b.id)}</article>`).join('')||'<div class="empty-state"><h3>No titles yet.</h3><p>This shelf is ready for future catalogue items.</p></div>'}</div></section>`;return}const cover=e.target.closest('[data-book]');if(cover&&!e.target.closest('button'))openBook(cover.dataset.book)});
+document.addEventListener('click',e=>{const action=e.target.closest('[data-action]');if(action){e.preventDefault();e.stopPropagation();const id=action.dataset.book||state.currentBook,a=action.dataset.action;if(a==='back-step'||a==='back-to-detail'){if(window.history.length>1){window.history.back();}else{showView('book-detail');}}if(a==='save')toggleSave(id);if(a==='like')toggleLike(id);if(a==='read')openReader(id, 0);if(a==='open-book'){const cachedB=state.cachedBooks[id];if(cachedB&&!BOOKS.some(b=>b.id===id)){BOOKS.push(cachedB);}openBook(id);return;}if(a==='prev-chapter-btn'){window.jumpToChapter((state.activeChapter||0)-1);return;}if(a==='next-chapter-btn'){window.jumpToChapter((state.activeChapter||0)+1);return;}if(a==='toggle-contents-drawer'){state.reader.navOpen=!state.reader.navOpen;saveState();renderReader();return;}if(a==='line-toggle'){state.reader.line = state.reader.line===1.7 ? 2.0 : (state.reader.line===2.0 ? 2.25 : 1.7);saveState();renderReader();toast(`Line spacing: ${state.reader.line===1.7?'Tight':(state.reader.line===2.0?'Classic':'Open')}`);return;}if(a==='toggle-manga-width'){document.body.classList.toggle('manga-full-width');toast(document.body.classList.contains('manga-full-width')?'Full Width View':'Standard Width View');return;}if(a==='scroll-top'){window.scrollTo({top:0,behavior:'smooth'});return;}if(a==='next-page'){state.progress[id]=Math.min(100,pct(id)+Math.ceil(100/Math.max(1,(book(id).chapters||[]).length)));state.activeChapter=Math.min(((book(id).chapters||[]).length-1), (state.activeChapter||0)+1);state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100);toast(`${book(id).title} is now ${pct(id)}% complete.`)}if(a==='prev-page'){state.activeChapter=Math.max(0,(state.activeChapter||0)-1);state.progress[id]=Math.max(0,pct(id)-8);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100)}if(a==='font-up'){state.reader.font=Math.min(24,state.reader.font+1);saveState();renderReader();const fd=document.querySelector('#quick-font-display');if(fd)fd.textContent=`${state.reader.font}px`}if(a==='font-down'){state.reader.font=Math.max(15,state.reader.font-1);saveState();renderReader();const fd=document.querySelector('#quick-font-display');if(fd)fd.textContent=`${state.reader.font}px`}if(a==='theme'){state.reader.theme=action.dataset.theme;saveState();renderReader();toast(`Theme set to ${action.dataset.theme}`)}if(a==='reader-mode'){state.reader.mode=action.dataset.mode;saveState();renderReader();setTimeout(()=>scrollReaderChapter(state.activeChapter||0),80)}if(a==='focus-reader'){state.reader.focus=!state.reader.focus;saveState();renderReader();document.body.classList.toggle('reader-focus',!!state.reader.focus);toast(state.reader.focus?'Focus reading on.':'Focus reading off.')}if(a==='fullscreen-reader'){const el=document.querySelector('#reader');if(!document.fullscreenElement&&el?.requestFullscreen){el.requestFullscreen();state.reader.focus=true;}else if(document.exitFullscreen){document.exitFullscreen();state.reader.focus=false;}saveState();renderReader()}if(a==='highlight'){state.highlighted[id]=!state.highlighted[id];saveState();renderReader()}if(a==='open-chapter'){state.currentBook=id;const chIdx=Number(action.dataset.chapterIndex||0);openReader(id, chIdx);return;}
+if(a==='signin-local'){const name=document.querySelector('#account-name')?.value.trim();state.account=name||'Local reader';saveState();renderAll();toast('Signed in locally.')}if(a==='signout-local'){state.account=null;saveState();renderAll();toast('Signed out locally.')}if(a==='export-state'){exportState()}if(a==='app-theme'){state.appTheme=action.dataset.themeChoice||'system';saveState();applyAppTheme();renderSettings();toast(`Theme set to ${state.appTheme}.`)}if(a==='save-note'){const text=document.querySelector('#reader-note')?.value.trim();if(text){state.notes[id]=[...(state.notes[id]||[]),{text,at:new Date().toISOString()}];saveState();renderAll();toast('Margin note saved.')}}return}const view=e.target.closest('[data-view]');if(view){e.preventDefault();showView(view.dataset.view);return}const shelf=e.target.closest('.shelf-tabs button');if(shelf){state.activeShelf=shelf.dataset.shelf;saveState();renderLibrary();return}const exp=e.target.closest('.explore-controls button');if(exp){state.exploreFilter=exp.dataset.exploreFilter;saveState();renderExplore();return}const themeChoice=e.target.closest('[data-theme-choice]');if(themeChoice){state.appTheme=themeChoice.dataset.themeChoice;saveState();renderSettings();applyAppTheme();return}const filter=e.target.closest('.filter-row button');if(filter){state.searchFilter=filter.dataset.filter;saveState();renderSearch();return}const author=e.target.closest('[data-author]');if(author){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${author.dataset.author}</h3><p>Author shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.author===author.dataset.author).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.genre}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const mood=e.target.closest('[data-mood]');if(mood){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${mood.dataset.mood}</h3><p>Mood shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.mood===mood.dataset.mood).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const cat=e.target.closest('[data-category]');if(cat){const name=cat.dataset.category;document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${name}</h3><p>Dedicated shelf for ${name.toLowerCase()} only.</p></header><div class="explore-books">${BOOKS.filter(b=>(b.format||inferFormat(b))===name).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author} · ${b.mood}</p><span class="book-type-badge">${b.format||inferFormat(b)}</span>${actions(b.id)}</article>`).join('')||'<div class="empty-state"><h3>No titles yet.</h3><p>This shelf is ready for future catalogue items.</p></div>'}</div></section>`;return}const cover=e.target.closest('[data-book]');if(cover&&!e.target.closest('button'))openBook(cover.dataset.book)});
 document.addEventListener('change',e=>{if(e.target?.dataset.action==='line'){state.reader.line=Number(e.target.value);saveState();renderReader()}if(e.target?.id==='setting-line'){state.reader.line=Number(e.target.value);saveState();renderAll()}if(e.target?.id==='import-state'){const file=e.target.files[0];if(file){file.text().then(txt=>{state={...DEFAULT_STATE,...JSON.parse(txt)};saveState();renderAll();toast('Sync file imported.')}).catch(()=>toast('Import failed.'))}}});let searchInputTimer;
-document.addEventListener('input',e=>{
-  if(e.target?.id==='book-search'){
+function inferFormat(b) {
+  if (!b) return 'Books';
+  if (b.format) return b.format;
+  const g = (b.genre || '').toLowerCase();
+  const id = (b.id || '').toLowerCase();
+  if (id.startsWith('mangadex-') || id.startsWith('telegram-') || id.startsWith('private-tg-') || g.includes('manga') || g.includes('manhwa')) return 'Manga & Manhwa';
+  if (id.startsWith('royalroad-') || g.includes('novel')) return 'Web Novels';
+  return 'Books';
+}
+
+function renderSettings() {
+  const fontInput = document.querySelector('#setting-font');
+  const fontOut = document.querySelector('#setting-font-out');
+  const lineInput = document.querySelector('#setting-line');
+  if (fontInput) fontInput.value = state.reader.font || 19;
+  if (fontOut) fontOut.textContent = `${state.reader.font || 19}px`;
+  if (lineInput) lineInput.value = state.reader.line || 1.85;
+
+  document.querySelectorAll('[data-theme-choice]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.themeChoice === (state.appTheme || 'system'));
+  });
+
+  const accountStatus = document.querySelector('#account-status');
+  if (accountStatus) {
+    accountStatus.textContent = state.account ? `Signed in as: ${state.account}` : 'Using local guest session.';
+  }
+}
+
+function applyAppTheme() {
+  const theme = state.appTheme || 'system';
+  if (theme === 'night') {
+    document.documentElement.setAttribute('data-theme', 'night');
+    document.body.classList.add('theme-night');
+    document.body.classList.remove('theme-day');
+  } else if (theme === 'day') {
+    document.documentElement.setAttribute('data-theme', 'day');
+    document.body.classList.add('theme-day');
+    document.body.classList.remove('theme-night');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    document.body.classList.remove('theme-night', 'theme-day');
+  }
+}
+
+function exportState() {
+  try {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
+    const dlAnchor = document.createElement('a');
+    dlAnchor.setAttribute("href", dataStr);
+    dlAnchor.setAttribute("download", "bibliotheque_backup.json");
+    document.body.appendChild(dlAnchor);
+    dlAnchor.click();
+    dlAnchor.remove();
+    toast('Backup file exported.');
+  } catch (e) {
+    toast('Export failed.');
+  }
+}
+
+function loadEpubFile(file) {
+  if (!file) return;
+  toast(`Loading EPUB: ${file.name}...`);
+  if (window.ePub) {
+    const readerViewer = document.querySelector('#epub-viewer');
+    if (readerViewer) {
+      readerViewer.innerHTML = '';
+      const bookObj = window.ePub(file);
+      const rendition = bookObj.renderTo("epub-viewer", { width: "100%", height: "80vh" });
+      rendition.display();
+      toast('EPUB rendered successfully.');
+    }
+  } else {
+    toast('EPUB viewer engine loading...');
+  }
+}
+
+function setupAutoHideReaderControls() {}
+
+function observeLazyChapters() {
+  const triggers = document.querySelectorAll('.lazy-manga-trigger:not([data-observed])');
+  triggers.forEach(trig => {
+    trig.setAttribute('data-observed', 'true');
+    trig.addEventListener('click', () => {
+      if (window.queueChapterLoad) window.queueChapterLoad(trig);
+    });
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting) {
+          observer.disconnect();
+          if (window.queueChapterLoad) window.queueChapterLoad(trig);
+        }
+      }, { rootMargin: '300px' });
+      observer.observe(trig);
+    }
+  });
+}
+
+function loadBooksJson() {
+  return Promise.resolve();
+}
+
+// Navigation & Topbar Click Handler
+document.addEventListener('click', e => {
+  const brand = e.target.closest('.brand');
+  if (brand) {
+    e.preventDefault();
+    showView('home');
+    return;
+  }
+  const searchBtn = e.target.closest('[data-open-search]');
+  if (searchBtn) {
+    e.preventDefault();
+    showView('search');
+    return;
+  }
+  const settingsBtn = e.target.closest('[data-open-settings]');
+  if (settingsBtn) {
+    e.preventDefault();
+    showView('settings');
+    return;
+  }
+  const userBtn = e.target.closest('.topbar .user');
+  if (userBtn) {
+    e.preventDefault();
+    showView('profile');
+    return;
+  }
+  const navA = e.target.closest('.nav a');
+  if (navA) {
+    e.preventDefault();
+    const href = navA.getAttribute('href') || '';
+    if (href === '#library') showView('library-view');
+    else if (href === '#reading-now') showView('reader');
+    else if (href === '#explore') showView('home');
+    else if (href === '#profile') showView('profile');
+    else if (href.startsWith('#')) showView(href.replace('#', ''));
+    return;
+  }
+});
+
+document.addEventListener('input', e => {
+  if (e.target?.id === 'book-search') {
     clearTimeout(searchInputTimer);
     searchInputTimer = setTimeout(() => renderSearch(), 60);
   }
-  if(e.target?.id==='setting-font'){state.reader.font=Number(e.target.value);saveState();renderSettings()}
-});document.addEventListener('submit',e=>{if(e.target.classList.contains('search-board')){e.preventDefault();renderSearch()}});
-
-// Predictive search click-away disabled
-
-document.addEventListener('click',e=>{
-  const btn=e.target.closest('[data-reader-action]');
-  if(!btn) return;
-  e.preventDefault();
-  const a=btn.dataset.readerAction;
-  if(a==='toggle-contents'){state.reader.navOpen=!state.reader.navOpen;saveState();renderReader();}
-  if(a==='toggle-notes'){state.reader.notesOpen=!state.reader.notesOpen;saveState();renderReader();}
-  if(a==='toggle-epub'){state.reader.epubMode=!state.reader.epubMode;saveState();renderReader();}
-  if(a==='manga-mode'){state.reader.mangaMode=btn.dataset.mode;saveState();renderReader();}
-  if(a==='manga-direction'){state.reader.mangaDirection=state.reader.mangaDirection==='rtl'?'ltr':'rtl';saveState();renderReader();}
-  if(a==='delete-note'){const id=state.currentBook;const index=Number(btn.dataset.noteIndex);state.notes[id]=(state.notes[id]||[]).filter((_,i)=>i!==index);saveState();renderAll();toast('Note deleted.');}
-});
-document.addEventListener('input',e=>{
-  if(e.target?.id==='chapter-search'){
-    const q=e.target.value.toLowerCase();
-    document.querySelectorAll('.chapter-list a').forEach(a=>a.style.display=(a.dataset.chapterTitle||'').includes(q)?'block':'none');
+  if (e.target?.id === 'setting-font') {
+    state.reader.font = Number(e.target.value);
+    const out = document.querySelector('#setting-font-out');
+    if (out) out.textContent = `${state.reader.font}px`;
+    saveState();
+    renderSettings();
   }
 });
-document.addEventListener('change',e=>{ if(e.target?.id==='epub-upload') loadEpubFile(e.target.files[0]); });
-document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElement && state.reader.focus){state.reader.focus=false;saveState();renderReader();} });
 
-window.addEventListener('popstate',()=>{const h=location.hash.replace('#','');if(!h||h==='/')return;showView(h==='explore'?'home':h||'home',false)});
-loadBooksJson().finally(()=>{renderAll();const raw=location.hash.replace('#','');if(raw.startsWith('/book/')){state.currentBook=raw.split('/')[2];renderAll();showView('book-detail',false)}else if(raw.startsWith('/read/')){const parts=raw.split('/');state.currentBook=parts[2]||state.currentBook;state.activeChapter=Math.max(0,Number(parts[3]||1)-1);renderAll();showView('reader',false)}else if(raw&&raw!=='/'&&raw!=='home'&&raw!=='explore')showView(raw.replace(/^\//,''),false);else showView('home',false);});
+document.addEventListener('submit', e => {
+  if (e.target.classList.contains('search-board')) {
+    e.preventDefault();
+    renderSearch();
+  }
+});
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-reader-action]');
+  if (!btn) return;
+  e.preventDefault();
+  const a = btn.dataset.readerAction;
+  if (a === 'toggle-contents') { state.reader.navOpen = !state.reader.navOpen; saveState(); renderReader(); }
+  if (a === 'toggle-notes') { state.reader.notesOpen = !state.reader.notesOpen; saveState(); renderReader(); }
+  if (a === 'toggle-epub') { state.reader.epubMode = !state.reader.epubMode; saveState(); renderReader(); }
+  if (a === 'manga-mode') { state.reader.mangaMode = btn.dataset.mode; saveState(); renderReader(); }
+  if (a === 'manga-direction') { state.reader.mangaDirection = state.reader.mangaDirection === 'rtl' ? 'ltr' : 'rtl'; saveState(); renderReader(); }
+  if (a === 'delete-note') {
+    const id = state.currentBook;
+    const index = Number(btn.dataset.noteIndex);
+    state.notes[id] = (state.notes[id] || []).filter((_, i) => i !== index);
+    saveState();
+    renderAll();
+    toast('Note deleted.');
+  }
+});
+
+document.addEventListener('input', e => {
+  if (e.target?.id === 'chapter-search') {
+    const q = e.target.value.toLowerCase();
+    document.querySelectorAll('.chapter-list a').forEach(a => a.style.display = (a.dataset.chapterTitle || '').includes(q) ? 'block' : 'none');
+  }
+});
+
+document.addEventListener('change', e => {
+  if (e.target?.id === 'epub-upload') loadEpubFile(e.target.files[0]);
+});
+
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && state.reader.focus) {
+    state.reader.focus = false;
+    saveState();
+    renderReader();
+  }
+});
+
+function handleRouting() {
+  const raw = location.hash.replace('#', '');
+  if (raw.startsWith('/book/')) {
+    state.currentBook = raw.split('/')[2];
+    renderAll();
+    showView('book-detail', false);
+  } else if (raw.startsWith('/read/')) {
+    const parts = raw.split('/');
+    state.currentBook = parts[2] || state.currentBook;
+    state.activeChapter = Math.max(0, Number(parts[3] || 1) - 1);
+    renderAll();
+    showView('reader', false);
+  } else if (raw === 'library' || raw === 'library-view') {
+    showView('library-view', false);
+  } else if (raw === 'reading-now' || raw === 'reader') {
+    showView('reader', false);
+  } else if (raw === 'profile') {
+    showView('profile', false);
+  } else if (raw === 'settings') {
+    showView('settings', false);
+  } else if (raw === 'search') {
+    showView('search', false);
+  } else {
+    showView('home', false);
+  }
+}
+
+window.addEventListener('popstate', handleRouting);
+window.addEventListener('hashchange', handleRouting);
+
+// Initialize application
+renderAll();
+handleRouting();

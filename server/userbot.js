@@ -116,40 +116,53 @@ function norm(str) {
 }
 
 function isAccurateTitleMatch(query, title) {
-    const stopWords = new Set(['in', 'of', 'the', 'a', 'an', 'to', 'and', 'for', 'with', 'on', 'at', 'is', 'by']);
-    const cleanQ = (query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
-    const cleanT = (title || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
+    const stopWords = new Set(['in', 'of', 'the', 'a', 'an', 'to', 'and', 'for', 'with', 'on', 'at', 'is', 'by', 'manga', 'manhwa', 'webtoon', 'comic', 'novel', 'read', 'chapter', 'online', 'free', 'raw']);
+    const cleanQ = (query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const cleanT = (title || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
     if (!cleanQ || !cleanT) return false;
-    if (cleanQ === cleanT) return true;
+    if (cleanQ === cleanT || cleanT.includes(cleanQ) || cleanQ.includes(cleanT)) return true;
 
     const qTokens = cleanQ.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
-    const tTokens = new Set(cleanT.split(/\s+/).filter(w => w.length > 1));
+    const tTokens = new Set(cleanT.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w)));
 
-    if (qTokens.length === 0) return false;
+    if (qTokens.length === 0) return true;
 
-    // Every key token in the query MUST exist in the candidate title
+    let matched = 0;
     for (const token of qTokens) {
-        if (!tTokens.has(token) && !cleanT.includes(token)) {
-            return false;
+        if (tTokens.has(token) || cleanT.includes(token)) {
+            matched++;
         }
     }
-    return true;
+
+    const matchRatio = matched / qTokens.length;
+    return matchRatio >= 0.35 || matched >= 1;
 }
 
 function titleScore(query, title) {
-    const cleanQ = (query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
-    const cleanT = (title || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
+    const stopWords = new Set(['in', 'of', 'the', 'a', 'an', 'to', 'and', 'for', 'with', 'on', 'at', 'is', 'by', 'manga', 'manhwa', 'webtoon', 'comic', 'novel', 'read', 'chapter', 'online', 'free', 'raw']);
+    const cleanQ = (query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const cleanT = (title || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
     if (!cleanQ || !cleanT) return 0;
     if (cleanQ === cleanT) return 100;
-
-    if (!isAccurateTitleMatch(query, title)) return 0;
-
     if (cleanT.startsWith(cleanQ)) return 95;
     if (cleanT.includes(cleanQ)) return 85;
 
-    return 75;
+    const qTokens = cleanQ.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
+    const tTokens = new Set(cleanT.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w)));
+
+    if (qTokens.length === 0) return 50;
+
+    let matched = 0;
+    for (const token of qTokens) {
+        if (tTokens.has(token) || cleanT.includes(token)) matched++;
+    }
+
+    const ratio = matched / qTokens.length;
+    if (ratio < 0.30 && matched === 0) return 0;
+
+    return Math.round(50 + ratio * 40);
 }
 
 // ── Extract invite hash or channel handle from Telegram message markup ──────
@@ -540,14 +553,7 @@ function formatPanelHtml(pages, slug, chNum, titleKey) {
     `).join('');
 
     return `
-        <div style="background:#000;min-height:100vh;padding:0;margin:0 0 4rem 0;">
-            <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;position:sticky;top:0;z-index:30;box-shadow:0 4px 25px rgba(0,0,0,0.9);">
-                <div style="display:inline-block;background:#0284c7;color:#fff;padding:4px 14px;border-radius:12px;font-size:0.75rem;font-weight:800;letter-spacing:0.5px;margin-bottom:0.4rem;">
-                    CHAPTER ${chNum}
-                </div>
-                <h2 style="color:#f8fafc;font-size:1.4rem;margin:0.4rem 0 0 0;font-weight:800;">${titleKey || 'Manga'}</h2>
-                <span style="color:#64748b;font-size:0.8rem;">${pages.length} High-Res Pages</span>
-            </div>
+        <div style="background:#000;min-height:100vh;padding:0;margin:0 0 2rem 0;">
             <div style="display:flex;flex-direction:column;align-items:center;background:#000;gap:0;padding:0;margin:0;width:100%;">
                 ${panelImgs}
             </div>
