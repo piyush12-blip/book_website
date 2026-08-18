@@ -3,8 +3,10 @@ const cors    = require('cors');
 const path    = require('path');
 const axios   = require('axios');
 const fs      = require('fs');
+const https   = require('https');
 const { findEpubUrl, extractChaptersFromUrl, extractChaptersFromFile } = require('./epubParser');
 const { searchMangaDex } = require('./mangadex');
+const { searchDivaScans, fetchDivaScansChapters, getDivaScansChapterImages, customLookup } = require('./divascans');
 const { searchRoyalRoad, getRoyalRoadChapters } = require('./royalroad');
 const { 
     indexTelegramChannels, 
@@ -53,6 +55,34 @@ app.post('/api/clear-cache', async (req, res) => {
 const { searchPrioritizedTelegram } = require('./telegram');
 const { searchPrivateChannels, getReadingChannelChapters } = require('./userbot');
 
+function levenshteinDistance(s1, s2) {
+    if (s1 === s2) return 0;
+    if (s1.length === 0) return s2.length;
+    if (s2.length === 0) return s1.length;
+    const d = [];
+    for (let i = 0; i <= s1.length; i++) d[i] = [i];
+    for (let j = 0; j <= s2.length; j++) d[0][j] = j;
+    for (let i = 1; i <= s1.length; i++) {
+        for (let j = 1; j <= s2.length; j++) {
+            const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+            d[i][j] = Math.min(
+                d[i - 1][j] + 1,
+                d[i][j - 1] + 1,
+                d[i - 1][j - 1] + cost
+            );
+        }
+    }
+    return d[s1.length][s2.length];
+}
+
+function wordSimilarity(w1, w2) {
+    if (w1 === w2) return 1.0;
+    const maxLen = Math.max(w1.length, w2.length);
+    if (maxLen === 0) return 1.0;
+    const dist = levenshteinDistance(w1, w2);
+    return 1 - (dist / maxLen);
+}
+
 function calculateSearchRelevanceScore(query, candidateTitle) {
     const stopWords = new Set(['in', 'of', 'the', 'a', 'an', 'to', 'and', 'for', 'with', 'on', 'at', 'is', 'by', 'manga', 'manhwa', 'webtoon', 'comic', 'novel', 'read', 'chapter', 'online', 'free', 'raw']);
     const cleanQ = (query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -62,6 +92,12 @@ function calculateSearchRelevanceScore(query, candidateTitle) {
 
     // Rank 1: Exact match (Always appears at the very top)
     if (cleanT === cleanQ) return 10000;
+
+    // Fuzzy Full Title similarity (e.g. 1-2 letter typos across full title)
+    const fullSim = wordSimilarity(cleanQ, cleanT);
+    if (fullSim >= 0.85) {
+        return Math.round(9500 * fullSim);
+    }
 
     // Rank 2: Prefix match (e.g. "Alice in Borderland RETRY", "Solo Leveling: Ragnarok", "Jujutsu Kaisen 0")
     if (cleanT.startsWith(cleanQ)) {
@@ -73,21 +109,34 @@ function calculateSearchRelevanceScore(query, candidateTitle) {
         return 8000 - Math.min(Math.abs(cleanT.length - cleanQ.length), 500);
     }
 
-    // Rank 4: Significant keyword matching
+    // Rank 4: Significant keyword & Typo matching (Levenshtein)
     const qTokens = cleanQ.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
-    const tTokens = new Set(cleanT.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w)));
+    const tTokensArray = cleanT.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
+    const tTokens = new Set(tTokensArray);
 
     if (qTokens.length === 0) return 500;
 
-    let matched = 0;
+    let matchScore = 0;
     for (const token of qTokens) {
-        if (tTokens.has(token) || cleanT.includes(token)) matched++;
+        if (tTokens.has(token) || cleanT.includes(token)) {
+            matchScore += 1.0;
+        } else {
+            // Check for close typo matches (e.g. "tese" -> "tease")
+            let bestSim = 0;
+            for (const tToken of tTokensArray) {
+                const sim = wordSimilarity(token, tToken);
+                if (sim > bestSim) bestSim = sim;
+            }
+            if (bestSim >= 0.70) {
+                matchScore += bestSim * 0.9;
+            }
+        }
     }
 
-    const ratio = matched / qTokens.length;
-    if (ratio === 0 && matched === 0) return 50;
+    const ratio = matchScore / qTokens.length;
+    if (ratio === 0) return 0;
 
-    return Math.round(5000 * ratio) - Math.min(Math.abs(cleanT.length - cleanQ.length), 500);
+    return Math.round(6000 * ratio) - Math.min(Math.abs(cleanT.length - cleanQ.length), 500);
 }
 
 app.get('/api/books/search', async (req, res) => {
@@ -114,20 +163,23 @@ app.get('/api/books/search', async (req, res) => {
         // 1. Searches Telegram (Tier 1 Main & Tier 2 Archive) and MangaDex in parallel
         // 2. Ranks exact title at Rank #1, direct sequels/spin-offs at Rank #2, related at Rank #3+
         // ─────────────────────────────────────────────────────────────────────
-        const [privateRaw, tgIndexed, mangadexRaw] = await Promise.all([
+        const [privateRaw, tgIndexed, divaRaw, mangadexRaw] = await Promise.all([
             searchPrivateChannels(cleanQuery).catch(() => []),
             searchTelegramIndex(cleanQuery).catch(() => []),
+            searchDivaScans(cleanQuery).catch(() => []),
             searchMangaDex(cleanQuery).catch(() => [])
         ]);
 
         const candidateList = [];
-        const seenNormTitles = new Set();
+        const seenTg = new Set();
+        const seenDiva = new Set();
+        const seenMangaDex = new Set();
 
         // 1. Process Telegram Main Channel Results
         for (const item of (privateRaw || [])) {
             const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenNormTitles.has(normT)) continue;
-            seenNormTitles.add(normT);
+            if (seenTg.has(normT)) continue;
+            seenTg.add(normT);
 
             const encodedHash = item.inviteHash ? encodeURIComponent(item.inviteHash) : 'nohash';
             const coverImg = await fetchRealCoverImage(item.title).catch(() => null);
@@ -152,8 +204,8 @@ app.get('/api/books/search', async (req, res) => {
         // 2. Process Telegram Alternative Channels
         for (const item of (tgIndexed || [])) {
             const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenNormTitles.has(normT)) continue;
-            seenNormTitles.add(normT);
+            if (seenTg.has(normT)) continue;
+            seenTg.add(normT);
             if (!item.image) {
                 item.image = await fetchRealCoverImage(item.title).catch(() => null);
                 if (item.image) item.cover = 'has-image teal';
@@ -161,11 +213,19 @@ app.get('/api/books/search', async (req, res) => {
             candidateList.push(item);
         }
 
-        // 3. Process MangaDex Scanlations (e.g. Spin-offs, Retries, related series)
+        // 3. Process DivaScans Series (Always included alongside Telegram!)
+        for (const item of (divaRaw || [])) {
+            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (seenDiva.has(normT)) continue;
+            seenDiva.add(normT);
+            candidateList.push(item);
+        }
+
+        // 4. Process MangaDex Scanlations (e.g. Spin-offs, Retries, related series)
         for (const item of (mangadexRaw || [])) {
             const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenNormTitles.has(normT)) continue;
-            seenNormTitles.add(normT);
+            if (seenMangaDex.has(normT)) continue;
+            seenMangaDex.add(normT);
             if (!item.image) {
                 item.image = await fetchRealCoverImage(item.title).catch(() => null);
                 if (item.image) item.cover = 'has-image teal';
@@ -177,12 +237,17 @@ app.get('/api/books/search', async (req, res) => {
         if (candidateList.length > 0) {
             const scored = candidateList
                 .map(item => {
-                    let score = calculateSearchRelevanceScore(cleanQuery, item.title);
-                    // Telegram (our joined channels) is always Tier-1 priority above external scrapers like MangaDex
-                    if (item.id.startsWith('private-tg-')) score += 8000;
-                    else if (item.id.startsWith('telegram-')) score += 5000;
-                    return { item, score };
+                    let baseScore = calculateSearchRelevanceScore(cleanQuery, item.title);
+                    let score = baseScore;
+                    // Source tie-breakers (only applies when relevance is high)
+                    if (baseScore >= 3000) {
+                        if (item.id.startsWith('private-tg-')) score += 300;
+                        else if (item.id.startsWith('telegram-')) score += 200;
+                        else if (item.id.startsWith('divascans-')) score += 100;
+                    }
+                    return { item, score, baseScore };
                 })
+                .filter(r => r.baseScore > 500)
                 .sort((a, b) => b.score - a.score)
                 .map(r => r.item);
 
@@ -356,9 +421,10 @@ app.get('/api/books/:id/chapters', async (req, res) => {
         // For other IDs, detect by common keywords.
         const isManga = id.startsWith('mangadex-') || id.startsWith('telegram-') ||
                         id.startsWith('private-tg-') || id.startsWith('webtoon-') ||
+                        id.startsWith('divascans-') ||
                         /manga|manhwa|manhua|webtoon|comic|spearman|resurrection|mount hua|solo leveling|jujutsu|demon slayer|chainsaw|blue lock|one piece|naruto|bleach|hero|leveling|assassin|swordmaster|borderland|dungeon|delicious/i.test(cleanQuery);
 
-        if (isManga || id.startsWith('private-tg-') || id.startsWith('telegram-') || id.startsWith('mangadex-')) {
+        if (isManga || id.startsWith('private-tg-') || id.startsWith('telegram-') || id.startsWith('mangadex-') || id.startsWith('divascans-')) {
             // --- 0. PRIVATE TELEGRAM (Manga Horizon) RESULTS ---
             // Manga Horizon posts are ANNOUNCEMENT CARDS with inline buttons.
             // The button contains an invite link to the ACTUAL per-title reading channel.
@@ -380,6 +446,18 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                     }
                 }
                 console.log(`[CHAPTERS] No invite hash or empty reading channel for "${cleanQuery}" — falling through to scan engines`);
+            }
+
+            // --- 0.5 DIVASCANS HANDLER ---
+            if (id.startsWith('divascans-')) {
+                const { fetchDivaScansChapters } = require('./divascans');
+                const divaChapters = await fetchDivaScansChapters(id);
+                if (divaChapters && divaChapters.length > 0) {
+                    console.log(`[CHAPTERS] DivaScans Engine served ${divaChapters.length} genuine chapters for "${id}"`);
+                    const payload = { chapters: divaChapters, type: 'manga', source: 'DivaScansEngine' };
+                    MEMORY_CACHE.chapters.set(cacheKey, payload);
+                    return res.json(payload);
+                }
             }
 
             // --- 1. MANGADEX BY EXACT UUID (fastest, most accurate) ---
@@ -651,6 +729,15 @@ app.get('/api/manga/chapter/:chapterId', async (req, res) => {
             }
         }
 
+        // 1.5 DivaScans Direct Chapter Trigger (diva-ch-{slug}-{chNum})
+        if (chapterId.startsWith('diva-ch-')) {
+            const { getDivaScansChapterImages } = require('./divascans');
+            const divaHtml = await getDivaScansChapterImages(chapterId);
+            if (divaHtml) {
+                return res.json({ html: divaHtml });
+            }
+        }
+
         // 2. MangaDex Direct Chapter ID Handler (md-ch-{num}-{chapterUUID or mangaUUID})
         if (chapterId.startsWith('md-ch-')) {
             const parts = chapterId.split('-');
@@ -763,36 +850,58 @@ app.get('/api/proxy/image', async (req, res) => {
         }
 
         let referer = 'https://mangadex.org/';
+        if (targetUrl.includes('divascans')) referer = 'https://divascans.org/';
         if (targetUrl.includes('mangakatana')) referer = 'https://mangakatana.com/';
         if (targetUrl.includes('manganato') || targetUrl.includes('mkklcdn')) referer = 'https://chapmanganato.to/';
         if (targetUrl.includes('mangafreak')) referer = 'https://mangafreak.net/';
         if (targetUrl.includes('asura')) referer = 'https://asuracomic.net/';
         if (targetUrl.includes('reaper')) referer = 'https://reaperscans.com/';
 
+        const PROXY_UAS = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+        ];
+        const randomUA = PROXY_UAS[Math.floor(Math.random() * PROXY_UAS.length)];
+
         const response = await axios.get(targetUrl, {
             responseType: 'arraybuffer',
+            httpsAgent: new https.Agent({ lookup: customLookup }),
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                'User-Agent': randomUA,
                 'Referer': referer,
-                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'sec-ch-ua': '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+                'sec-fetch-dest': 'image',
+                'sec-fetch-mode': 'no-cors',
+                'sec-fetch-site': 'same-site',
+                'priority': 'u=1, i'
             },
             timeout: 10000
         });
 
-        const contentType = response.headers['content-type'] || 'image/jpeg';
+        const contentType = response.headers['content-type'] || 'image/webp';
         const buffer = Buffer.from(response.data);
 
-        // Cache up to 300 image pages in memory
-        if (IMAGE_CACHE.size < 300) {
-            IMAGE_CACHE.set(targetUrl, { type: contentType, buffer });
+        // Cache up to 1000 image pages in memory
+        if (IMAGE_CACHE.size > 1000) {
+            const firstKey = IMAGE_CACHE.keys().next().value;
+            IMAGE_CACHE.delete(firstKey);
         }
+        IMAGE_CACHE.set(targetUrl, { type: contentType, buffer });
 
         res.setHeader('Content-Type', contentType);
         res.setHeader('Cache-Control', 'public, max-age=86400');
         res.send(buffer);
     } catch (err) {
-        // Return 1x1 transparent pixel or clean fallback
-        res.status(502).send('Image proxy error');
+        // Redirect browser to load image directly if proxy fails
+        if (req.query.url && req.query.url.startsWith('http')) {
+            return res.redirect(302, req.query.url);
+        }
+        res.status(404).send('Image unavailable');
     }
 });
 

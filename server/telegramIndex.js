@@ -306,22 +306,21 @@ function calculateMatchScore(query, title) {
     if (tNorm.startsWith(qNorm) || qNorm.startsWith(tNorm)) return 950;
     if (tNorm.includes(qNorm) || qNorm.includes(tNorm)) return 900;
 
-    const stopWords = new Set(['the','a','an','of','in','at','to','for','and','or','is','its','by','with','manga','manhwa','webtoon','making','open','opened','opening','read','chapter']);
-    const qWords = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
-    const tWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
+    const stopWords = new Set(['the','a','an','of','in','on','at','to','for','and','or','is','its','by','with','my','me','he','it','manga','manhwa','webtoon','making','open','opened','opening','read','chapter']);
+    const qWords = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
+    const tWords = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
 
     if (qWords.length === 0) return 0;
 
     let matchCount = 0;
     for (const qw of qWords) {
-        if (tWords.some(tw => tw === qw || tw.includes(qw) || qw.includes(tw))) {
+        if (tWords.some(tw => tw === qw || (tw.length >= 4 && qw.length >= 4 && (tw.includes(qw) || qw.includes(tw))))) {
             matchCount++;
         }
     }
 
     const ratio = matchCount / qWords.length;
-    // If at least 1-2 primary keywords match (e.g. 'harem' and 'hell'), match it with high score
-    if (matchCount >= 2 || ratio >= 0.40 || (matchCount >= 1 && qWords.length <= 2)) {
+    if (matchCount >= 2 || (ratio >= 0.50 && matchCount >= 1)) {
         return Math.round(500 + ratio * 400);
     }
     return 0;

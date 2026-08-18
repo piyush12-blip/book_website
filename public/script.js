@@ -72,10 +72,10 @@ const book = id => {
   let found = BOOKS.find(b => b.id === id) || (state.cachedBooks && state.cachedBooks[id]);
   if (found) return found;
 
-  const isManga = id.startsWith('mangadex-');
+  const isManga = id.startsWith('mangadex-') || id.startsWith('divascans-') || id.startsWith('telegram-') || id.startsWith('private-tg-');
   const isWebnovel = id.startsWith('royalroad-');
 
-  let rawClean = id.replace(/^(itunes|mangadex|royalroad)-/, '')
+  let rawClean = id.replace(/^(itunes|mangadex|royalroad|divascans|telegram|private-tg)-/, '')
                     .replace(/^\d+[-_\s]*/, '')
                     .replace(/:\s*(reese's book club|oprah's book club|a novel|a memoir).*/gi, '')
                     .replace(/[-_]/g, ' ')
@@ -89,7 +89,7 @@ const book = id => {
     id: id,
     title: formattedTitle,
     author: isManga ? 'Manga Artist' : isWebnovel ? 'WebNovel Author' : 'Classic Author',
-    genre: isManga ? 'Manga' : isWebnovel ? 'Web Novel' : 'Book',
+    genre: isManga ? 'Manga & Manhwa' : isWebnovel ? 'Web Novel' : 'Book',
     format: isManga ? 'Manga & Manhwa' : isWebnovel ? 'Novel & Fiction' : 'Novels',
     mood: 'Reading',
     pages: 300,
@@ -107,7 +107,7 @@ const pct=id=>Math.max(0,Math.min(100,Number(state.progress[id]||0)));
 const saved=id=>state.saved.includes(id), liked=id=>state.liked.includes(id);
 const unique=a=>[...new Set(a.filter(Boolean))];
 function toast(msg){let el=document.querySelector('.toast');if(!el){el=document.createElement('div');el.className='toast';document.body.appendChild(el)}el.textContent=msg;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),1800)}
-function stars(n){return '★'.repeat(n)+'<i>'+'★'.repeat(5-n)+'</i>'}
+function stars(n){const num=Number(n)||5,norm=num>5?num/2:num,count=Math.min(5,Math.max(0,Math.round(norm)));return '★'.repeat(count)+'<i>'+'★'.repeat(5-count)+'</i>'}
 function coverHTML(item,size='mini'){
   if (item.image) {
     return `<div class="cover ${size} has-image ${item.cover||''}" data-book="${item.id}" role="button" tabindex="0" aria-label="Open ${item.title}"><img class="cover-img" src="${item.image}" alt="${item.title} book cover" onerror="this.style.display='none';if(this.parentElement)this.parentElement.classList.remove('has-image');"></div>`;
@@ -183,7 +183,7 @@ async function renderSearch(){
     const list = [...(remoteList || []), ...localMatches];
 
     if (list && list.length > 0) {
-      // Deduplicate results by normalized title so only ONE clean card is shown per title!
+      // Deduplicate results per-source so Telegram, DivaScans, and MangaDex cards all show!
       const uniqueMap = new Map();
       list.forEach(b => {
         const cleanTitle = (b.title || '')
@@ -196,11 +196,11 @@ async function renderSearch(){
           .trim();
         b.title = cleanTitle;
 
-        const normKey = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const srcPrefix = (b.id || '').split('-')[0] || 'book';
+        const normKey = `${srcPrefix}-${cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
         if (!uniqueMap.has(normKey)) {
           uniqueMap.set(normKey, b);
         } else {
-          // If existing entry has no thumbnail, grab image from new candidate if available
           const existing = uniqueMap.get(normKey);
           if (!existing.image && b.image) {
             existing.image = b.image;
@@ -225,45 +225,76 @@ async function renderSearch(){
 
       // Filter list by selected category tab if set
       let filteredList = uniqueList;
-      if (activeFilter === 'manga') filteredList = uniqueList.filter(b => b.genre?.toLowerCase().includes('manga') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || b.id.startsWith('mangadex-'));
+      if (activeFilter === 'manga') filteredList = uniqueList.filter(b => b.genre?.toLowerCase().includes('manga') || b.id.startsWith('divascans-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || b.id.startsWith('mangadex-'));
       if (activeFilter === 'novel') filteredList = uniqueList.filter(b => b.genre?.toLowerCase().includes('novel') || b.id.startsWith('royalroad-'));
-      if (activeFilter === 'adult') filteredList = uniqueList.filter(b => b.genre?.toLowerCase().includes('adult') || b.title?.toLowerCase().includes('pornhwa') || b.title?.toLowerCase().includes('doujinshi'));
-      if (activeFilter === 'book') filteredList = uniqueList.filter(b => !b.id.startsWith('royalroad-') && !b.id.startsWith('telegram-') && !b.id.startsWith('private-tg-') && !b.id.startsWith('mangadex-'));
+      if (activeFilter === 'adult') filteredList = uniqueList.filter(b => b.genre?.toLowerCase().includes('adult') || b.title?.toLowerCase().includes('pornhwa') || b.title?.toLowerCase().includes('doujinshi') || b.mood?.toLowerCase().includes('adult') || b.mood?.toLowerCase().includes('smut') || b.id.startsWith('divascans-'));
+      if (activeFilter === 'book') filteredList = uniqueList.filter(b => !b.id.startsWith('royalroad-') && !b.id.startsWith('telegram-') && !b.id.startsWith('private-tg-') && !b.id.startsWith('mangadex-') && !b.id.startsWith('divascans-'));
       if (filteredList.length === 0) filteredList = uniqueList;
 
       results.innerHTML = categoriesBar + filteredList.map(b => {
-        if (!BOOKS.some(kb => kb.id === b.id)) BOOKS.push(b);
+        const existingIdx = BOOKS.findIndex(kb => kb.id === b.id);
+        if (existingIdx >= 0) {
+          BOOKS[existingIdx] = Object.assign(BOOKS[existingIdx], b);
+        } else {
+          BOOKS.push(b);
+        }
         state.cachedBooks[b.id] = b;
 
         const cleanAuthor = (b.author || 'Manga / Manhwa')
           .replace(/@\w+/g, '')
-          .replace(/\btelegram\b/gi, '')
-          .replace(/\b(channel|joined main|global vault|royal road author)\b/gi, '')
-          .trim() || 'English · Full Chapter Set';
+          .replace(/\b(telegram|divascans|mangadex|royal road author|royalroad)\b/gi, '')
+          .replace(/\b(channel|joined main|global vault)\b/gi, '')
+          .trim() || 'Complete Series · High-Res';
 
-        // Infer Category Badge for visual clarity
-        const isAdult = b.title?.toLowerCase().includes('pornhwa') || b.title?.toLowerCase().includes('doujinshi') || b.genre?.toLowerCase().includes('adult');
-        const isManga = b.id.startsWith('mangadex-') || b.id.startsWith('telegram-') || b.genre?.toLowerCase().includes('manga');
-        const isNovel = b.id.startsWith('royalroad-') || b.genre?.toLowerCase().includes('novel');
+        // Infer Clean Content Type Badge (Manga, Manhwa, Manhua, Light Novel, Web Novel, Book)
+        const tLower = (b.title || '').toLowerCase();
+        const gLower = (b.genre || '').toLowerCase();
+        const mLower = (b.mood || '').toLowerCase();
 
-        const catBadge = isAdult
-          ? `<span style="background:#dc2626;color:#fff;padding:3px 8px;border-radius:4px;font-size:0.72rem;font-weight:800;flex-shrink:0;">🔞 ADULT / SMUT</span>`
-          : isManga
-          ? `<span style="background:#16a34a;color:#fff;padding:3px 8px;border-radius:4px;font-size:0.72rem;font-weight:800;flex-shrink:0;">⚡ MANGA / MANHWA</span>`
-          : isNovel
-          ? `<span style="background:#7c3aed;color:#fff;padding:3px 8px;border-radius:4px;font-size:0.72rem;font-weight:800;flex-shrink:0;">📖 WEB NOVEL</span>`
-          : `<span style="background:#d97706;color:#fff;padding:3px 8px;border-radius:4px;font-size:0.72rem;font-weight:800;flex-shrink:0;">📚 PUBLISHED BOOK</span>`;
+        const isAdult = tLower.includes('pornhwa') || tLower.includes('doujinshi') || gLower.includes('adult') || mLower.includes('adult') || mLower.includes('smut') || b.id.startsWith('divascans-');
+        const isManhua = tLower.includes('manhua') || gLower.includes('manhua') || mLower.includes('manhua');
+        const isManhwa = tLower.includes('manhwa') || gLower.includes('manhwa') || mLower.includes('manhwa') || b.id.startsWith('divascans-');
+        const isLightNovel = tLower.includes('light novel') || gLower.includes('light novel') || mLower.includes('light novel');
+        const isWebNovel = b.id.startsWith('royalroad-') || tLower.includes('web novel') || gLower.includes('novel') || mLower.includes('novel');
+        const isManga = b.id.startsWith('mangadex-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || gLower.includes('manga') || mLower.includes('manga');
+
+        let typeLabel = '📚 BOOK';
+        let typeBg = '#d97706';
+
+        if (isAdult) {
+          typeLabel = isManhwa ? '🔞 MANHWA (+18)' : isManga ? '🔞 MANGA (+18)' : '🔞 ADULT (+18)';
+          typeBg = '#dc2626';
+        } else if (isManhua) {
+          typeLabel = '⚡ MANHUA';
+          typeBg = '#0891b2';
+        } else if (isManhwa) {
+          typeLabel = '⚡ MANHWA';
+          typeBg = '#16a34a';
+        } else if (isManga) {
+          typeLabel = '⚡ MANGA';
+          typeBg = '#16a34a';
+        } else if (isLightNovel) {
+          typeLabel = '📖 LIGHT NOVEL';
+          typeBg = '#9333ea';
+        } else if (isWebNovel) {
+          typeLabel = '📖 WEB NOVEL';
+          typeBg = '#7c3aed';
+        }
+
+        const catBadge = `<span style="background:${typeBg};color:#fff;padding:3px 8px;border-radius:4px;font-size:0.72rem;font-weight:800;flex-shrink:0;">${typeLabel}</span>`;
 
         const imgStyle = b.image ? `background-image:url('${b.image}');background-size:cover;background-position:center;` : '';
 
-        return `<div class="search-result-item" data-action="open-book" data-book="${b.id}" style="cursor:pointer;display:flex;align-items:center;gap:16px;padding:14px 16px;border-bottom:1px solid #2a2a2a;border-radius:8px;margin-bottom:8px;background:#141414;transition:background 0.2s ease;" onmouseover="this.style.background='#1f1f1f'" onmouseout="this.style.background='#141414'">
+        return `<div class="search-result-item" data-book="${b.id}" onclick="openBook('${b.id}')" style="cursor:pointer;display:flex;align-items:center;gap:16px;padding:14px 16px;border-bottom:1px solid #2a2a2a;border-radius:8px;margin-bottom:8px;background:#141414;transition:background 0.2s ease;" onmouseover="this.style.background='#1f1f1f'" onmouseout="this.style.background='#141414'">
           <span class="result-cover ${(b.cover||'').split(' ')[0]}" style="${imgStyle};width:44px;height:60px;border-radius:6px;flex-shrink:0;"></span>
           <div style="flex:1;min-width:0;">
             <strong style="display:block;font-size:1.05rem;color:#fff;margin-bottom:4px;">${highlightMatchText(b.title, q)}</strong>
             <em style="color:#aaa;font-size:0.85rem;font-style:normal;">${cleanAuthor}</em>
           </div>
           ${catBadge}
-          ${actions(b.id)}
+          <div onclick="event.stopPropagation()">
+            ${actions(b.id)}
+          </div>
         </div>`;
       }).join('');
       saveState();
@@ -279,7 +310,9 @@ async function renderSearch(){
 }
 function renderDetail(){
   const g=document.querySelector('#book-detail .detail-grid');if(!g)return;
-  const b=book(state.currentBook),p=pct(b.id),chapters=b.chapters||[];
+  const b=book(state.currentBook);
+  if(!b){g.innerHTML='<div style="padding:40px;text-align:center;color:#aaa;"><p>Loading book details...</p></div>';return;}
+  const p=pct(b.id),chapters=b.chapters||[];
   const formatBadge = b.id.startsWith('royalroad-') ? 'Web Novel' : b.id.startsWith('mangadex-') ? 'Manga / Manhwa' : (b.genre || 'Book');
   
   const firstTitle = chapters.length ? (chapters[0].title || 'Chapter 1') : 'Chapter 1';
@@ -293,16 +326,19 @@ function renderDetail(){
 
   const chapterPickerHTML = chapters.length
     ? `${licenseNotice}
-       <div style="background:#f4f4f4;padding:12px 16px;border-radius:8px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px">
-         <div><strong>⚡ Recommended Start:</strong> ${firstTitle}</div>
-         <button class="action-btn active" data-action="open-chapter" data-book="${b.id}" data-chapter-index="0">Start Reading</button>
+       <div style="background:#1e293b;color:#f8fafc;padding:16px 20px;border-radius:10px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 4px 12px rgba(0,0,0,0.2);">
+         <div>
+           <div style="color:#38bdf8;font-size:0.8rem;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:2px;">⚡ Ready to Read</div>
+           <strong style="font-size:1.05rem;">${firstTitle}</strong>
+         </div>
+         <button class="action-btn active" data-action="open-chapter" data-book="${b.id}" data-chapter-index="0" style="background:#0284c7;color:#fff;font-weight:800;padding:10px 24px;border-radius:8px;border:none;font-size:0.95rem;cursor:pointer;box-shadow:0 2px 8px rgba(2,132,199,0.4);">Start Reading</button>
        </div>
        <div class="chapter-picker"><h3>All Available Chapters (${chapters.length})</h3>${chapters.map((ch,i)=>`<a href="#/read/${b.id}/${i+1}" data-action="open-chapter" data-book="${b.id}" data-chapter-index="${i}"><strong>${ch.title}</strong><span>Read</span></a>`).join('')}</div>`
-    : `<div class="chapter-picker">
-         <a data-action="read" data-book="${b.id}">
-           <strong>⚡ Click to Load & Read Book</strong>
-           <span>Auto-fetches real chapters from global archives</span>
-         </a>
+    : `<div class="chapter-picker" style="text-align:center;padding:24px;background:#141414;border-radius:10px;border:1px solid #262626;">
+         <div style="display:inline-block;width:24px;height:24px;border:3px solid #0284c7;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:12px;"></div>
+         <h4 style="color:#f8fafc;margin:0 0 6px 0;font-size:1.05rem;">Fetching Chapters...</h4>
+         <p style="color:#94a3b8;font-size:0.85rem;margin:0 0 16px 0;">Connecting to high-speed scanlation archives</p>
+         <button class="warm-button" data-action="read" data-book="${b.id}" style="padding:10px 24px;font-size:0.95rem;">⚡ Start Reading</button>
        </div>`;
 
   const isMangaOrNovel = b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.genre?.toLowerCase().includes('manga') || b.genre?.toLowerCase().includes('novel');
@@ -323,7 +359,9 @@ function renderDetail(){
 function renderReader(){
   const g=document.querySelector('#reader .reader-grid');
   if(!g)return;
-  const b=book(state.currentBook), chapters=b.chapters||[], total=Math.max(1,chapters.length);
+  const b=book(state.currentBook);
+  if(!b)return;
+  const chapters=b.chapters||[], total=Math.max(1,chapters.length);
   const idx=Math.max(0,Math.min(total-1,state.activeChapter||0));
   const selected=chapters[idx]||{title:'Preview Chapter',content:['The reader opens with a quiet page and remembers every setting you choose.'],quote:'A good reading room disappears around the book.'};
   const p=pct(b.id), r=state.reader, notes=state.notes[b.id]||[];
@@ -452,7 +490,7 @@ async function loadStolenChapters(id, title, author, genre){
   const nativeReader=document.querySelector('#reader .native-reader');
   if(!nativeReader) return;
   
-  const isMangaLoad = id.startsWith('telegram-') || id.startsWith('tg-');
+  const isMangaLoad = id.startsWith('telegram-') || id.startsWith('tg-') || id.startsWith('divascans-') || id.startsWith('mangadex-') || id.startsWith('private-tg-') || (genre || '').toLowerCase().includes('manga');
   nativeReader.innerHTML=`<div style="padding:4rem 2rem;text-align:center;opacity:.6;font-family:Georgia,serif">
     <p style="font-size:1.1rem;margin-bottom:.5rem">📚 Loading chapters...</p>
     <p style="font-size:.85rem;opacity:.7">${title}</p>
@@ -470,7 +508,7 @@ async function loadStolenChapters(id, title, author, genre){
     
     if(!data.isFallback && !data.pdfUrl && (data.error || !data.chapters || !data.chapters.length)){
       const realTitle = (title || 'this book').replace(/^\d+\s*/, '').trim();
-      const isManga = id.startsWith('telegram-') || id.startsWith('tg-') || id.startsWith('private-tg-') || (genre || '').toLowerCase().includes('manga') || id.startsWith('mangadex-');
+      const isManga = id.startsWith('telegram-') || id.startsWith('tg-') || id.startsWith('private-tg-') || (genre || '').toLowerCase().includes('manga') || id.startsWith('mangadex-') || id.startsWith('divascans-');
       
       if (isManga) {
         nativeReader.innerHTML = `
@@ -715,20 +753,56 @@ function showView(v='home',push=true){
   app.classList.add('view-mode');
   target.classList.add('active-view');
   setNav(v);
-  if(push)history.pushState({v},'',`#${v}`);
+  if(push){
+    if(v==='book-detail' && state.currentBook){
+      history.pushState({v},'',`#/book/${state.currentBook}`);
+    } else if(v==='reader' && state.currentBook){
+      history.pushState({v},'',`#/read/${state.currentBook}/${(state.activeChapter||0)+1}`);
+    } else if(v==='explore-view'){
+      history.pushState({v},'','#explore');
+    } else {
+      history.pushState({v},'',`#${v}`);
+    }
+  }
   scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});
   if(v==='search')setTimeout(()=>document.querySelector('#book-search')?.focus(),300)
 }
 function openBook(id){
-  // Inject cached search book into BOOKS array FIRST so book(id) finds it correctly
+  if(!id)return;
+  // Inject cached search book into BOOKS array FIRST so book(id) finds it with exact metadata
   const cached = state.cachedBooks[id];
-  if(cached && !BOOKS.some(b=>b.id===id)) BOOKS.push(cached);
+  if(cached) {
+    const existingIdx = BOOKS.findIndex(b=>b.id===id);
+    if(existingIdx >= 0) {
+      BOOKS[existingIdx] = Object.assign(BOOKS[existingIdx], cached);
+    } else {
+      BOOKS.push(cached);
+    }
+  }
   state.currentBook=id;
   state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);
   saveState();
-  renderAll();
+  renderDetail(); // Direct render to guarantee current title and cover are displayed
   showView('book-detail');
-  history.replaceState({v:'book-detail'},'',`#/book/${id}`);
+
+  // Auto-prefetch chapters for external items if not loaded yet
+  const b = book(id);
+  const isExternal = b && (b.id.startsWith('divascans-') || b.id.startsWith('mangadex-') || b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.id.startsWith('itunes-') || (b.genre || '').toLowerCase().includes('manga') || (b.genre || '').toLowerCase().includes('novel'));
+  if (isExternal && (!b.chapters || !b.chapters.length)) {
+    fetch(`/api/books/${id}/chapters?q=${encodeURIComponent(b.title)}&_cb=${Date.now()}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.chapters && data.chapters.length > 0) {
+          b.chapters = data.chapters;
+          b.isFallback = !!data.isFallback;
+          saveState();
+          if(state.currentBook === id) {
+            renderDetail();
+          }
+        }
+      })
+      .catch(() => {});
+  }
 }
 window.openBook = openBook;
 
@@ -736,7 +810,7 @@ function openReader(id=state.currentBook, targetChapterIdx = 0){
   state.currentBook=id;
   state.activeChapter=targetChapterIdx;
   const b=book(id);
-  const isManga = b && (b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || b.id.startsWith('mangadex-') || (b.genre || '').toLowerCase().includes('manga') || (b.format || '').toLowerCase().includes('manga'));
+  const isManga = b && (b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || b.id.startsWith('mangadex-') || b.id.startsWith('divascans-') || (b.genre || '').toLowerCase().includes('manga') || (b.format || '').toLowerCase().includes('manga'));
   if (isManga) {
     document.body.classList.add('is-manga-mode');
   } else {
@@ -748,10 +822,9 @@ function openReader(id=state.currentBook, targetChapterIdx = 0){
   state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);
   state.sessions++;
   saveState();
-  renderAll();
+  renderReader();
   showView('reader');
-  history.replaceState({v:'reader'},'',`#/read/${id}/${targetChapterIdx+1}`);
-  const isExternal = b && (b.genre === 'searched' || b.genre === 'Manga' || b.genre === 'Web Novel' || b.id.includes('-'));
+  const isExternal = b && (b.genre === 'searched' || b.genre === 'Manga' || b.genre === 'Web Novel' || b.id.startsWith('divascans-') || b.id.startsWith('mangadex-') || b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.id.includes('-'));
   if(isExternal || !b.chapters || !b.chapters.length || b.chapters.some(c=>!c.html)){
     setTimeout(()=>loadStolenChapters(b.id, b.title, b.author, b.genre), 50);
   } else {
@@ -871,7 +944,7 @@ function inferFormat(b) {
   if (b.format) return b.format;
   const g = (b.genre || '').toLowerCase();
   const id = (b.id || '').toLowerCase();
-  if (id.startsWith('mangadex-') || id.startsWith('telegram-') || id.startsWith('private-tg-') || g.includes('manga') || g.includes('manhwa')) return 'Manga & Manhwa';
+  if (id.startsWith('mangadex-') || id.startsWith('divascans-') || id.startsWith('telegram-') || id.startsWith('private-tg-') || g.includes('manga') || g.includes('manhwa')) return 'Manga & Manhwa';
   if (id.startsWith('royalroad-') || g.includes('novel')) return 'Web Novels';
   return 'Books';
 }
@@ -999,7 +1072,7 @@ document.addEventListener('click', e => {
     const href = navA.getAttribute('href') || '';
     if (href === '#library') showView('library-view');
     else if (href === '#reading-now') showView('reader');
-    else if (href === '#explore') showView('home');
+    else if (href === '#explore') showView('explore-view');
     else if (href === '#profile') showView('profile');
     else if (href.startsWith('#')) showView(href.replace('#', ''));
     return;
@@ -1068,26 +1141,47 @@ document.addEventListener('fullscreenchange', () => {
 
 function handleRouting() {
   const raw = location.hash.replace('#', '');
-  if (raw.startsWith('/book/')) {
-    state.currentBook = raw.split('/')[2];
-    renderAll();
+  if (raw.startsWith('/book/') || raw === 'book-detail') {
+    if (raw.startsWith('/book/')) {
+      const bid = raw.split('/')[2];
+      if (bid) {
+        state.currentBook = bid;
+        const cached = state.cachedBooks[bid];
+        if (cached) {
+          const idx = BOOKS.findIndex(b => b.id === bid);
+          if (idx >= 0) BOOKS[idx] = Object.assign(BOOKS[idx], cached);
+          else BOOKS.push(cached);
+        }
+      }
+    }
+    renderDetail();
     showView('book-detail', false);
-  } else if (raw.startsWith('/read/')) {
-    const parts = raw.split('/');
-    state.currentBook = parts[2] || state.currentBook;
-    state.activeChapter = Math.max(0, Number(parts[3] || 1) - 1);
-    renderAll();
+  } else if (raw.startsWith('/read/') || raw === 'reader' || raw === 'reading-now') {
+    if (raw.startsWith('/read/')) {
+      const parts = raw.split('/');
+      if (parts[2]) {
+        state.currentBook = parts[2];
+        const cached = state.cachedBooks[parts[2]];
+        if (cached) {
+          const idx = BOOKS.findIndex(b => b.id === parts[2]);
+          if (idx >= 0) BOOKS[idx] = Object.assign(BOOKS[idx], cached);
+          else BOOKS.push(cached);
+        }
+      }
+      state.activeChapter = Math.max(0, Number(parts[3] || 1) - 1);
+    }
+    renderReader();
     showView('reader', false);
   } else if (raw === 'library' || raw === 'library-view') {
     showView('library-view', false);
-  } else if (raw === 'reading-now' || raw === 'reader') {
-    showView('reader', false);
   } else if (raw === 'profile') {
     showView('profile', false);
   } else if (raw === 'settings') {
     showView('settings', false);
   } else if (raw === 'search') {
     showView('search', false);
+  } else if (raw === 'explore-view' || raw === 'explore') {
+    showView('explore-view', false);
   } else {
     showView('home', false);
   }
