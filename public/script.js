@@ -197,7 +197,7 @@ async function renderSearch(){
         b.title = cleanTitle;
 
         const srcPrefix = (b.id || '').split('-')[0] || 'book';
-        const normKey = `${srcPrefix}-${cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+        const normKey = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (!uniqueMap.has(normKey)) {
           uniqueMap.set(normKey, b);
         } else {
