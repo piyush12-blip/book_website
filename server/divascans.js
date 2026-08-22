@@ -3,66 +3,10 @@
  * Real-time search, chapter scraping, and WebP panel extraction for https://divascans.org
  */
 
-const https = require('https');
-const fs = require('fs');
-const path = require('path');
-const dns = require('dns');
-
-const resolver = new dns.Resolver();
-resolver.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
-
-const dnsCache = new Map(); // string hostname -> string IP
-
-function customLookup(hostname, options, callback) {
-    if (typeof options === 'function') {
-        callback = options;
-        options = {};
-    }
-    const isAll = options && options.all;
-
-    if (dnsCache.has(hostname)) {
-        const ip = dnsCache.get(hostname);
-        if (isAll) return callback(null, [{ address: ip, family: 4 }]);
-        return callback(null, ip, 4);
-    }
-
-    resolver.resolve4(hostname, (err, addrs) => {
-        if (!err && addrs && addrs.length > 0) {
-            const ip = String(addrs[0]);
-            dnsCache.set(hostname, ip);
-            if (isAll) {
-                return callback(null, addrs.map(a => ({ address: String(a), family: 4 })));
-            }
-            return callback(null, ip, 4);
-        }
-        dns.lookup(hostname, options, (sysErr, address, family) => {
-            if (!sysErr && address) {
-                const singleIp = Array.isArray(address) ? address[0]?.address : address;
-                if (singleIp && typeof singleIp === 'string') {
-                    dnsCache.set(hostname, singleIp);
-                }
-                return callback(null, address, family);
-            }
-            callback(err || sysErr);
-        });
-    });
-}
+const { customLookup, stealthFetch, sleepJitter } = require('./stealthEngine');
 
 const BASE_URL = 'https://divascans.org';
 const MEDIA_BASE = 'https://media.divascans.org';
-
-// Real-world Desktop Browser User-Agent Pool
-const USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
-];
-
-function getRandomUserAgent() {
-    return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
 
 // In-Memory Chapter & Search Cache for 0-footprint repeat reads
 const DIVA_SEARCH_CACHE = new Map();
@@ -70,76 +14,14 @@ const DIVA_CHAPTERS_CACHE = new Map();
 const DIVA_PAGES_CACHE = new Map();
 
 function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return sleepJitter(ms, ms + 40);
 }
 
-function fetchUrl(url, options = {}) {
-    return new Promise((resolve, reject) => {
-        const u = new URL(url);
-        const isApi = url.includes('/api/');
-        const isImage = url.includes('media.divascans.org') || url.endsWith('.webp') || url.endsWith('.jpg') || url.endsWith('.png');
-
-        const ua = getRandomUserAgent();
-        const headers = {
-            'User-Agent': ua,
-            'Accept': options.accept || (isApi ? 'application/json, text/plain, */*' : (isImage ? 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8' : 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8')),
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'identity', // clean uncompressed streaming
-            'Referer': options.referer || 'https://divascans.org/',
-            'sec-ch-ua': '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': isImage ? 'image' : (isApi ? 'empty' : 'document'),
-            'sec-fetch-mode': isImage ? 'no-cors' : (isApi ? 'cors' : 'navigate'),
-            'sec-fetch-site': isImage ? 'same-site' : 'same-origin',
-            ...(options.headers || {})
-        };
-
-        if (!isApi && !isImage) {
-            headers['sec-fetch-user'] = '?1';
-            headers['upgrade-insecure-requests'] = '1';
-        }
-        if (isImage) {
-            headers['priority'] = 'u=1, i';
-        } else {
-            headers['priority'] = 'u=0, i';
-        }
-
-        const reqOptions = {
-            hostname: u.hostname,
-            path: u.pathname + u.search,
-            method: options.method || 'GET',
-            headers,
-            lookup: customLookup,
-            timeout: options.timeout || 8000
-        };
-
-        const req = https.get(reqOptions, (res) => {
-            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                let redirect = res.headers.location;
-                if (!redirect.startsWith('http')) redirect = BASE_URL + redirect;
-                return fetchUrl(redirect, options).then(resolve).catch(reject);
-            }
-
-            const chunks = [];
-            res.on('data', c => chunks.push(c));
-            res.on('end', () => {
-                const buffer = Buffer.concat(chunks);
-                resolve({
-                    status: res.statusCode,
-                    headers: res.headers,
-                    buffer,
-                    text: buffer.toString('utf8')
-                });
-            });
-        });
-
-        req.on('error', reject);
-        req.on('timeout', () => {
-            req.destroy();
-            reject(new Error(`Timeout fetching ${url}`));
-        });
-    });
+async function fetchUrl(url, options = {}) {
+    const isApi = url.includes('/api/');
+    const isImage = url.includes('media.divascans.org') || url.endsWith('.webp') || url.endsWith('.jpg') || url.endsWith('.png');
+    const type = isImage ? 'image' : (isApi ? 'json' : 'html');
+    return await stealthFetch(url, { ...options, type });
 }
 
 /**
@@ -165,30 +47,7 @@ async function searchDivaScans(query) {
             } catch(e) {}
         }
 
-        // Multi-Token Typo Fallback: If no results found, search significant individual words
-        if (seriesList.length === 0) {
-            const stopWords = new Set(['in', 'of', 'the', 'a', 'an', 'to', 'and', 'for', 'with', 'on', 'at', 'is', 'by', 'me', 'my', 'you', 'he', 'she', 'it']);
-            const words = cleanQ.split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
-            if (words.length > 0) {
-                const subSearches = await Promise.all(
-                    words.slice(0, 3).map(w => 
-                        fetchUrl(`${BASE_URL}/api/search?q=${encodeURIComponent(w)}`, { accept: 'application/json', timeout: 4000 })
-                            .then(r => r.status === 200 ? (JSON.parse(r.text).series || []) : [])
-                            .catch(() => [])
-                    )
-                );
-                const seenSlugs = new Set();
-                for (const list of subSearches) {
-                    for (const s of list) {
-                        const slug = s.slug || s.urlSlug || s.id;
-                        if (!seenSlugs.has(slug)) {
-                            seenSlugs.add(slug);
-                            seriesList.push(s);
-                        }
-                    }
-                }
-            }
-        }
+        // If no results found, return empty array (do not pollute with unrelated single-token results)
 
         const COLORS = ['navy', 'teal', 'burgundy', 'midnight', 'sage', 'rust', 'ochre', 'brown'];
 

@@ -194,15 +194,14 @@ async function getUniversalTelegramPanels(queryTitle, targetChapterNum = 1) {
 
     if (matchingPdfs.length === 0) return null;
 
-    // Determine target PDF (matching chapter or closest)
+    // Determine target PDF strictly for the requested chapter
     let bestPdf = matchingPdfs.find(p => p.chapterNum === targetChapterNum);
+    if (!bestPdf && targetChapterNum === 1) {
+        bestPdf = matchingPdfs.find(p => p.chapterNum === 0);
+    }
     if (!bestPdf) {
-        // If chapter 1 requested and chapter 0 exists, use chapter 0
-        if (targetChapterNum === 1) {
-            bestPdf = matchingPdfs.find(p => p.chapterNum === 0) || matchingPdfs[0];
-        } else {
-            bestPdf = matchingPdfs[0];
-        }
+        // Do NOT borrow another chapter's pages
+        return null;
     }
 
     const slug = bestPdf.slug;

@@ -26,8 +26,22 @@ async function searchRoyalRoad(query) {
             if (!idMatch) return;
             const fictionId = idMatch[1];
 
-            const author = $el.find('.author-name, .col-md-10 span').first().text().trim() || 'Royal Road Author';
-            const coverImg = $el.find('img').first().attr('src') || null;
+            let author = $el.find('a[href*="/profile/"]').first().text().trim()
+                || $el.find('.author a, .author, span:contains("by") a, .fiction-info span a, .author-name').first().text().trim();
+            if (author.toLowerCase().startsWith('by ')) {
+                author = author.replace(/^by\s+/i, '').trim();
+            }
+            if (!author) author = 'Web Novel Author';
+            let coverImg = $el.find('img').first().attr('src') || null;
+            if (coverImg) {
+                if (coverImg.includes('nocover') || coverImg.includes('default')) {
+                    coverImg = null;
+                } else if (coverImg.startsWith('//')) {
+                    coverImg = 'https:' + coverImg;
+                } else if (coverImg.startsWith('/')) {
+                    coverImg = 'https://www.royalroad.com' + coverImg;
+                }
+            }
             let synopsis = $el.find('.description, .fiction-description').first().text().trim().slice(0, 400);
             const color = COLORS[i % COLORS.length];
 
