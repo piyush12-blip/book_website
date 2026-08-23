@@ -8,6 +8,7 @@ const { findEpubUrl, extractChaptersFromUrl, extractChaptersFromFile } = require
 const { searchMadaraScans, fetchMadaraScansChapters, getMadaraScansChapterImages } = require('./madarascans');
 const { searchTempleToons, fetchTempleToonsChapters, getTempleToonsChapterImages } = require('./templetoons');
 const { searchDivaScans, fetchDivaScansChapters, getDivaScansChapterImages, customLookup } = require('./divascans');
+const { searchMangapill, fetchMangapillChapters, getMangapillChapterImages } = require('./mangapill');
 const { searchRoyalRoad, getRoyalRoadChapters } = require('./royalroad');
 const { 
     indexTelegramChannels, 
@@ -18,6 +19,7 @@ const {
 const app  = express();
 const PORT = 3000;
 
+app.disable('x-powered-by');
 app.use(cors());
 app.use(express.json());
 
@@ -98,27 +100,31 @@ function calculateSearchRelevanceScore(query, candidateItem) {
 
     if (!cleanQ) return 0;
 
-    // Rank 1: Exact title match (Always appears at the very top)
-    if (cleanT === cleanQ) return 10000;
+    const noSpaceQ = cleanQ.replace(/\s+/g, '');
+    const noSpaceT = cleanT.replace(/\s+/g, '');
+    const noSpaceSlug = cleanSlug.replace(/\s+/g, '');
+
+    // Rank 1: Exact title match (with or without spaces)
+    if (cleanT === cleanQ || (noSpaceQ.length > 2 && noSpaceT === noSpaceQ)) return 10000;
 
     // Fuzzy Full Title similarity (e.g. 1-2 letter typos across full title)
-    const fullSim = wordSimilarity(cleanQ, cleanT);
+    const fullSim = Math.max(wordSimilarity(cleanQ, cleanT), wordSimilarity(noSpaceQ, noSpaceT));
     if (fullSim >= 0.85) {
         return Math.round(9500 * fullSim);
     }
 
-    // Rank 2: Prefix match (e.g. "Alice in Borderland RETRY", "Solo Leveling: Ragnarok", "Jujutsu Kaisen 0")
-    if (cleanT.startsWith(cleanQ)) {
-        return 9000 - Math.min(cleanT.length - cleanQ.length, 500);
+    // Rank 2: Prefix match
+    if (cleanT.startsWith(cleanQ) || (noSpaceQ.length > 2 && noSpaceT.startsWith(noSpaceQ))) {
+        return 9000 - Math.min(Math.abs(noSpaceT.length - noSpaceQ.length), 500);
     }
 
-    // Rank 3: Exact phrase inside title or title inside query
-    if (cleanT.includes(cleanQ) || cleanQ.includes(cleanT)) {
-        return 8000 - Math.min(Math.abs(cleanT.length - cleanQ.length), 500);
+    // Rank 3: Exact phrase inside title or title inside query (with or without spaces)
+    if (cleanT.includes(cleanQ) || cleanQ.includes(cleanT) || (noSpaceQ.length > 2 && (noSpaceT.includes(noSpaceQ) || noSpaceQ.includes(noSpaceT)))) {
+        return 8000 - Math.min(Math.abs(noSpaceT.length - noSpaceQ.length), 500);
     }
 
     // Check if query is found in slug or synopsis
-    if (cleanSlug.includes(cleanQ) || candidateSynopsis.toLowerCase().includes(cleanQ)) {
+    if (cleanSlug.includes(cleanQ) || (noSpaceQ.length > 2 && noSpaceSlug.includes(noSpaceQ)) || candidateSynopsis.toLowerCase().includes(cleanQ)) {
         return 7800;
     }
 
@@ -182,25 +188,64 @@ app.get('/api/books/search', async (req, res) => {
 
         // ─────────────────────────────────────────────────────────────────────
         // ADVANCED MULTI-RESULT SMART AGGREGATOR & HIERARCHICAL RANKER
-        // 1. Searches Telegram (Tier 1 Main & Tier 2 Archive), DivaScans, MadaraScans, and TempleToons
-        // 2. Priority: 1st Telegram, 2nd DivaScans, 3rd MadaraScans & TempleToons
+        // 1. Searches Web Scrapers (Mangapill, DivaScans, MadaraScans, TempleToons) & Telegram
+        // 2. Priority: 1st Mangapill & DivaScans, 2nd Madara & Temple, Lowest: Telegram Fallback
         // ─────────────────────────────────────────────────────────────────────
-        const [privateRaw, tgIndexed, divaRaw, madaraRaw, madaraAltRaw, templeRaw] = await Promise.all([
-            searchPrivateChannels(cleanQuery).catch(() => []),
-            searchTelegramIndex(cleanQuery).catch(() => []),
+        const [mangapillRaw, divaRaw, madaraRaw, madaraAltRaw, templeRaw, privateRaw, tgIndexed] = await Promise.all([
+            searchMangapill(cleanQuery).catch(() => []),
             searchDivaScans(cleanQuery).catch(() => []),
             searchMadaraScans(cleanQuery).catch(() => []),
             altQuery ? searchMadaraScans(altQuery).catch(() => []) : Promise.resolve([]),
-            searchTempleToons(cleanQuery).catch(() => [])
+            searchTempleToons(cleanQuery).catch(() => []),
+            searchPrivateChannels(cleanQuery).catch(() => []),
+            searchTelegramIndex(cleanQuery).catch(() => [])
         ]);
 
         const candidateList = [];
-        const seenTg = new Set();
+        const seenMangapill = new Set();
         const seenDiva = new Set();
         const seenMadara = new Set();
         const seenTemple = new Set();
+        const seenTg = new Set();
 
-        // 1. Process Telegram Main Channel Results (Highest Priority)
+        // 1. Process Mangapill Series (1st Priority - High-Speed Direct Scans)
+        for (const item of (mangapillRaw || [])) {
+            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (seenMangapill.has(normT)) continue;
+            seenMangapill.add(normT);
+            item._isDirectSearchMatch = true;
+            candidateList.push(item);
+        }
+
+        // 2. Process DivaScans Series (1st/2nd Priority)
+        for (const item of (divaRaw || [])) {
+            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (seenDiva.has(normT)) continue;
+            seenDiva.add(normT);
+            item._isDirectSearchMatch = true;
+            candidateList.push(item);
+        }
+
+        // 3. Process MadaraScans Series (2nd Priority)
+        const combinedMadara = [...(madaraRaw || []), ...(madaraAltRaw || [])];
+        for (const item of combinedMadara) {
+            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (seenMadara.has(normT)) continue;
+            seenMadara.add(normT);
+            item._isDirectSearchMatch = true;
+            candidateList.push(item);
+        }
+
+        // 4. Process TempleToons Series (2nd/3rd Priority)
+        for (const item of (templeRaw || [])) {
+            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (seenTemple.has(normT)) continue;
+            seenTemple.add(normT);
+            item._isDirectSearchMatch = true;
+            candidateList.push(item);
+        }
+
+        // 5. Process Telegram Main Channel Results (Lowest Favor / Fallback)
         for (const item of (privateRaw || [])) {
             const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             if (seenTg.has(normT)) continue;
@@ -227,7 +272,7 @@ app.get('/api/books/search', async (req, res) => {
             });
         }
 
-        // 2. Process Telegram Alternative Channels
+        // 6. Process Telegram Alternative Channels (Lowest Favor / Fallback)
         for (const item of (tgIndexed || [])) {
             const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             if (seenTg.has(normT)) continue;
@@ -240,47 +285,20 @@ app.get('/api/books/search', async (req, res) => {
             candidateList.push(item);
         }
 
-        // 3. Process DivaScans Series (2nd Priority)
-        for (const item of (divaRaw || [])) {
-            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenDiva.has(normT)) continue;
-            seenDiva.add(normT);
-            item._isDirectSearchMatch = true;
-            candidateList.push(item);
-        }
-
-        // 4. Process MadaraScans Series (3rd Priority)
-        const combinedMadara = [...(madaraRaw || []), ...(madaraAltRaw || [])];
-        for (const item of combinedMadara) {
-            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenMadara.has(normT)) continue;
-            seenMadara.add(normT);
-            item._isDirectSearchMatch = true;
-            candidateList.push(item);
-        }
-
-        // 5. Process TempleToons Series (3rd/4th Priority)
-        for (const item of (templeRaw || [])) {
-            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenTemple.has(normT)) continue;
-            seenTemple.add(normT);
-            item._isDirectSearchMatch = true;
-            candidateList.push(item);
-        }
-
         // Score and rank all candidate results hierarchically
         if (candidateList.length > 0) {
             const scored = candidateList
                 .map(item => {
                     let baseScore = calculateSearchRelevanceScore(cleanQuery, item);
                     let score = baseScore;
-                    // Source tie-breakers: Telegram (1st) > DivaScans (2nd) > MadaraScans / TempleToons (3rd)
+                    // Source tie-breakers: Direct Web Scrapers (Top) >>> Telegram (Lowest/Fallback)
                     if (baseScore >= 3000) {
-                        if (item.id.startsWith('private-tg-')) score += 350;
-                        else if (item.id.startsWith('telegram-')) score += 300;
-                        else if (item.id.startsWith('divascans-')) score += 150;
-                        else if (item.id.startsWith('madara-')) score += 100;
-                        else if (item.id.startsWith('temple-')) score += 100;
+                        if (item.id.startsWith('mangapill-')) score += 600;
+                        else if (item.id.startsWith('divascans-')) score += 550;
+                        else if (item.id.startsWith('madara-')) score += 500;
+                        else if (item.id.startsWith('temple-')) score += 500;
+                        else if (item.id.startsWith('private-tg-')) score += 50;  // Demoted to bottom
+                        else if (item.id.startsWith('telegram-')) score += 20;    // Demoted to bottom
                     }
                     return { item, score, baseScore };
                 })
@@ -487,10 +505,22 @@ app.get('/api/books/:id/chapters', async (req, res) => {
     try {
         const isManga = id.startsWith('telegram-') || id.startsWith('tg-') ||
                         id.startsWith('private-tg-') || id.startsWith('webtoon-') ||
-                        id.startsWith('divascans-') || id.startsWith('madara-') || id.startsWith('temple-') ||
+                        id.startsWith('mangapill-') || id.startsWith('divascans-') || id.startsWith('madara-') || id.startsWith('temple-') ||
                         /manga|manhwa|manhua|webtoon|comic|spearman|resurrection|mount hua|solo leveling|jujutsu|demon slayer|chainsaw|blue lock|one piece|naruto|bleach|hero|leveling|assassin|swordmaster|borderland|dungeon|delicious/i.test(cleanQuery);
 
-        if (isManga || id.startsWith('private-tg-') || id.startsWith('telegram-') || id.startsWith('madara-') || id.startsWith('divascans-') || id.startsWith('temple-')) {
+        if (isManga || id.startsWith('mangapill-') || id.startsWith('private-tg-') || id.startsWith('telegram-') || id.startsWith('madara-') || id.startsWith('divascans-') || id.startsWith('temple-')) {
+            // --- 0.4 MANGAPILL HANDLER ---
+            if (id.startsWith('mangapill-')) {
+                const { fetchMangapillChapters } = require('./mangapill');
+                const mangapillChapters = await fetchMangapillChapters(id);
+                if (mangapillChapters && mangapillChapters.length > 0) {
+                    console.log(`[CHAPTERS] Mangapill Engine served ${mangapillChapters.length} genuine chapters for "${id}"`);
+                    const payload = { chapters: mangapillChapters, type: 'manga', source: 'MangapillEngine' };
+                    MEMORY_CACHE.chapters.set(cacheKey, payload);
+                    return res.json(payload);
+                }
+            }
+
             // --- 0. PRIVATE TELEGRAM (Manga Horizon) RESULTS ---
             // Manga Horizon posts are ANNOUNCEMENT CARDS with inline buttons.
             // The button contains an invite link to the ACTUAL per-title reading channel.
@@ -790,6 +820,15 @@ app.get('/api/manga/chapter/:chapterId', async (req, res) => {
             }
         }
 
+        // 1.4 Mangapill Direct Chapter Trigger (mangapill-ch-{encodedUrl})
+        if (chapterId.startsWith('mangapill-ch-')) {
+            const { getMangapillChapterImages } = require('./mangapill');
+            const mangapillHtml = await getMangapillChapterImages(chapterId);
+            if (mangapillHtml) {
+                return res.json({ html: mangapillHtml });
+            }
+        }
+
         // 1.5 DivaScans Direct Chapter Trigger (diva-ch-{slug}-{chNum})
         if (chapterId.startsWith('diva-ch-')) {
             const { getDivaScansChapterImages } = require('./divascans');
@@ -905,7 +944,8 @@ app.get('/api/proxy/image', async (req, res) => {
         }
 
         let referer = 'https://divascans.org/';
-        if (targetUrl.includes('divascans')) referer = 'https://divascans.org/';
+        if (targetUrl.includes('mangapill') || targetUrl.includes('readdetectiveconan')) referer = 'https://mangapill.com/';
+        else if (targetUrl.includes('divascans')) referer = 'https://divascans.org/';
         else if (targetUrl.includes('madarascans')) referer = 'https://madarascans.org/';
         else if (targetUrl.includes('templetoons')) referer = 'https://templetoons.com/';
         else if (targetUrl.includes('mangakatana')) referer = 'https://mangakatana.com/';

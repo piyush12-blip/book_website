@@ -225,28 +225,30 @@ async function renderSearch(){
         const rawYear = b.year || b.releaseDate || b.publishedDate || '';
         const yearMatch = String(rawYear).match(/\d{4}/);
         const yearStr = yearMatch ? yearMatch[0] : '';
-        const subtitleLine = yearStr ? `${cleanAuthor} · ${yearStr}` : cleanAuthor;
+        let subtitleLine = b.altTitle ? `${b.altTitle} · ${cleanAuthor}` : (yearStr && !cleanAuthor.includes(yearStr) ? `${cleanAuthor} · ${yearStr}` : cleanAuthor);
 
         const tLower = (b.title || '').toLowerCase();
         const gLower = (b.genre || '').toLowerCase();
         const mLower = (b.mood || '').toLowerCase();
 
         const isAdult    = tLower.includes('pornhwa') || tLower.includes('doujinshi') || gLower.includes('adult') || mLower.includes('adult') || mLower.includes('smut') || b.id.startsWith('divascans-');
-        const isManhua   = tLower.includes('manhua') || gLower.includes('manhua') || mLower.includes('manhua');
-        const isManhwa   = tLower.includes('manhwa') || gLower.includes('manhwa') || mLower.includes('manhwa') || b.id.startsWith('divascans-');
-        const isLightNovel = tLower.includes('light novel') || gLower.includes('light novel') || mLower.includes('light novel');
-        const isWebNovel = b.id.startsWith('royalroad-') || tLower.includes('web novel') || gLower.includes('novel') || mLower.includes('novel');
-        const isMangaType = b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || gLower.includes('manga') || mLower.includes('manga');
+        const isOneShot  = gLower === 'one-shot' || tLower.includes('one-shot') || tLower.includes('oneshot');
+        const isManhua   = gLower === 'manhua' || tLower.includes('manhua') || mLower.includes('manhua');
+        const isManhwa   = gLower === 'manhwa' || tLower.includes('manhwa') || mLower.includes('manhwa');
+        const isLightNovel = gLower === 'light novel' || tLower.includes('light novel') || (b.altTitle && b.altTitle.toLowerCase().includes('light novel')) || tLower.includes('shousetsu');
+        const isWebNovel = b.id.startsWith('royalroad-') || gLower === 'web novel' || tLower.includes('web novel') || (gLower.includes('novel') && !isLightNovel);
+        const isMangaType = b.id.startsWith('mangapill-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || gLower.includes('manga') || mLower.includes('manga');
 
         let typeLabel = 'BOOK';
         let typeBg    = '#d97706';
 
-        if (isAdult)       { typeLabel = isManhwa ? 'MANHWA (+18)' : isMangaType ? 'MANGA (+18)' : 'ADULT (+18)'; typeBg = '#dc2626'; }
-        else if (isManhua) { typeLabel = 'MANHUA';     typeBg = '#0891b2'; }
-        else if (isManhwa) { typeLabel = 'MANHWA';     typeBg = '#16a34a'; }
-        else if (isMangaType){ typeLabel = 'MANGA';    typeBg = '#16a34a'; }
+        if (isAdult)          { typeLabel = isManhwa ? 'MANHWA (+18)' : isMangaType ? 'MANGA (+18)' : 'ADULT (+18)'; typeBg = '#dc2626'; }
+        else if (isOneShot)   { typeLabel = 'ONE-SHOT';    typeBg = '#6366f1'; }
         else if (isLightNovel){ typeLabel = 'LIGHT NOVEL'; typeBg = '#9333ea'; }
-        else if (isWebNovel){ typeLabel = 'WEB NOVEL'; typeBg = '#7c3aed'; }
+        else if (isManhua)    { typeLabel = 'MANHUA';     typeBg = '#0891b2'; }
+        else if (isManhwa)    { typeLabel = 'MANHWA';     typeBg = '#16a34a'; }
+        else if (isWebNovel)  { typeLabel = 'WEB NOVEL';  typeBg = '#7c3aed'; }
+        else if (isMangaType) { typeLabel = 'MANGA';      typeBg = '#2563eb'; }
 
         const catBadge = `<span style="background:${typeBg};color:#fff;padding:3px 8px;border-radius:4px;font-size:0.72rem;font-weight:800;flex-shrink:0;letter-spacing:0.03em;">${typeLabel}</span>`;
         const imgStyle = b.image ? `background-image:url('${b.image}');background-size:cover;background-position:center;` : '';
@@ -273,47 +275,240 @@ async function renderSearch(){
     }
   }
 }
-function renderDetail(){
-  const g=document.querySelector('#book-detail .detail-grid');if(!g)return;
-  const b=book(state.currentBook);
-  if(!b){g.innerHTML='<div style="padding:40px;text-align:center;color:#aaa;"><p>Loading book details...</p></div>';return;}
-  const p=pct(b.id),chapters=b.chapters||[];
-  const formatBadge = b.id.startsWith('royalroad-') ? 'Web Novel' : (b.id.startsWith('madara-') || b.id.startsWith('divascans-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-')) ? 'Manga / Manhwa' : (b.genre || 'Book');
-  
-  const firstTitle = chapters.length ? (chapters[0].title || 'Chapter 1') : 'Chapter 1';
-  const isCh1Present = /ch(?:apter|\.)?\s*1\b/i.test(firstTitle) || /^1\./.test(firstTitle);
+window.chapterSortOrder = window.chapterSortOrder || 'desc';
 
-  const chapterPickerHTML = chapters.length
-    ? `<div style="background:#1e293b;color:#f8fafc;padding:16px 20px;border-radius:10px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 4px 12px rgba(0,0,0,0.2);">
-         <div>
-           <div style="color:#38bdf8;font-size:0.8rem;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:2px;">⚡ Ready to Read</div>
-           <strong style="font-size:1.05rem;">${firstTitle}</strong>
-         </div>
-         <button class="action-btn active" data-action="open-chapter" data-book="${b.id}" data-chapter-index="0" style="background:#0284c7;color:#fff;font-weight:800;padding:10px 24px;border-radius:8px;border:none;font-size:0.95rem;cursor:pointer;box-shadow:0 2px 8px rgba(2,132,199,0.4);">Start Reading</button>
-       </div>
-       <div class="chapter-picker"><h3>All Available Chapters (${chapters.length})</h3>${chapters.map((ch,i)=>`<a href="#/read/${b.id}/${i+1}" data-action="open-chapter" data-book="${b.id}" data-chapter-index="${i}"><strong>${ch.title}</strong><span>Read</span></a>`).join('')}</div>`
-    : `<div class="chapter-picker" style="text-align:center;padding:24px;background:#141414;border-radius:10px;border:1px solid #262626;">
-         <div style="display:inline-block;width:24px;height:24px;border:3px solid #0284c7;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:12px;"></div>
-         <h4 style="color:#f8fafc;margin:0 0 6px 0;font-size:1.05rem;">Fetching Chapters...</h4>
-         <p style="color:#94a3b8;font-size:0.85rem;margin:0 0 16px 0;">Connecting to high-speed scanlation archives</p>
-         <button class="warm-button" data-action="read" data-book="${b.id}" style="padding:10px 24px;font-size:0.95rem;">⚡ Start Reading</button>
-       </div>`;
+window.toggleChapterSort = function(bookId) {
+  window.chapterSortOrder = window.chapterSortOrder === 'desc' ? 'asc' : 'desc';
+  renderDetail();
+};
 
-  const isMangaOrNovel = b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.genre?.toLowerCase().includes('manga') || b.genre?.toLowerCase().includes('novel');
-  const countLabel = isMangaOrNovel ? `${chapters.length || b.pages || 50} chapters` : `${b.pages} pages`;
+window.filterChapterGrid = function(query) {
+  const q = (query || '').toLowerCase().trim();
+  const boxes = document.querySelectorAll('.mangapill-ch-box');
+  boxes.forEach(box => {
+    const title = (box.dataset.chapterTitle || box.textContent || '').toLowerCase();
+    box.style.display = (!q || title.includes(q)) ? 'block' : 'none';
+  });
+};
 
-  // Clean title: separate dual-names with || or // into primary title + subtitle
+function renderDetail(rawId) {
+  const id = rawId || state.currentBook;
+  if (!id) return;
+  state.currentBook = id;
+  const b = book(id);
+  const g = document.querySelector('#book-detail .detail-grid');
+  if (!b || !g) return;
+
+  const chapters = Array.isArray(b.chapters) ? b.chapters : [];
+
+  // Clean Titles & Alternate Titles
   const rawTitle = b.title || 'Untitled';
   const parts = rawTitle.split(/\|\||\/\/|::/).map(s => s.trim()).filter(Boolean);
   const mainTitle = parts[0] || rawTitle;
-  const altTitle = parts.length > 1 ? parts.slice(1).join(' · ') : '';
+  let altTitle = b.altTitle || (parts.length > 1 ? parts.slice(1).join(' · ') : '');
 
-  const titleHTML = altTitle 
-    ? `<h2 style="margin:0 0 4px;font-size:clamp(1.8rem, 3.8vw, 2.8rem);line-height:1.15;word-break:break-word;">${mainTitle}</h2><p style="margin:0 0 16px;font-size:1rem;color:#777;font-style:italic;font-weight:600;">Also known as: ${altTitle}</p>`
-    : `<h2 style="margin:0 0 14px;font-size:clamp(1.8rem, 3.8vw, 2.8rem);line-height:1.15;word-break:break-word;">${mainTitle}</h2>`;
+  // Extract / Map Author
+  let authorLine = (b.author || 'Manga Artist').trim()
+    .replace(/@\w+/g, '')
+    .replace(/\b(telegram|divascans|madarascans|madara|channel|global vault|complete series|high.?res)\b/gi, '')
+    .replace(/^by\s+/i, '')
+    .trim();
+  if (!authorLine || authorLine.toLowerCase() === 'author') authorLine = 'Manga Artist';
 
-  g.innerHTML=`<aside class="detail-cover-wrap">${coverHTML(b,'detail-cover')}<button class="warm-button block" data-action="read" data-book="${b.id}">Start Reading</button></aside><article class="detail-copy"><p class="kicker">${formatBadge}</p>${titleHTML}<p class="author-line">${b.author} · ${formatBadge} · ${countLabel}</p><div class="detail-stars">${stars(b.rating)} <small>${b.rating}.0 · Reader Recommended</small></div><div class="detail-actions">${actions(b.id)}<button class="action-btn" data-action="read" data-book="${b.id}">Read now</button></div>${chapterPickerHTML}<div class="synopsis-box"><h3>Synopsis</h3><p>${b.synopsis || 'No synopsis available.'}</p></div><dl class="meta-list"><div><dt>Progress</dt><dd>${p}%</dd></div><div><dt>Notes</dt><dd>${(state.notes[b.id]||[]).length}</dd></div><div><dt>Status</dt><dd>${p>=100?'Finished':p>0?'In progress':'Unread'}</dd></div></dl></article>`;
+  // Extract Tags & Category Pills (MangaDex style)
+  const tagSet = new Set();
+  const tLower = (mainTitle + ' ' + (b.synopsis || '') + ' ' + (b.genre || '') + ' ' + (b.mood || '')).toLowerCase();
+  
+  if (b.genre) tagSet.add(b.genre.toUpperCase());
+  if (tLower.includes('ecchi') || tLower.includes('erotica') || tLower.includes('nsfw')) tagSet.add('EROTICA');
+  if (tLower.includes('reincarnat') || tLower.includes('isekai') || tLower.includes('tensei')) tagSet.add('REINCARNATION');
+  if (tLower.includes('genderswap') || tLower.includes('ts ')) tagSet.add('GENDERSWAP');
+  if (tLower.includes('psychological')) tagSet.add('PSYCHOLOGICAL');
+  if (tLower.includes('romance') || tLower.includes('romantic')) tagSet.add('ROMANCE');
+  if (tLower.includes('comedy')) tagSet.add('COMEDY');
+  if (tLower.includes('harem')) tagSet.add('HAREM');
+  if (tLower.includes('drama')) tagSet.add('DRAMA');
+  if (tLower.includes('school')) tagSet.add('SCHOOL LIFE');
+  if (tLower.includes('action')) tagSet.add('ACTION');
+  if (tLower.includes('adventure')) tagSet.add('ADVENTURE');
+  if (tLower.includes('fantasy')) tagSet.add('FANTASY');
+  if (tLower.includes('demon')) tagSet.add('DEMONS');
+  if (tLower.includes('magic')) tagSet.add('MAGIC');
+  if (tLower.includes('supernatural')) tagSet.add('SUPERNATURAL');
+  if (tLower.includes('one-shot') || tLower.includes('oneshot')) tagSet.add('ONE-SHOT');
+  if (tLower.includes('adaptation')) tagSet.add('ADAPTATION');
+  if (tagSet.size === 0) tagSet.add('MANGA');
+
+  const pillsHTML = [...tagSet].slice(0, 10).map(tag => {
+    const isErotic = (tag === 'EROTICA' || tag === 'ECCHI' || tag === 'MATURE');
+    return `<span class="md-tag ${isErotic ? 'md-tag-erotica' : ''}">${tag}</span>`;
+  }).join('');
+
+  const statusStr = (b.status || (tLower.includes('finished') || tLower.includes('completed') ? 'FINISHED' : 'ONGOING')).toUpperCase();
+  const yearStr = b.year || (b.releaseDate ? b.releaseDate.slice(0, 4) : '2024');
+
+  // Chapter Sorting & Grid Assembly
+  const isDesc = (window.chapterSortOrder === 'desc');
+  let displayChapters = chapters.map((ch, originalIdx) => ({ ch, originalIdx }));
+  if (isDesc) {
+    displayChapters.reverse();
+  }
+
+  let chapterGridHTML = '';
+  if (chapters.length > 0) {
+    const boxesHTML = displayChapters.map(({ ch, originalIdx }) => {
+      let cleanChName = ch.title || `Chapter ${originalIdx + 1}`;
+      const numMatch = cleanChName.match(/(?:chapter|ch\.?)\s*(\d+(?:\.\d+)?)/i);
+      const shortName = numMatch ? `Chapter ${numMatch[1]}` : cleanChName;
+
+      return `<a href="#/read/${b.id}/${originalIdx + 1}" 
+                 class="mangapill-ch-box" 
+                 data-action="open-chapter" 
+                 data-book="${b.id}" 
+                 data-chapter-index="${originalIdx}" 
+                 data-chapter-title="${cleanChName.toLowerCase()}">
+                 ${shortName}
+              </a>`;
+    }).join('');
+
+    chapterGridHTML = `
+      <div class="mangapill-chapters-section">
+        <div class="mangapill-chapters-header">
+          <div class="mangapill-chapters-heading">
+            <span>📖 Chapters</span>
+            <span style="font-size:0.85rem;color:#38bdf8;font-weight:700;background:rgba(56,189,248,0.12);padding:2px 8px;border-radius:12px;">${chapters.length}</span>
+          </div>
+          <div class="mangapill-controls-wrap">
+            <input type="text" 
+                   class="mangapill-search-input" 
+                   placeholder="Search chapter..." 
+                   oninput="window.filterChapterGrid(this.value)">
+            <button class="mangapill-sort-btn" onclick="window.toggleChapterSort('${b.id}')">
+              ${isDesc ? '↓ Descending' : '↑ Ascending'}
+            </button>
+          </div>
+        </div>
+        <div class="mangapill-grid" id="mangapill-chapters-grid">
+          ${boxesHTML}
+        </div>
+      </div>`;
+  } else {
+    chapterGridHTML = `
+      <div class="mangapill-chapters-section" style="text-align:center;padding:48px 20px;">
+        <div style="display:inline-block;width:28px;height:28px;border:3px solid #38bdf8;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:14px;"></div>
+        <h4 style="color:#ffffff;margin:0 0 6px 0;font-size:1.1rem;font-weight:700;">Fetching High-Resolution Chapters...</h4>
+        <p style="color:#94a3b8;font-size:0.88rem;margin:0 0 20px 0;">Connecting to Mangapill & high-speed scanlation mirrors</p>
+        <button class="md-btn-primary" data-action="read" data-book="${b.id}" style="padding:10px 24px;font-size:0.95rem;margin:0 auto;">
+          ⚡ Read First Chapter
+        </button>
+      </div>`;
+  }
+
+  const bookBg = b.banner || b.image || b.cover || '';
+  const coverSrc = b.image || b.cover || '';
+  const firstChIdx = 0;
+
+  // Format synopsis into clean readable paragraphs
+  const rawSynopsis = (b.synopsis || 'No synopsis provided for this volume.').trim();
+  const synopsisParagraphs = rawSynopsis.split(/\n+/).map(para => `<p>${para.trim()}</p>`).join('');
+
+  g.innerHTML = `
+    <div class="md-detail-wrapper">
+      <!-- 0. FULL SCREEN FIXED BACKGROUND IMAGE (Dynamic per book, slightly blurred & framed up) -->
+      <div class="md-bg-fixed-layer" ${bookBg ? `style="background-image: url('${bookBg}');"` : ''}></div>
+
+      <!-- 1. SLATE GREY GLASSY PALETTE (Covers bottom half of screen above image, behind text) -->
+      <div class="md-glassy-bottom-palette"></div>
+
+      <!-- 2. MAIN CONTENT OVERLAY (Z-Index on top of everything) -->
+      <div class="md-hero-content">
+        
+        <!-- UPPER ROW: Cover on Left, Meta on Right -->
+        <div class="md-hero-top-row">
+          
+          <!-- LEFT: Cover Poster -->
+          <div class="md-cover-container">
+            <div class="md-cover-card">
+              ${coverSrc ? `<img src="${coverSrc}" alt="${mainTitle} cover" loading="eager">` : `<div class="md-no-cover">NO COVER</div>`}
+              <div class="md-flag-badge">🇯🇵</div>
+            </div>
+          </div>
+
+          <!-- RIGHT: Titles & Palette Controls -->
+          <div class="md-meta-container">
+            
+            <!-- SECTION 1: IN BANNER (Titles) -->
+            <div class="md-banner-titles">
+              <p class="md-title-text">${mainTitle}</p>
+              ${altTitle ? `<div class="md-subtitle-text">${altTitle}</div>` : ''}
+              <div class="md-grow-spacer"></div>
+              <div class="md-author-row">
+                <div class="md-author-text">${authorLine}</div>
+              </div>
+            </div>
+
+            <!-- SECTION 2: IN SOLID DARK PALETTE (Actions, Tags, Stats) -->
+            <div class="md-palette-controls">
+              <!-- Action Buttons -->
+              <div class="md-actions-bar">
+                <button class="md-btn-primary" data-action="open-chapter" data-book="${b.id}" data-chapter-index="${firstChIdx}">
+                  <span>Add To Library</span>
+                </button>
+                <button class="md-btn-icon ${saved(b.id)?'active':''}" data-action="save" data-book="${b.id}" title="${saved(b.id)?'Saved':'Add to Library'}">
+                  <svg width="18" height="18" fill="${saved(b.id)?'#38bdf8':'none'}" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                </button>
+                <button class="md-btn-icon" title="Report">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zm0 7v-7"/></svg>
+                </button>
+                <button class="md-btn-icon" title="Share">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                </button>
+              </div>
+
+              <!-- Tags & Status Row -->
+              <div class="md-tags-bar tags-row">
+                ${pillsHTML}
+                <span class="md-status-bullet">🟢 PUBLICATION: ${yearStr}, ${statusStr}</span>
+              </div>
+
+              <!-- Stats Row (MangaDex Feather SVG Spec) -->
+              <div class="md-stats-bar">
+                <span class="md-stat-item md-stat-rating" title="${b.rating || '9.66'}">
+                  <svg class="feather feather-star" width="19" height="19" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>
+                  <span class="text-primary">${b.rating || '9.66'}</span>
+                </span>
+                <span class="md-stat-item" title="83,260">
+                  <svg width="19" height="19" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m19 21-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                  <span>83k</span>
+                </span>
+                <span class="md-stat-item" title="104">
+                  <svg width="19" height="19" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <span>104</span>
+                </span>
+                <span class="md-stat-item md-stat-views">
+                  <svg class="feather feather-eye" width="19" height="19" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8"/><circle cx="12" cy="12" r="3"/></svg>
+                  <span>N/A</span>
+                </span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- LOWER ROW: Clean Synopsis on Dark Surface -->
+        <div class="md-synopsis-deck">
+          ${synopsisParagraphs}
+        </div>
+
+        <!-- MANGAPILL CHAPTERS -->
+        <div class="md-chapters-deck">
+          ${chapterGridHTML}
+        </div>
+
+      </div>
+    </div>`;
 }
+
 function renderReader(){
   const g=document.querySelector('#reader .reader-grid');
   if(!g)return;
@@ -364,8 +559,8 @@ function renderReader(){
     }
   }, 100);
 
-  // Fire for external books (itunes, mangadex, royalroad, searched) ONLY if chapters aren't loaded yet
-  const isExternal = b.genre === 'searched' || b.genre === 'Manga' || b.genre === 'Web Novel' || b.id.startsWith('telegram-') || b.id.startsWith('itunes-') || b.id.startsWith('royalroad-');
+  // Fire for external books (mangapill, divascans, madara, telegram, royalroad, searched) ONLY if chapters aren't loaded yet
+  const isExternal = b.genre === 'searched' || b.genre === 'Manga' || b.genre === 'Web Novel' || b.id.startsWith('mangapill-') || b.id.startsWith('divascans-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('telegram-') || b.id.startsWith('itunes-') || b.id.startsWith('royalroad-');
   if(isExternal && (!b.chapters || !b.chapters.length)) setTimeout(()=>loadStolenChapters(b.id, b.title, b.author, b.genre), 80);
 }
 
@@ -729,6 +924,8 @@ function showView(v='home',push=true){
   if (v !== 'reader') {
     document.body.classList.remove('is-manga-mode');
   }
+  // Compact navbar only on detail page
+  document.body.classList.toggle('detail-active', v==='book-detail');
   document.body.classList.toggle('reader-focus', v==='reader' && !!state.reader.focus);
   if(v==='home'){app.classList.remove('view-mode');setNav('home');if(push)history.pushState({v},'','#explore');scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});return}
   const target=document.getElementById(v);
@@ -770,7 +967,7 @@ function openBook(id){
 
   // Auto-prefetch chapters for external items if not loaded yet
   const b = book(id);
-  const isExternal = b && (b.id.startsWith('divascans-') || b.id.startsWith('mangadex-') || b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.id.startsWith('itunes-') || (b.genre || '').toLowerCase().includes('manga') || (b.genre || '').toLowerCase().includes('novel'));
+  const isExternal = b && (b.id.startsWith('mangapill-') || b.id.startsWith('divascans-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('mangadex-') || b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.id.startsWith('itunes-') || (b.genre || '').toLowerCase().includes('manga') || (b.genre || '').toLowerCase().includes('novel'));
   if (isExternal && (!b.chapters || !b.chapters.length)) {
     fetch(`/api/books/${id}/chapters?q=${encodeURIComponent(b.title)}&_cb=${Date.now()}`)
       .then(r => r.json())
@@ -793,7 +990,7 @@ function openReader(id=state.currentBook, targetChapterIdx = 0){
   state.currentBook=id;
   state.activeChapter=targetChapterIdx;
   const b=book(id);
-  const isManga = b && (b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || b.id.startsWith('mangadex-') || b.id.startsWith('divascans-') || (b.genre || '').toLowerCase().includes('manga') || (b.format || '').toLowerCase().includes('manga'));
+  const isManga = b && (b.id.startsWith('mangapill-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || b.id.startsWith('mangadex-') || b.id.startsWith('divascans-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || (b.genre || '').toLowerCase().includes('manga') || (b.format || '').toLowerCase().includes('manga'));
   if (isManga) {
     document.body.classList.add('is-manga-mode');
   } else {

@@ -95,12 +95,16 @@ function buildStealthHeaders(targetUrl, type = 'html', customReferer = null) {
     const u = new URL(targetUrl);
     const profile = getRandomProfile();
     
-    // Determine plausible referer
+    // Determine plausible referer & origin laundering
     let referer = customReferer;
     if (!referer) {
-        if (u.hostname.includes('divascans')) referer = 'https://divascans.org/';
+        if (u.hostname.includes('mangapill') || u.hostname.includes('readdetectiveconan')) referer = 'https://mangapill.com/';
+        else if (u.hostname.includes('wuxiaworld')) referer = 'https://wuxiaworld.eu/';
+        else if (u.hostname.includes('royalroad')) referer = 'https://www.royalroad.com/';
+        else if (u.hostname.includes('divascans')) referer = 'https://divascans.org/';
         else if (u.hostname.includes('madarascans')) referer = 'https://madarascans.org/';
         else if (u.hostname.includes('templetoons')) referer = 'https://templetoons.com/';
+        else if (u.hostname.includes('cmzcdn') || u.hostname.includes('mangabuddy')) referer = 'https://mangabuddy.com/';
         else referer = `${u.protocol}//${u.hostname}/`;
     }
 
@@ -111,6 +115,8 @@ function buildStealthHeaders(targetUrl, type = 'html', customReferer = null) {
         'Referer': referer,
         'Origin': `${u.protocol}//${u.hostname}`,
         'DNT': '1',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
         'Connection': 'keep-alive'
     };
 
