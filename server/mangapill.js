@@ -152,6 +152,7 @@ async function searchMangapill(query) {
     const mapped = results.map((s, idx) => {
         const color = COLORS[idx % COLORS.length];
         const coverUrl = s.coverImage;
+        const proxiedCover = coverUrl ? `/api/proxy/image?url=${encodeURIComponent(coverUrl)}` : null;
         const metaParts = [];
         if (s.genre) metaParts.push(s.genre);
         if (s.year) metaParts.push(s.year);
@@ -162,8 +163,8 @@ async function searchMangapill(query) {
             title: s.title,
             altTitle: s.altTitle || '',
             author: metaParts.join(' · ') || 'Manga & Comics',
-            cover: coverUrl ? `has-image ${color}` : color,
-            image: coverUrl ? `/api/proxy/image?url=${encodeURIComponent(coverUrl)}` : null,
+            cover: proxiedCover || color,
+            image: proxiedCover,
             lines: (s.title || '').split(' ').slice(0, 3).join('<br>'),
             genre: s.genre || 'MANGA',
             mood: s.status || 'High-Res',
@@ -322,9 +323,68 @@ async function getMangapillChapterImages(chapterKey) {
     }
 }
 
+/**
+ * Fetch popular / trending titles from Mangapill homepage with valid covers
+ */
+async function fetchMangapillPopular() {
+    try {
+        const res = await fetchHtml(BASE_URL, { timeout: 8000 });
+        if (res.status !== 200 || !res.text) return [];
+
+        const $ = cheerio.load(res.text);
+        const list = [];
+        const seenSlugs = new Set();
+
+        $('div.grid > div, div.flex.flex-col').each((i, el) => {
+            const mangaLink = $(el).find('a[href^="/manga/"]').first();
+            const mangaHref = mangaLink.attr('href');
+            if (!mangaHref) return;
+
+            const parts = mangaHref.split('/').filter(Boolean);
+            if (parts.length < 3) return;
+            const mangaId = parts[1];
+            const slug = parts[2];
+
+            if (seenSlugs.has(slug)) return;
+
+            const imgEl = $(el).find('img').first();
+            const coverUrl = imgEl.attr('data-src') || imgEl.attr('src') || null;
+
+            const titleText = mangaLink.text().trim() || $(el).find('.font-black, .line-clamp-2, h2, h3, .text-sm').first().text().trim() || slug.replace(/-/g, ' ');
+            const rawTitle = titleText.replace(/\s+/g, ' ').trim();
+
+            if (rawTitle.length < 2 || rawTitle.toLowerCase().startsWith('chapter')) return;
+
+            seenSlugs.add(slug);
+            const proxiedCover = coverUrl ? `/api/proxy/image?url=${encodeURIComponent(coverUrl)}` : null;
+
+            list.push({
+                id: `mangapill-${mangaId}-${slug}`,
+                title: rawTitle,
+                author: 'Manga Artist',
+                cover: proxiedCover,
+                banner: proxiedCover,
+                image: proxiedCover,
+                tags: ['Action', 'Manga', 'Popular', 'Trending'],
+                year: 2026,
+                status: 'Ongoing',
+                rating: 5,
+                format: 'Manga',
+                synopsis: `${rawTitle} is currently trending on Mangapill with full scanlations and high-resolution panels.`
+            });
+        });
+
+        return list;
+    } catch (e) {
+        console.error('[MANGAPILL] Error fetching popular:', e.message);
+        return [];
+    }
+}
+
 module.exports = {
     searchMangapill,
     fetchMangapillChapters,
     getMangapillChapterImages,
-    fetchMangapillChapterPages
+    fetchMangapillChapterPages,
+    fetchMangapillPopular
 };

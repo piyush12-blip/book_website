@@ -3,6 +3,7 @@
  * Real-time search, chapter scraping, and WebP panel extraction for https://madarascans.org
  */
 
+const cheerio = require('cheerio');
 const { stealthFetch, sleepJitter } = require('./stealthEngine');
 
 const BASE_URL = 'https://madarascans.org';
@@ -46,77 +47,65 @@ async function searchMadaraScans(query) {
     }
 
     try {
-        // Collect query variations to search: full cleaned query + primary title segment if long
         const queriesToTry = [cleanQ];
         const words = cleanQ.split(/\s+/);
         if (words.length > 5) {
-            // Also try the first 5-6 core words
             queriesToTry.push(words.slice(0, 5).join(' '));
         }
 
         const allResults = [];
         const seenSlugs = new Set();
+        const COLORS = ['teal', 'navy', 'burgundy', 'midnight', 'sage', 'rust', 'ochre', 'brown'];
 
         for (const qTry of queriesToTry) {
             const searchUrl = `${BASE_URL}/?s=${encodeURIComponent(qTry)}&post_type=wp-manga`;
-            const res = await fetchMadara(searchUrl, { timeout: 6000 });
-            if (res.status !== 200) continue;
+            const res = await fetchMadara(searchUrl, { timeout: 7000 });
+            if (res.status !== 200 || !res.text) continue;
 
-            const html = res.text;
-            const linkRegex = /<a[^>]+href=["'](https:\/\/madarascans\.org\/series\/([^"'\/]+)\/?)["'][^>]*>([\s\S]*?)<\/a>/gi;
-            let m;
-            while ((m = linkRegex.exec(html)) !== null) {
-                const slug = m[2];
-                if (seenSlugs.has(slug) || slug === 'series') continue;
+            const $ = cheerio.load(res.text);
+
+            $('a[href*="/series/"]').each((i, el) => {
+                const href = $(el).attr('href');
+                if (!href || href.includes('/chapter/')) return;
+
+                const slugMatch = href.match(/\/series\/([^/?#]+)/);
+                if (!slugMatch) return;
+                const slug = slugMatch[1];
+                if (slug === 'series' || seenSlugs.has(slug)) return;
                 seenSlugs.add(slug);
 
-                const inner = m[3];
-                const imgMatch = inner.match(/<img[^>]+(?:src|data-src|data-lazy-src)=["']([^"']+)["']/i);
-                const titleMatch = inner.match(/<(?:h[1-6]|span|strong)[^>]*>([^<]+)<\/(?:h[1-6]|span|strong)>/i)
-                    || [null, inner.replace(/<[^>]+>/g, '').trim()];
+                const parent = $(el).closest('.c-tabs-item__content, .search-wrap, .row, article, div');
+                const imgEl = $(el).find('img').length ? $(el).find('img').first() : parent.find(`img[src*="${slug}"], img`).first();
+                let coverUrl = imgEl.attr('src') || imgEl.attr('data-src') || imgEl.attr('data-lazy-src') || null;
 
-                let rawTitle = (titleMatch[1] || '').trim() || slug.replace(/-/g, ' ');
+                const textTitle = $(el).find('h1, h2, h3, h4, h5, span, strong').text().trim() || $(el).text().trim();
+                const rawTitle = textTitle || slug.replace(/-/g, ' ');
                 const formattedTitle = rawTitle.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                const coverImage = imgMatch ? imgMatch[1] : null;
+                const proxiedCover = coverUrl ? `/api/proxy/image?url=${encodeURIComponent(coverUrl)}` : null;
 
                 allResults.push({
+                    id: `madara-${slug}`,
                     slug,
                     title: formattedTitle,
-                    coverImage
+                    author: 'Manga / Manhwa',
+                    cover: proxiedCover || color,
+                    image: proxiedCover,
+                    lines: formattedTitle.split(' ').slice(0, 3).join('<br>'),
+                    genre: 'Manga & Manhwa',
+                    mood: 'Action / Fantasy',
+                    pages: 50,
+                    rating: 5,
+                    synopsis: `${formattedTitle} is available to read in high resolution.`,
+                    hasEpub: false,
+                    format: 'Manga & Manhwa'
                 });
-            }
+            });
 
-            // If we found results on the first attempt, no need to query further
             if (allResults.length > 0) break;
         }
 
-        const results = allResults;
-
-        const COLORS = ['teal', 'navy', 'burgundy', 'midnight', 'sage', 'rust', 'ochre', 'brown'];
-
-        const mapped = results.map((s, idx) => {
-            const color = COLORS[idx % COLORS.length];
-            const coverUrl = s.coverImage ? (s.coverImage.startsWith('http') ? s.coverImage : `${BASE_URL}${s.coverImage}`) : null;
-
-            return {
-                id: `madara-${s.slug}`,
-                title: s.title,
-                author: 'Manga / Manhwa',
-                cover: coverUrl ? `has-image ${color}` : color,
-                image: coverUrl ? `/api/proxy/image?url=${encodeURIComponent(coverUrl)}` : null,
-                lines: (s.title || '').split(' ').slice(0, 3).join('<br>'),
-                genre: 'Manga & Manhwa',
-                mood: 'Action / Fantasy',
-                pages: 50,
-                rating: 5,
-                synopsis: `${s.title} is available in full high-definition WebP scanlations.`,
-                hasEpub: false,
-                format: 'Manga & Manhwa'
-            };
-        });
-
-        MADARA_SEARCH_CACHE.set(cleanQ, mapped);
-        return mapped;
+        MADARA_SEARCH_CACHE.set(cleanQ, allResults);
+        return allResults;
     } catch (e) {
         console.error('[MADARASCANS] Search error:', e.message);
         return [];

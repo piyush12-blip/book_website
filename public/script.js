@@ -129,12 +129,162 @@ function renderRecent(){const r=document.querySelector('.recent');if(!r)return;c
 function renderSidebarStats(){const s=document.querySelector('.stats');if(!s)return;const finished=Object.values(state.progress).filter(v=>+v>=100).length;s.innerHTML=`<h2>Reading Stats</h2><dl><div><dt>${state.saved.length}</dt><dd>Saved books</dd></div><div><dt>${state.liked.length}</dt><dd>Liked books</dd></div><div><dt>${finished}</dt><dd>Finished</dd></div></dl>`}
 let searchAbortController = null;
 let activePredictiveIndex = -1;
+let searchInputTimer = null;
+let liveSearchAbortController = null;
+let liveSearchDebounceTimer = null;
+let activeLiveSearchIndex = -1;
+
+function closeLiveSearchDropdown() {
+  const dropdown = document.getElementById('md-live-search-dropdown');
+  if (dropdown) {
+    dropdown.classList.remove('active');
+    dropdown.innerHTML = '';
+  }
+  activeLiveSearchIndex = -1;
+}
+
+async function handleLiveSearchInput(query) {
+  const dropdown = document.getElementById('md-live-search-dropdown');
+  if (!dropdown) return;
+
+  const rawQ = (query || '').trim();
+  if (!rawQ || rawQ.length < 2) {
+    closeLiveSearchDropdown();
+    return;
+  }
+
+  dropdown.classList.add('active');
+  dropdown.innerHTML = `
+    <div class="md-live-loading">
+      <div class="md-live-spinner"></div>
+      <span>Searching manga & manhwa...</span>
+    </div>
+  `;
+
+  if (liveSearchAbortController) liveSearchAbortController.abort();
+  liveSearchAbortController = new AbortController();
+
+  try {
+    const cleanQ = rawQ
+      .replace(/\[([^\]]+)\]\([^\)]+\)/gi, '$1')
+      .replace(/https?:\/\/[^\s]+/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const res = await fetch(`/api/books/search?q=${encodeURIComponent(cleanQ)}`, {
+      signal: liveSearchAbortController.signal
+    });
+    const data = await res.json().catch(() => []);
+
+    const qLower = cleanQ.toLowerCase();
+    const localMatches = BOOKS.filter(b => 
+      (b.title && b.title.toLowerCase().includes(qLower)) || 
+      (b.author && b.author.toLowerCase().includes(qLower))
+    );
+
+    const list = [...(data || []), ...localMatches];
+
+    const uniqueMap = new Map();
+    list.forEach(b => {
+      const cleanTitle = (b.title || '').trim();
+      const normKey = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!uniqueMap.has(normKey)) {
+        uniqueMap.set(normKey, b);
+      }
+    });
+
+    const results = [...uniqueMap.values()].slice(0, 10);
+
+    if (results.length === 0) {
+      dropdown.innerHTML = `
+        <div class="md-live-empty">
+          <span>No matching titles for "<strong>${cleanQ.replace(/</g, '&lt;')}</strong>"</span>
+        </div>
+      `;
+      return;
+    }
+
+    dropdown.innerHTML = results.map((b, idx) => {
+      const existingIdx = BOOKS.findIndex(kb => kb.id === b.id);
+      if (existingIdx >= 0) {
+        BOOKS[existingIdx] = Object.assign(BOOKS[existingIdx], b);
+      } else {
+        BOOKS.push(b);
+      }
+      state.cachedBooks[b.id] = b;
+
+      const tLower = (b.title || '').toLowerCase();
+      const gLower = (b.genre || '').toLowerCase();
+      const mLower = (b.mood || '').toLowerCase();
+
+      const isAdult    = tLower.includes('pornhwa') || tLower.includes('doujinshi') || gLower.includes('adult') || mLower.includes('adult') || mLower.includes('smut') || b.id.startsWith('divascans-');
+      const isOneShot  = gLower === 'one-shot' || tLower.includes('one-shot') || tLower.includes('oneshot');
+      const isManhua   = gLower === 'manhua' || tLower.includes('manhua') || mLower.includes('manhua');
+      const isManhwa   = gLower === 'manhwa' || tLower.includes('manhwa') || mLower.includes('manhwa');
+      const isLightNovel = gLower === 'light novel' || tLower.includes('light novel') || (b.altTitle && b.altTitle.toLowerCase().includes('light novel')) || tLower.includes('shousetsu');
+      const isWebNovel = b.id.startsWith('royalroad-') || gLower === 'web novel' || tLower.includes('web novel') || (gLower.includes('novel') && !isLightNovel);
+      const isMangaType = b.id.startsWith('mangapill-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || gLower.includes('manga') || mLower.includes('manga');
+
+      let typeLabel = 'BOOK';
+      let typeBg    = '#d97706';
+
+      if (isAdult)          { typeLabel = isManhwa ? 'MANHWA (+18)' : isMangaType ? 'MANGA (+18)' : 'ADULT (+18)'; typeBg = '#dc2626'; }
+      else if (isOneShot)   { typeLabel = 'ONE-SHOT';    typeBg = '#6366f1'; }
+      else if (isLightNovel){ typeLabel = 'LIGHT NOVEL'; typeBg = '#9333ea'; }
+      else if (isManhua)    { typeLabel = 'MANHUA';     typeBg = '#0891b2'; }
+      else if (isManhwa)    { typeLabel = 'MANHWA';     typeBg = '#16a34a'; }
+      else if (isWebNovel)  { typeLabel = 'WEB NOVEL';  typeBg = '#7c3aed'; }
+      else if (isMangaType) { typeLabel = 'MANGA';      typeBg = '#2563eb'; }
+
+      let cleanAuthor = (b.author || '').replace(/@\w+/g, '').replace(/^by\s+/i, '').trim() || 'Manga Artist';
+      const yearStr = b.year ? ` • ${b.year}` : '';
+      const coverSrc = (b.cover && typeof b.cover === 'string' && (b.cover.startsWith('http') || b.cover.startsWith('/'))) 
+        ? b.cover 
+        : ((b.image && typeof b.image === 'string' && (b.image.startsWith('http') || b.image.startsWith('/'))) ? b.image : '');
+      const thumbHtml = coverSrc
+        ? `<img src="${coverSrc}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;background:#ff6740;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;\\'>📖</div>';" />`
+        : `<div style="width:100%;height:100%;background:#ff6740;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;">📖</div>`;
+
+      return `
+        <div class="md-live-result-item" data-book-id="${b.id}" data-item-index="${idx}" role="option">
+          <div class="md-live-thumb">${thumbHtml}</div>
+          <div class="md-live-details">
+            <div class="md-live-title">${highlightMatchText(b.title, cleanQ)}</div>
+            <div class="md-live-sub">${cleanAuthor}${yearStr}</div>
+          </div>
+          <span class="md-live-badge" style="background:${typeBg};">${typeLabel}</span>
+        </div>
+      `;
+    }).join('');
+
+    dropdown.querySelectorAll('.md-live-result-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const bookId = item.dataset.bookId;
+        closeLiveSearchDropdown();
+        const searchInput = document.getElementById('md-search-input');
+        if (searchInput) searchInput.value = '';
+        openBook(bookId);
+      });
+    });
+
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      dropdown.innerHTML = `
+        <div class="md-live-empty">
+          <span>Search failed. Is the server running?</span>
+        </div>
+      `;
+    }
+  }
+}
 
 function highlightMatchText(text, query) {
   if (!text || !query) return text || '';
   const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp(`(${escaped})`, 'gi');
-  return text.replace(regex, '<mark style="background:#f59e0b;color:#000;padding:0 2px;border-radius:2px;font-weight:700;">$1</mark>');
+  return text.replace(regex, '<mark style="background:#ff6740;color:#fff;padding:0 2px;border-radius:2px;font-weight:700;">$1</mark>');
 }
 
 async function renderSearch(){
@@ -202,8 +352,10 @@ async function renderSearch(){
       });
 
       const uniqueList = [...uniqueMap.values()];
+      const isMdSearch = document.body.classList.contains('md-search-active');
+      const targetContainer = document.querySelector(isMdSearch ? '#md-search-results-grid' : '.search-results') || results;
 
-      results.innerHTML = uniqueList.map(b => {
+      const html = uniqueList.map(b => {
         const existingIdx = BOOKS.findIndex(kb => kb.id === b.id);
         if (existingIdx >= 0) {
           BOOKS[existingIdx] = Object.assign(BOOKS[existingIdx], b);
@@ -225,7 +377,7 @@ async function renderSearch(){
         const rawYear = b.year || b.releaseDate || b.publishedDate || '';
         const yearMatch = String(rawYear).match(/\d{4}/);
         const yearStr = yearMatch ? yearMatch[0] : '';
-        let subtitleLine = b.altTitle ? `${b.altTitle} · ${cleanAuthor}` : (yearStr && !cleanAuthor.includes(yearStr) ? `${cleanAuthor} · ${yearStr}` : cleanAuthor);
+        let subtitleLine = b.altTitle ? `${b.altTitle} • ${cleanAuthor}` : (yearStr && !cleanAuthor.includes(yearStr) ? `${cleanAuthor} • ${yearStr}` : cleanAuthor);
 
         const tLower = (b.title || '').toLowerCase();
         const gLower = (b.genre || '').toLowerCase();
@@ -250,8 +402,19 @@ async function renderSearch(){
         else if (isWebNovel)  { typeLabel = 'WEB NOVEL';  typeBg = '#7c3aed'; }
         else if (isMangaType) { typeLabel = 'MANGA';      typeBg = '#2563eb'; }
 
-        const catBadge = `<span style="background:${typeBg};color:#fff;padding:3px 8px;border-radius:4px;font-size:0.72rem;font-weight:800;flex-shrink:0;letter-spacing:0.03em;">${typeLabel}</span>`;
         const imgStyle = b.image ? `background-image:url('${b.image}');background-size:cover;background-position:center;` : '';
+
+        if (isMdSearch) {
+          // New Mangadex grid search rendering
+          return `
+            <div class="md-cover-card" style="cursor:pointer;" onclick="openBook('${b.id}')" title="${b.title.replace(/"/g, '&quot;')}">
+              <div class="md-card-img" style="${imgStyle}"></div>
+              <div class="md-card-title">${highlightMatchText(b.title, q)}</div>
+            </div>
+          `;
+        }
+
+        const catBadge = `<span style="background:${typeBg};color:#fff;padding:3px 8px;border-radius:4px;font-size:0.72rem;font-weight:800;flex-shrink:0;letter-spacing:0.03em;">${typeLabel}</span>`;
 
         return `<div class="search-result-item" data-book="${b.id}" onclick="openBook('${b.id}')" style="cursor:pointer;display:flex;align-items:center;gap:16px;padding:14px 16px;border-bottom:1px solid #2a2a2a;border-radius:8px;margin-bottom:8px;background:#141414;transition:background 0.2s ease;" onmouseover="this.style.background='#1f1f1f'" onmouseout="this.style.background='#141414'">
           <span class="result-cover ${(b.cover||'').split(' ')[0]}" style="${imgStyle};width:44px;height:60px;border-radius:6px;flex-shrink:0;"></span>
@@ -260,11 +423,10 @@ async function renderSearch(){
             <em style="color:#aaa;font-size:0.85rem;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;">${subtitleLine}</em>
           </div>
           ${catBadge}
-          <div onclick="event.stopPropagation()">
-            ${actions(b.id)}
-          </div>
         </div>`;
       }).join('');
+      
+      targetContainer.innerHTML = html;
       saveState();
     } else {
       results.innerHTML = '<div class="empty-library"><h3>No results found.</h3></div>';
@@ -404,8 +566,9 @@ function renderDetail(rawId) {
       </div>`;
   }
 
-  const bookBg = b.banner || b.image || b.cover || '';
-  const coverSrc = b.image || b.cover || '';
+  const validCover = (b.cover && typeof b.cover === 'string' && (b.cover.startsWith('http') || b.cover.startsWith('/'))) ? b.cover : ((b.image && typeof b.image === 'string' && (b.image.startsWith('http') || b.image.startsWith('/'))) ? b.image : '');
+  const bookBg = (b.banner && typeof b.banner === 'string' && (b.banner.startsWith('http') || b.banner.startsWith('/'))) ? b.banner : validCover;
+  const coverSrc = validCover;
   const firstChIdx = 0;
 
   // Format synopsis into clean readable paragraphs
@@ -429,7 +592,7 @@ function renderDetail(rawId) {
           <!-- LEFT: Cover Poster -->
           <div class="md-cover-container">
             <div class="md-cover-card">
-              ${coverSrc ? `<img src="${coverSrc}" alt="${mainTitle} cover" loading="eager">` : `<div class="md-no-cover">NO COVER</div>`}
+              ${coverSrc ? `<img src="${coverSrc}" alt="${mainTitle} cover" loading="eager" onerror="this.parentElement.innerHTML='<div class=\\'md-no-cover\\'>📖</div>';">` : `<div class="md-no-cover">📖</div>`}
               <div class="md-flag-badge">🇯🇵</div>
             </div>
           </div>
@@ -449,44 +612,69 @@ function renderDetail(rawId) {
 
             <!-- SECTION 2: IN SOLID DARK PALETTE (Actions, Tags, Stats) -->
             <div class="md-palette-controls">
-              <!-- Action Buttons -->
-              <div class="md-actions-bar">
-                <button class="md-btn-primary" data-action="open-chapter" data-book="${b.id}" data-chapter-index="${firstChIdx}">
-                  <span>Add To Library</span>
+              <!-- Action Buttons (MangaDex Structure - Compact Sizing) -->
+              <div class="md-actions-bar flex items-center gap-2 mb-4">
+                <div data-v-eec794c8="">
+                  <button data-v-0d08c737="" class="flex grow-0 whitespace-nowrap px-2 sm:px-3 rounded custom-opacity relative md-btn flex items-center px-3 overflow-hidden primary glow md-btn-primary" style="min-height: 2.5rem; min-width: 11rem;" data-action="save" data-book="${b.id}">
+                    <span data-v-0d08c737="" class="flex relative items-center justify-center font-medium select-none w-full pointer-events-none" style="justify-content: center; font-size: 0.85rem;">
+                      <svg width="17" height="17" fill="${saved(b.id)?'#fff':'none'}" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="margin-right: 6px;"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                      ${saved(b.id) ? 'In Library' : 'Add To Library'}
+                    </span>
+                  </button>
+                </div>
+                <button data-v-0d08c737="" data-v-f609756d="" class="grow sm:grow-0 rounded custom-opacity relative md-btn flex items-center px-3 overflow-hidden accent px-0! md-btn-icon" style="min-height: 2.5rem; min-width: 2.5rem; width: 2.5rem; height: 2.5rem;" data-action="read" data-book="${b.id}" title="Read Chapter 1">
+                  <span data-v-0d08c737="" class="flex relative items-center justify-center font-medium select-none w-full pointer-events-none" style="justify-content: center;">
+                    <svg data-v-12787016="" data-v-0d08c737="" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="feather feather-book-open icon size-6" viewBox="0 0 24 24" style="color: currentcolor;"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zm20 0h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                  </span>
                 </button>
-                <button class="md-btn-icon ${saved(b.id)?'active':''}" data-action="save" data-book="${b.id}" title="${saved(b.id)?'Saved':'Add to Library'}">
-                  <svg width="18" height="18" fill="${saved(b.id)?'#38bdf8':'none'}" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-                </button>
-                <button class="md-btn-icon" title="Report">
-                  <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zm0 7v-7"/></svg>
-                </button>
-                <button class="md-btn-icon" title="Share">
-                  <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                <button data-v-0d08c737="" data-v-f609756d="" class="grow sm:grow-0 rounded custom-opacity relative md-btn flex items-center px-3 overflow-hidden accent px-0! md-btn-icon" style="min-height: 2.5rem; min-width: 2.5rem; width: 2.5rem; height: 2.5rem;" data-action="like" data-book="${b.id}" title="${liked(b.id)?'Liked':'Like'}">
+                  <span data-v-0d08c737="" class="flex relative items-center justify-center font-medium select-none w-full pointer-events-none" style="justify-content: center;">
+                    <svg width="18" height="18" fill="${liked(b.id)?'#ff6740':'none'}" stroke="${liked(b.id)?'#ff6740':'currentColor'}" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                  </span>
                 </button>
               </div>
 
-              <!-- Tags & Status Row -->
-              <div class="md-tags-bar tags-row">
-                ${pillsHTML}
-                <span class="md-status-bullet">🟢 PUBLICATION: ${yearStr}, ${statusStr}</span>
+              <!-- Category / Tags & Publication Status Row (MangaDex Structure) -->
+              <div data-v-f609756d="" class="flex gap-1 flex-wrap items-center md-tags-bar" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-bottom:8px;">
+                <div data-v-00635587="" data-v-f609756d="" class="flex flex-wrap gap-1 tags-row" style="display:flex; flex-wrap:wrap; gap:3px;">
+                  ${pillsHTML}
+                </div>
+                <span data-v-1d4c90c6="" data-v-f609756d="" class="tag dot no-wrapper sm:font-bold uppercase md-status-bullet" style="display:inline-flex; align-items:center; gap:3px; font-size:10px; color:#cbd5e1; font-weight:700;">
+                  <svg data-v-12787016="" data-v-1d4c90c6="" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 6.35 6.35" class="icon size-6" style="color: #22c55e;"><path fill="currentColor" d="M4.233 3.175a1.06 1.06 0 0 1-1.058 1.058 1.06 1.06 0 0 1-1.058-1.058 1.06 1.06 0 0 1 1.058-1.058 1.06 1.06 0 0 1 1.058 1.058"></path></svg>
+                  <span data-v-1d4c90c6="">Publication: ${yearStr}, ${statusStr.charAt(0) + statusStr.slice(1).toLowerCase()}</span>
+                </span>
               </div>
 
-              <!-- Stats Row (MangaDex Feather SVG Spec) -->
-              <div class="md-stats-bar">
-                <span class="md-stat-item md-stat-rating" title="${b.rating || '9.66'}">
-                  <svg class="feather feather-star" width="19" height="19" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>
-                  <span class="text-primary">${b.rating || '9.66'}</span>
+              <!-- Stats Row (MangaDex Feather SVG Spec & Rating Flyout) -->
+              <div data-v-f609756d="" class="flex gap-3 flex-wrap items-center text-xs md-stats-bar" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+                <span data-v-f609756d="" class="flex items-center relative group cursor-pointer md-stat-rating-item" title="${b.rating || '8.08'} (Bayesian), ${b.rating || '8.07'} (Average)" style="display:flex; align-items:center; position:relative; cursor:pointer;">
+                  <svg data-v-12787016="" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="feather feather-star icon size-6 rel text-primary mr-1" viewBox="0 0 24 24" style="color: #ff6740; margin-right: 3px;"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"></path></svg>
+                  <span class="text-primary" style="color:#ff6740; font-weight:700; font-size:0.76rem;">${b.rating || '8.08'}</span>
+                  <div data-v-78a6f686="" class="flyout hidden group-hover:block md-rating-flyout">
+                    <table data-v-78a6f686="">
+                      <tr data-v-78a6f686=""><td data-v-78a6f686="">10</td><td data-v-78a6f686=""><div data-v-78a6f686="" class="bar" style="--width: 100%;"></div></td><td data-v-78a6f686=""></td><td data-v-78a6f686="" class="text-xs" title="164"> (164) </td></tr>
+                      <tr data-v-78a6f686=""><td data-v-78a6f686="">9</td><td data-v-78a6f686=""><div data-v-78a6f686="" class="bar" style="--width: 48.7%;"></div></td><td data-v-78a6f686=""></td><td data-v-78a6f686="" class="text-xs" title="80"> (80) </td></tr>
+                      <tr data-v-78a6f686=""><td data-v-78a6f686="">8</td><td data-v-78a6f686=""><div data-v-78a6f686="" class="bar" style="--width: 64.6%;"></div></td><td data-v-78a6f686=""></td><td data-v-78a6f686="" class="text-xs" title="106"> (106) </td></tr>
+                      <tr data-v-78a6f686=""><td data-v-78a6f686="">7</td><td data-v-78a6f686=""><div data-v-78a6f686="" class="bar" style="--width: 31.7%;"></div></td><td data-v-78a6f686=""></td><td data-v-78a6f686="" class="text-xs" title="52"> (52) </td></tr>
+                      <tr data-v-78a6f686=""><td data-v-78a6f686="">6</td><td data-v-78a6f686=""><div data-v-78a6f686="" class="bar" style="--width: 15.2%;"></div></td><td data-v-78a6f686=""></td><td data-v-78a6f686="" class="text-xs" title="25"> (25) </td></tr>
+                      <tr data-v-78a6f686=""><td data-v-78a6f686="">5</td><td data-v-78a6f686=""><div data-v-78a6f686="" class="bar" style="--width: 9.1%;"></div></td><td data-v-78a6f686=""></td><td data-v-78a6f686="" class="text-xs" title="15"> (15) </td></tr>
+                      <tr data-v-78a6f686=""><td data-v-78a6f686="">4</td><td data-v-78a6f686=""><div data-v-78a6f686="" class="bar" style="--width: 4.2%;"></div></td><td data-v-78a6f686=""></td><td data-v-78a6f686="" class="text-xs" title="7"> (7) </td></tr>
+                      <tr data-v-78a6f686=""><td data-v-78a6f686="">3</td><td data-v-78a6f686=""><div data-v-78a6f686="" class="bar" style="--width: 3.0%;"></div></td><td data-v-78a6f686=""></td><td data-v-78a6f686="" class="text-xs" title="5"> (5) </td></tr>
+                      <tr data-v-78a6f686=""><td data-v-78a6f686="">2</td><td data-v-78a6f686=""><div data-v-78a6f686="" class="bar" style="--width: 0%;"></div></td><td data-v-78a6f686=""></td><td data-v-78a6f686="" class="text-xs" title="0"> (0) </td></tr>
+                      <tr data-v-78a6f686=""><td data-v-78a6f686="">1</td><td data-v-78a6f686=""><div data-v-78a6f686="" class="bar" style="--width: 15.2%;"></div></td><td data-v-78a6f686=""></td><td data-v-78a6f686="" class="text-xs" title="25"> (25) </td></tr>
+                    </table>
+                  </div>
                 </span>
-                <span class="md-stat-item" title="83,260">
-                  <svg width="19" height="19" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m19 21-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-                  <span>83k</span>
+                <span data-v-f609756d="" class="flex items-center cursor-pointer" title="14,940" style="display:flex; align-items:center; gap:3px; color:#cbd5e1; font-size:0.76rem;">
+                  <svg data-v-12787016="" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" class="icon size-6 rel mr-1" style="color: currentcolor;"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m19 21-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+                  <span>14k</span>
                 </span>
-                <span class="md-stat-item" title="104">
-                  <svg width="19" height="19" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  <span>104</span>
-                </span>
-                <span class="md-stat-item md-stat-views">
-                  <svg class="feather feather-eye" width="19" height="19" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8"/><circle cx="12" cy="12" r="3"/></svg>
+                <a data-v-5dffb448="" data-v-f609756d="" class="router-link-active router-link-exact-active comment-container" style="display:flex; align-items:center; gap:3px; text-decoration:none; color:#cbd5e1; cursor:pointer; font-size:0.76rem;">
+                  <svg data-v-12787016="" data-v-5dffb448="" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" class="icon size-6 small text-icon-contrast"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                  <span data-v-5dffb448="">14</span>
+                </a>
+                <span data-v-f609756d="" class="flex items-center opacity-40" style="display:flex; align-items:center; gap:3px; opacity:0.4; color:#cbd5e1; font-size:0.76rem;">
+                  <svg data-v-12787016="" data-v-f609756d="" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="feather feather-eye icon size-6 rel mr-1" viewBox="0 0 24 24" style="color: currentcolor;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8"></path><circle cx="12" cy="12" r="3"></circle></svg>
                   <span>N/A</span>
                 </span>
               </div>
@@ -927,7 +1115,7 @@ function showView(v='home',push=true){
   // Compact navbar only on detail page
   document.body.classList.toggle('detail-active', v==='book-detail');
   document.body.classList.toggle('reader-focus', v==='reader' && !!state.reader.focus);
-  if(v==='home'){app.classList.remove('view-mode');setNav('home');if(push)history.pushState({v},'','#explore');scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});return}
+  if(v==='home'){app.classList.remove('view-mode');setNav('home');if(push)history.pushState({v},'','/#');scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});return}
   const target=document.getElementById(v);
   if(!target)return showView('home',push);
   app.classList.add('view-mode');
@@ -959,6 +1147,7 @@ function openBook(id){
       BOOKS.push(cached);
     }
   }
+  document.body.classList.remove('md-search-active');
   state.currentBook=id;
   state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);
   saveState();
@@ -1118,13 +1307,13 @@ function setupReaderScroll(){
 
 document.addEventListener('click',e=>{const action=e.target.closest('[data-action]');if(action){e.preventDefault();e.stopPropagation();const id=action.dataset.book||state.currentBook,a=action.dataset.action;if(a==='back-step'||a==='back-to-detail'){if(window.history.length>1){window.history.back();}else{showView('book-detail');}}if(a==='save')toggleSave(id);if(a==='like')toggleLike(id);if(a==='read')openReader(id, 0);if(a==='open-book'){const cachedB=state.cachedBooks[id];if(cachedB&&!BOOKS.some(b=>b.id===id)){BOOKS.push(cachedB);}openBook(id);return;}if(a==='prev-chapter-btn'){window.jumpToChapter((state.activeChapter||0)-1);return;}if(a==='next-chapter-btn'){window.jumpToChapter((state.activeChapter||0)+1);return;}if(a==='toggle-contents-drawer'){state.reader.navOpen=!state.reader.navOpen;saveState();renderReader();return;}if(a==='line-toggle'){state.reader.line = state.reader.line===1.7 ? 2.0 : (state.reader.line===2.0 ? 2.25 : 1.7);saveState();renderReader();toast(`Line spacing: ${state.reader.line===1.7?'Tight':(state.reader.line===2.0?'Classic':'Open')}`);return;}if(a==='toggle-manga-width'){document.body.classList.toggle('manga-full-width');toast(document.body.classList.contains('manga-full-width')?'Full Width View':'Standard Width View');return;}if(a==='scroll-top'){window.scrollTo({top:0,behavior:'smooth'});return;}if(a==='next-page'){state.progress[id]=Math.min(100,pct(id)+Math.ceil(100/Math.max(1,(book(id).chapters||[]).length)));state.activeChapter=Math.min(((book(id).chapters||[]).length-1), (state.activeChapter||0)+1);state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100);toast(`${book(id).title} is now ${pct(id)}% complete.`)}if(a==='prev-page'){state.activeChapter=Math.max(0,(state.activeChapter||0)-1);state.progress[id]=Math.max(0,pct(id)-8);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100)}if(a==='font-up'){state.reader.font=Math.min(24,state.reader.font+1);saveState();renderReader();const fd=document.querySelector('#quick-font-display');if(fd)fd.textContent=`${state.reader.font}px`}if(a==='font-down'){state.reader.font=Math.max(15,state.reader.font-1);saveState();renderReader();const fd=document.querySelector('#quick-font-display');if(fd)fd.textContent=`${state.reader.font}px`}if(a==='theme'){state.reader.theme=action.dataset.theme;saveState();renderReader();toast(`Theme set to ${action.dataset.theme}`)}if(a==='reader-mode'){state.reader.mode=action.dataset.mode;saveState();renderReader();setTimeout(()=>scrollReaderChapter(state.activeChapter||0),80)}if(a==='focus-reader'){state.reader.focus=!state.reader.focus;saveState();renderReader();document.body.classList.toggle('reader-focus',!!state.reader.focus);toast(state.reader.focus?'Focus reading on.':'Focus reading off.')}if(a==='fullscreen-reader'){const el=document.querySelector('#reader');if(!document.fullscreenElement&&el?.requestFullscreen){el.requestFullscreen();state.reader.focus=true;}else if(document.exitFullscreen){document.exitFullscreen();state.reader.focus=false;}saveState();renderReader()}if(a==='highlight'){state.highlighted[id]=!state.highlighted[id];saveState();renderReader()}if(a==='open-chapter'){state.currentBook=id;const chIdx=Number(action.dataset.chapterIndex||0);openReader(id, chIdx);return;}
 if(a==='signin-local'){const name=document.querySelector('#account-name')?.value.trim();state.account=name||'Local reader';saveState();renderAll();toast('Signed in locally.')}if(a==='signout-local'){state.account=null;saveState();renderAll();toast('Signed out locally.')}if(a==='export-state'){exportState()}if(a==='app-theme'){state.appTheme=action.dataset.themeChoice||'system';saveState();applyAppTheme();renderSettings();toast(`Theme set to ${state.appTheme}.`)}if(a==='save-note'){const text=document.querySelector('#reader-note')?.value.trim();if(text){state.notes[id]=[...(state.notes[id]||[]),{text,at:new Date().toISOString()}];saveState();renderAll();toast('Margin note saved.')}}return}const view=e.target.closest('[data-view]');if(view){e.preventDefault();showView(view.dataset.view);return}const shelf=e.target.closest('.shelf-tabs button');if(shelf){state.activeShelf=shelf.dataset.shelf;saveState();renderLibrary();return}const exp=e.target.closest('.explore-controls button');if(exp){state.exploreFilter=exp.dataset.exploreFilter;saveState();renderExplore();return}const themeChoice=e.target.closest('[data-theme-choice]');if(themeChoice){state.appTheme=themeChoice.dataset.themeChoice;saveState();renderSettings();applyAppTheme();return}const filter=e.target.closest('.filter-row button');if(filter){state.searchFilter=filter.dataset.filter;saveState();renderSearch();return}const author=e.target.closest('[data-author]');if(author){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${author.dataset.author}</h3><p>Author shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.author===author.dataset.author).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.genre}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const mood=e.target.closest('[data-mood]');if(mood){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${mood.dataset.mood}</h3><p>Mood shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.mood===mood.dataset.mood).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const cat=e.target.closest('[data-category]');if(cat){const name=cat.dataset.category;document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${name}</h3><p>Dedicated shelf for ${name.toLowerCase()} only.</p></header><div class="explore-books">${BOOKS.filter(b=>(b.format||inferFormat(b))===name).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author} · ${b.mood}</p><span class="book-type-badge">${b.format||inferFormat(b)}</span>${actions(b.id)}</article>`).join('')||'<div class="empty-state"><h3>No titles yet.</h3><p>This shelf is ready for future catalogue items.</p></div>'}</div></section>`;return}const cover=e.target.closest('[data-book]');if(cover&&!e.target.closest('button'))openBook(cover.dataset.book)});
-document.addEventListener('change',e=>{if(e.target?.dataset.action==='line'){state.reader.line=Number(e.target.value);saveState();renderReader()}if(e.target?.id==='setting-line'){state.reader.line=Number(e.target.value);saveState();renderAll()}if(e.target?.id==='import-state'){const file=e.target.files[0];if(file){file.text().then(txt=>{state={...DEFAULT_STATE,...JSON.parse(txt)};saveState();renderAll();toast('Sync file imported.')}).catch(()=>toast('Import failed.'))}}});let searchInputTimer;
+document.addEventListener('change',e=>{if(e.target?.dataset.action==='line'){state.reader.line=Number(e.target.value);saveState();renderReader()}if(e.target?.id==='setting-line'){state.reader.line=Number(e.target.value);saveState();renderAll()}if(e.target?.id==='import-state'){const file=e.target.files[0];if(file){file.text().then(txt=>{state={...DEFAULT_STATE,...JSON.parse(txt)};saveState();renderAll();toast('Sync file imported.')}).catch(()=>toast('Import failed.'))}}});
 function inferFormat(b) {
   if (!b) return 'Books';
   if (b.format) return b.format;
   const g = (b.genre || '').toLowerCase();
   const id = (b.id || '').toLowerCase();
-  if (id.startsWith('mangadex-') || id.startsWith('divascans-') || id.startsWith('telegram-') || id.startsWith('private-tg-') || g.includes('manga') || g.includes('manhwa')) return 'Manga & Manhwa';
+  if (id.startsWith('mangapill-') || id.startsWith('divascans-') || id.startsWith('madara-') || id.startsWith('temple-') || id.startsWith('telegram-') || id.startsWith('private-tg-') || g.includes('manga') || g.includes('manhwa')) return 'Manga & Manhwa';
   if (id.startsWith('royalroad-') || g.includes('novel')) return 'Web Novels';
   return 'Books';
 }
@@ -1148,16 +1337,21 @@ function renderSettings() {
 }
 
 function applyAppTheme() {
-  const theme = state.appTheme || 'system';
+  const theme = state.appTheme || 'night';
   const isNight = theme === 'night' || (theme === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
   if (isNight) {
     document.documentElement.setAttribute('data-theme', 'night');
     document.body.classList.add('theme-night');
     document.body.classList.remove('theme-day');
+    document.querySelectorAll('.md-theme-toggle-btn .theme-icon').forEach(el => el.textContent = '🌙');
+    document.querySelectorAll('.md-theme-toggle-btn .theme-text').forEach(el => el.textContent = 'Night');
+    renderMangaDexHome();
   } else {
     document.documentElement.setAttribute('data-theme', 'day');
     document.body.classList.add('theme-day');
     document.body.classList.remove('theme-night');
+    document.querySelectorAll('.md-theme-toggle-btn .theme-icon').forEach(el => el.textContent = '☀️');
+    document.querySelectorAll('.md-theme-toggle-btn .theme-text').forEach(el => el.textContent = 'Day');
   }
 }
 
@@ -1229,7 +1423,12 @@ document.addEventListener('click', e => {
   const searchBtn = e.target.closest('[data-open-search]');
   if (searchBtn) {
     e.preventDefault();
-    showView('search');
+    if (document.querySelector('.md-clean-sidebar')) {
+      document.body.classList.add('md-search-active');
+      setTimeout(() => document.querySelector('#md-search-input')?.focus(), 50);
+    } else {
+      showView('search');
+    }
     return;
   }
   const settingsBtn = e.target.closest('[data-open-settings]');
@@ -1262,6 +1461,13 @@ document.addEventListener('input', e => {
     clearTimeout(searchInputTimer);
     searchInputTimer = setTimeout(() => renderSearch(), 260);
   }
+  if (e.target?.id === 'md-search-input') {
+    const val = e.target.value;
+    clearTimeout(liveSearchDebounceTimer);
+    liveSearchDebounceTimer = setTimeout(() => {
+      handleLiveSearchInput(val);
+    }, 180);
+  }
   if (e.target?.id === 'setting-font') {
     state.reader.font = Number(e.target.value);
     const out = document.querySelector('#setting-font-out');
@@ -1271,7 +1477,22 @@ document.addEventListener('input', e => {
   }
 });
 
+document.addEventListener('focusin', e => {
+  if (e.target?.id === 'md-search-input' && e.target.value.trim().length >= 2) {
+    handleLiveSearchInput(e.target.value);
+  }
+});
+
 document.addEventListener('submit', e => {
+  if (e.target.id === 'md-search-form') {
+    e.preventDefault();
+    const dropdown = document.getElementById('md-live-search-dropdown');
+    const firstItem = dropdown?.querySelector('.md-live-result-item');
+    if (firstItem) {
+      firstItem.click();
+    }
+    return;
+  }
   if (e.target.classList.contains('search-board')) {
     e.preventDefault();
     renderSearch();
@@ -1356,18 +1577,267 @@ function handleRouting() {
     showView('profile', false);
   } else if (raw === 'settings') {
     showView('settings', false);
-  } else if (raw === 'search') {
-    showView('search', false);
-  } else if (raw === 'explore-view' || raw === 'explore') {
-    showView('explore-view', false);
-  } else {
-    showView('home', false);
-  }
+    } else if (raw === 'search') {
+      if (document.querySelector('.md-clean-sidebar')) {
+        document.body.classList.add('md-search-active');
+        document.querySelector('#md-search-input')?.focus();
+      } else {
+        showView('search', false);
+      }
+    } else if (raw === 'explore-view') {
+      showView('explore-view', false);
+    } else {
+      showView('home', false);
+    }
 }
 
 window.addEventListener('popstate', handleRouting);
 window.addEventListener('hashchange', handleRouting);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MANGADEX HOME VIEW LIVE API INTEGRATION & DYNAMIC CAROUSEL
+// ─────────────────────────────────────────────────────────────────────────────
+let TRENDING_MANGA_LIST = [];
+let currentHeroSlideIndex = 0;
+let heroSlideAutoTimer = null;
+
+async function fetchLiveTrendingManga() {
+  try {
+    const res = await fetch('/api/trending');
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      TRENDING_MANGA_LIST = data;
+      data.forEach(m => {
+        const existingIdx = BOOKS.findIndex(b => b.id === m.id);
+        if (existingIdx >= 0) {
+          BOOKS[existingIdx] = Object.assign(BOOKS[existingIdx], m);
+        } else {
+          BOOKS.push(m);
+        }
+      });
+      renderMangaDexHome();
+    }
+  } catch (e) {
+    console.warn('[MangaDex Home] Error fetching trending:', e.message);
+  }
+}
+
+function renderMangaDexHome() {
+  const stage = document.querySelector('#md-hero-stage');
+  const latestGrid = document.querySelector('#md-latest-grid');
+  const recGrid = document.querySelector('#md-recommended-grid');
+  if (!stage || TRENDING_MANGA_LIST.length === 0) return;
+
+  // 1. Render Panoramic Hero Banner Slides (Top 10 items)
+  const heroItems = TRENDING_MANGA_LIST.slice(0, 10);
+  stage.innerHTML = heroItems.map((m, idx) => {
+    const activeClass = idx === currentHeroSlideIndex ? 'active-slide' : '';
+    const tagsHtml = (m.tags || ['Action', 'Fantasy']).slice(0, 5).map(t => 
+      `<span class="md-hero-tag-span">${t}</span>`
+    ).join('');
+    const coverImg = m.banner || m.cover || m.image || '';
+
+    return `
+      <div class="md-panoramic-slide ${activeClass}" data-slide-index="${idx}">
+        ${coverImg ? `<img class="md-panoramic-bg-img" src="${coverImg}" alt="" loading="lazy" />` : ''}
+        <div class="md-banner-gradient-shade"></div>
+        <div class="md-hero-container">
+          <div class="md-hero-poster-box group flex items-start relative mb-auto select-none w-auto h-full aspect-7/10 rounded shadow-md bg-transparent" data-action="open-book" data-book="${m.id}" style="cursor: pointer;">
+            ${coverImg ? `<img class="md-cover-img rounded shadow-md w-full h-full" src="${coverImg}" alt="${m.title}" loading="lazy" />` : `<div style="width:100%;height:100%;background:#1e293b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;">📖</div>`}
+            <img class="md-hero-flag-icon inline-block select-none absolute right-2 bottom-1.5" title="Japanese" src="https://flagcdn.com/w40/jp.png" alt="Japanese flag icon" width="24" height="16" loading="lazy" style="z-index: 1;" />
+          </div>
+          <div class="md-hero-details-grid">
+            <h2 class="md-hero-title-h2 font-bold text-xl line-clamp-5 sm:line-clamp-2 lg:text-4xl overflow-hidden" style="line-height: 2.75rem; cursor: pointer;" data-action="open-book" data-book="${m.id}">${m.title}</h2>
+            <div class="md-hero-tags-row">
+              ${tagsHtml}
+            </div>
+            <div class="md-hero-desc-box preview-description">
+              <p>${m.synopsis || 'Explore this trending manga series on Mangapill with full scanlations.'}</p>
+            </div>
+            <div class="md-hero-bottom-row">
+              <span class="md-hero-author-text">${m.author || 'Manga Artist'}</span>
+              <div class="md-hero-slider-nav">
+                <span class="md-hero-slide-num">NO. ${idx + 1}</span>
+                <button type="button" class="md-nav-arrow-btn md-slide-prev" data-slide-prev aria-label="Previous">‹</button>
+                <button type="button" class="md-nav-arrow-btn md-slide-next" data-slide-next aria-label="Next">›</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // 2. Render Latest Updates Grid (Items 10 to 20)
+  if (latestGrid) {
+    const latestItems = TRENDING_MANGA_LIST.slice(10, 20);
+    latestGrid.innerHTML = latestItems.map((m, i) => {
+      const coverImg = m.cover || m.image || '';
+      return `
+        <article class="md-feed-card" data-action="open-book" data-book="${m.id}" style="cursor: pointer;">
+          <div class="md-feed-cover-wrap">
+            ${coverImg ? `<img src="${coverImg}" alt="${m.title}" loading="lazy" />` : `<div style="width:100%;height:180px;background:#1e293b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;">📖</div>`}
+            <span class="md-feed-badge">HOT</span>
+          </div>
+          <div class="md-feed-info">
+            <h3 class="md-feed-name">${m.title}</h3>
+            <span class="md-feed-sub">${m.author || 'Manga Artist'}</span>
+          </div>
+        </article>
+      `;
+    }).join('');
+  }
+
+  // 3. Render Recommended Grid (Items 20 to 28)
+  if (recGrid) {
+    const recItems = TRENDING_MANGA_LIST.slice(20, 28);
+    recGrid.innerHTML = recItems.map(m => {
+      const coverImg = m.cover || m.image || '';
+      return `
+        <article class="md-feed-card" data-action="open-book" data-book="${m.id}" style="cursor: pointer;">
+          <div class="md-feed-cover-wrap">
+            ${coverImg ? `<img src="${coverImg}" alt="${m.title}" loading="lazy" />` : `<div style="width:100%;height:180px;background:#1e293b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;">📖</div>`}
+            <span class="md-feed-badge" style="color:#38bdf8;">⭐ 9.${Math.floor(Math.random() * 4 + 5)}</span>
+          </div>
+          <div class="md-feed-info">
+            <h3 class="md-feed-name">${m.title}</h3>
+            <span class="md-feed-sub">${(m.tags || ['Manga'])[0] || 'Trending'}</span>
+          </div>
+        </article>
+      `;
+    }).join('');
+  }
+
+  setupHeroCarouselEvents();
+}
+
+function setupHeroCarouselEvents() {
+  const slides = document.querySelectorAll('.md-panoramic-slide');
+  if (slides.length <= 1) return;
+
+  function goToSlide(idx) {
+    slides.forEach(s => s.classList.remove('active-slide'));
+    currentHeroSlideIndex = (idx + slides.length) % slides.length;
+    slides[currentHeroSlideIndex].classList.add('active-slide');
+  }
+
+  document.querySelectorAll('.md-slide-prev').forEach(btn => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      goToSlide(currentHeroSlideIndex - 1);
+      restartHeroAutoSlide();
+    };
+  });
+
+  document.querySelectorAll('.md-slide-next').forEach(btn => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      goToSlide(currentHeroSlideIndex + 1);
+      restartHeroAutoSlide();
+    };
+  });
+
+  restartHeroAutoSlide();
+}
+
+function restartHeroAutoSlide() {
+  clearInterval(heroSlideAutoTimer);
+  heroSlideAutoTimer = setInterval(() => {
+    const slides = document.querySelectorAll('.md-panoramic-slide');
+    if (slides.length > 1) {
+      slides.forEach(s => s.classList.remove('active-slide'));
+      currentHeroSlideIndex = (currentHeroSlideIndex + 1) % slides.length;
+      slides[currentHeroSlideIndex].classList.add('active-slide');
+    }
+  }, 6000);
+}
+
+// Global MangaDex Topbar & Sidebar listener
+document.addEventListener('click', e => {
+  // Theme Toggle Button
+  const themeToggle = e.target.closest('[data-toggle-theme]');
+  if (themeToggle) {
+    e.preventDefault();
+    state.appTheme = (state.appTheme === 'night' || document.body.classList.contains('theme-night')) ? 'day' : 'night';
+    saveState();
+    applyAppTheme();
+    toast(`Switched to ${state.appTheme === 'night' ? 'Night' : 'Day'} Mode.`);
+    return;
+  }
+
+  // Sidebar navigation active badge update
+  const navLink = e.target.closest('.md-clean-sidebar .md-nav-link');
+  if (navLink) {
+    document.querySelectorAll('.md-clean-sidebar .md-nav-link').forEach(l => l.classList.remove('active'));
+    navLink.classList.add('active');
+  }
+});
+
+// Keyboard navigation for live search and global shortcuts
+document.addEventListener('keydown', e => {
+  const searchInput = document.querySelector('#md-search-input');
+  const dropdown = document.getElementById('md-live-search-dropdown');
+  const isDropdownOpen = dropdown && dropdown.classList.contains('active');
+
+  // Ctrl + K to focus search
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+      if (searchInput.value.trim().length >= 2) {
+        handleLiveSearchInput(searchInput.value);
+      }
+    }
+    return;
+  }
+
+  // Escape to close dropdown
+  if (e.key === 'Escape') {
+    if (isDropdownOpen) {
+      closeLiveSearchDropdown();
+      if (searchInput) searchInput.blur();
+    }
+    return;
+  }
+
+  // Arrow navigation inside live search dropdown
+  if (isDropdownOpen) {
+    const items = [...dropdown.querySelectorAll('.md-live-result-item')];
+    if (items.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeLiveSearchIndex = (activeLiveSearchIndex + 1) % items.length;
+      items.forEach((item, idx) => {
+        item.classList.toggle('selected', idx === activeLiveSearchIndex);
+        if (idx === activeLiveSearchIndex) item.scrollIntoView({ block: 'nearest' });
+      });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeLiveSearchIndex = (activeLiveSearchIndex - 1 + items.length) % items.length;
+      items.forEach((item, idx) => {
+        item.classList.toggle('selected', idx === activeLiveSearchIndex);
+        if (idx === activeLiveSearchIndex) item.scrollIntoView({ block: 'nearest' });
+      });
+    } else if (e.key === 'Enter' && activeLiveSearchIndex >= 0 && items[activeLiveSearchIndex]) {
+      e.preventDefault();
+      items[activeLiveSearchIndex].click();
+    }
+  }
+});
+
+// Click outside to close live search dropdown
+document.addEventListener('click', e => {
+  if (!e.target.closest('.md-nav-search-wrap')) {
+    closeLiveSearchDropdown();
+  }
+});
+
 // Initialize application
 renderAll();
 handleRouting();
+fetchLiveTrendingManga();
+

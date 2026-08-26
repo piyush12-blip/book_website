@@ -65,12 +65,14 @@ async function searchTempleToons(query) {
             const slug = p.series_slug || p.slug || p.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
             const isAdult = !!(p.badge && p.badge.includes('+18') || p.adult);
 
+            const proxiedCover = coverUrl ? `/api/proxy/image?url=${encodeURIComponent(coverUrl)}` : null;
+
             return {
                 id: `temple-${slug}`,
                 title: p.title,
                 author: p.author || 'Manga & Manhwa',
-                cover: coverUrl ? `has-image ${color}` : color,
-                image: coverUrl ? `/api/proxy/image?url=${encodeURIComponent(coverUrl)}` : null,
+                cover: proxiedCover || color,
+                image: proxiedCover,
                 lines: (p.title || '').split(' ').slice(0, 3).join('<br>'),
                 genre: isAdult ? 'Adult & Smut' : 'Manga & Manhwa',
                 mood: p.badge || (isAdult ? 'Adult Manhwa +18' : 'Manga / Manhwa'),

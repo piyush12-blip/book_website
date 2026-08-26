@@ -8,7 +8,7 @@ const { findEpubUrl, extractChaptersFromUrl, extractChaptersFromFile } = require
 const { searchMadaraScans, fetchMadaraScansChapters, getMadaraScansChapterImages } = require('./madarascans');
 const { searchTempleToons, fetchTempleToonsChapters, getTempleToonsChapterImages } = require('./templetoons');
 const { searchDivaScans, fetchDivaScansChapters, getDivaScansChapterImages, customLookup } = require('./divascans');
-const { searchMangapill, fetchMangapillChapters, getMangapillChapterImages } = require('./mangapill');
+const { searchMangapill, fetchMangapillChapters, getMangapillChapterImages, fetchMangapillPopular } = require('./mangapill');
 const { searchRoyalRoad, getRoyalRoadChapters } = require('./royalroad');
 const { 
     indexTelegramChannels, 
@@ -158,6 +158,37 @@ function calculateSearchRelevanceScore(query, candidateItem) {
     return computedScore;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TRENDING / POPULAR MANGA API — Live Mangapill & Scans Showcase
+// ─────────────────────────────────────────────────────────────────────────────
+let TRENDING_CACHE = { data: null, timestamp: 0 };
+
+app.get('/api/trending', async (req, res) => {
+    const now = Date.now();
+    if (TRENDING_CACHE.data && (now - TRENDING_CACHE.timestamp < 10 * 60 * 1000)) {
+        return res.json(TRENDING_CACHE.data);
+    }
+
+    try {
+        const popularList = await fetchMangapillPopular();
+        if (popularList && popularList.length > 0) {
+            TRENDING_CACHE = { data: popularList, timestamp: now };
+            return res.json(popularList);
+        }
+    } catch (e) {
+        console.warn('[TRENDING] Failed to fetch live Mangapill popular:', e.message);
+    }
+
+    // Fallback curated list
+    const fallbackList = [
+        { id: 'mangapill-1-berserk', title: 'Berserk', author: 'Kentaro Miura', cover: 'https://cdn.readdetectiveconan.com/file/mangapill/i/1.jpg', banner: 'https://cdn.readdetectiveconan.com/file/mangapill/i/1.jpg', tags: ['Dark Fantasy', 'Action', 'Tragedy'], synopsis: 'Guts, known as the Black Swordsman, seeks sanctuary from the demonic forces that pursue him.' },
+        { id: 'mangapill-2-one-piece', title: 'One Piece', author: 'Eiichiro Oda', cover: 'https://cdn.readdetectiveconan.com/file/mangapill/i/2.webp', banner: 'https://cdn.readdetectiveconan.com/file/mangapill/i/2.webp', tags: ['Action', 'Adventure', 'Fantasy'], synopsis: 'Gol D. Roger was known as the Pirate King, the strongest and most infamous being to have sailed the Grand Line.' },
+        { id: 'mangapill-5460-dandadan', title: 'Dandadan', author: 'Yukinobu Tatsu', cover: 'https://cdn.readdetectiveconan.com/file/mangapill/i/5460.webp', banner: 'https://cdn.readdetectiveconan.com/file/mangapill/i/5460.webp', tags: ['Action', 'Comedy', 'Supernatural'], synopsis: 'Momo Ayase strikes up an unusual friendship with her school occult fanatic.' },
+        { id: 'mangapill-7529-kagurabachi', title: 'Kagurabachi', author: 'Takeru Hokazono', cover: 'https://cdn.readdetectiveconan.com/file/mangapill/i/7529.jpeg', banner: 'https://cdn.readdetectiveconan.com/file/mangapill/i/7529.jpeg', tags: ['Action', 'Drama', 'Martial Arts'], synopsis: 'Chihiro, the son of a renowned swordsmith, embarks on a quest for vengeance.' }
+    ];
+    res.json(fallbackList);
+});
+
 app.get('/api/books/search', async (req, res) => {
     const query = req.query.q;
     if (!query) return res.json([]);
@@ -188,11 +219,26 @@ app.get('/api/books/search', async (req, res) => {
 
         // ─────────────────────────────────────────────────────────────────────
         // ADVANCED MULTI-RESULT SMART AGGREGATOR & HIERARCHICAL RANKER
-        // 1. Searches Web Scrapers (Mangapill, DivaScans, MadaraScans, TempleToons) & Telegram
-        // 2. Priority: 1st Mangapill & DivaScans, 2nd Madara & Temple, Lowest: Telegram Fallback
+        // 1. Searches Instant Catalog Index (<1ms) + Web Scrapers (Mangapill, Diva, Madara, Temple)
+        // 2. Automatically tests spaced variations for concatenated words (e.g. "bluelock" -> "blue lock", "chainsawman" -> "chainsaw man")
         // ─────────────────────────────────────────────────────────────────────
-        const [mangapillRaw, divaRaw, madaraRaw, madaraAltRaw, templeRaw, privateRaw, tgIndexed] = await Promise.all([
-            searchMangapill(cleanQuery).catch(() => []),
+        const { searchCatalogIndex } = require('./mangaCatalogIndex');
+        const instantIndexMatches = searchCatalogIndex(cleanQuery);
+
+        // Generate spaced search variations for joined words
+        const queryVariants = [cleanQuery];
+        if (!cleanQuery.includes(' ')) {
+            // Try common prefix cuts for manga titles (e.g. bluelock -> blue lock, sololeveling -> solo leveling)
+            const splitCandidate = cleanQuery.replace(/(blue|solo|chain|fairy|tokyo|jujutsu|hunter|demon|spy|one|death|myhero|black|fire|world)(.+)/i, '$1 $2').trim();
+            if (splitCandidate !== cleanQuery && !queryVariants.includes(splitCandidate)) {
+                queryVariants.push(splitCandidate);
+            }
+        }
+
+        const mangapillPromises = queryVariants.map(q => searchMangapill(q).catch(() => []));
+
+        const [mangapillVariantResults, divaRaw, madaraRaw, madaraAltRaw, templeRaw, privateRaw, tgIndexed] = await Promise.all([
+            Promise.all(mangapillPromises),
             searchDivaScans(cleanQuery).catch(() => []),
             searchMadaraScans(cleanQuery).catch(() => []),
             altQuery ? searchMadaraScans(altQuery).catch(() => []) : Promise.resolve([]),
@@ -200,6 +246,8 @@ app.get('/api/books/search', async (req, res) => {
             searchPrivateChannels(cleanQuery).catch(() => []),
             searchTelegramIndex(cleanQuery).catch(() => [])
         ]);
+
+        const mangapillRaw = [...instantIndexMatches, ...mangapillVariantResults.flat()];
 
         const candidateList = [];
         const seenMangapill = new Set();
@@ -293,10 +341,10 @@ app.get('/api/books/search', async (req, res) => {
                     let score = baseScore;
                     // Source tie-breakers: Direct Web Scrapers (Top) >>> Telegram (Lowest/Fallback)
                     if (baseScore >= 3000) {
-                        if (item.id.startsWith('mangapill-')) score += 600;
-                        else if (item.id.startsWith('divascans-')) score += 550;
-                        else if (item.id.startsWith('madara-')) score += 500;
-                        else if (item.id.startsWith('temple-')) score += 500;
+                        if (item.id.startsWith('mangapill-')) score += 700;
+                        else if (item.id.startsWith('divascans-')) score += 650;
+                        else if (item.id.startsWith('madara-')) score += 600;
+                        else if (item.id.startsWith('temple-')) score += 550;
                         else if (item.id.startsWith('private-tg-')) score += 50;  // Demoted to bottom
                         else if (item.id.startsWith('telegram-')) score += 20;    // Demoted to bottom
                     }
@@ -307,7 +355,7 @@ app.get('/api/books/search', async (req, res) => {
                 .map(r => r.item);
 
             if (scored.length > 0) {
-                return res.json(scored.slice(0, 15));
+                return res.json(scored.slice(0, 20));
             }
         }
 
@@ -703,9 +751,45 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             console.error('[CHAPTERS] Error checking local downloads:', e.message);
         }
 
-        // 2. Automated Universal Multi-Source Internet Fetcher (Internet Archive)
+        // 2. Dedicated Verified Novel Providers (Shadow Slave, Locke Lamora, etc.) - Instant Memory (<1ms)
+        const dedicatedChapters = getUniversalChapters(cleanQuery, '', '');
+        if (dedicatedChapters && dedicatedChapters.length > 0) {
+            const payload = { 
+                chapters: dedicatedChapters, 
+                type: 'book', 
+                source: 'DedicatedProvider', 
+                isFallback: false 
+            };
+            MEMORY_CACHE.chapters.set(cacheKey, payload);
+            return res.json(payload);
+        }
+
+        // 3. AI Injected Book Knowledge Resolver (Silent Patient, Harry Potter, Dune, Da Vinci Code, etc.) - Instant (<1ms)
+        const { resolveAIBookKnowledge } = require('./aiKnowledgeResolver');
+        const aiBookData = resolveAIBookKnowledge(cleanQuery);
+        if (aiBookData && aiBookData.chapters && aiBookData.chapters.length > 0) {
+            console.log(`[SERVER] AI Knowledge Resolver served ${aiBookData.chapters.length} chapters for: "${cleanQuery}"`);
+            const payload = {
+                chapters: aiBookData.chapters,
+                type: 'book',
+                source: 'AIKnowledgeResolver',
+                setting: aiBookData.setting,
+                mainCharacters: aiBookData.mainCharacters,
+                isFallback: false
+            };
+            MEMORY_CACHE.chapters.set(cacheKey, payload);
+            return res.json(payload);
+        }
+
+        // 4. Automated Universal Multi-Source Internet Fetcher (Internet Archive / Gutenberg / RoyalRoad)
         const { autoFetchBookFromInternet } = require('./universalInternetFetcher');
         const autoResult = await autoFetchBookFromInternet(cleanQuery, '', id);
+
+        if (autoResult.chapters && autoResult.chapters.length > 0) {
+            const payload = { chapters: autoResult.chapters, type: autoResult.type || 'book', source: autoResult.source, isFallback: false };
+            MEMORY_CACHE.chapters.set(cacheKey, payload);
+            return res.json(payload);
+        }
 
         if (autoResult.epubUrl) {
             try {
@@ -727,25 +811,12 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             }
         }
 
-        // 3. Project Gutenberg Authentic Public Domain Text Scraper (100% Genuine Chapters)
+        // 5. Project Gutenberg Authentic Public Domain Text Scraper (100% Genuine Chapters)
         const { fetchGutenbergChapters } = require('./gutendex');
         const gutenbergRes = await fetchGutenbergChapters(cleanQuery, '').catch(() => null);
         if (gutenbergRes && gutenbergRes.chapters && gutenbergRes.chapters.length > 0) {
             console.log(`[SERVER] Gutenberg served ${gutenbergRes.chapters.length} authentic chapters for: "${cleanQuery}"`);
             const payload = { chapters: gutenbergRes.chapters, type: 'book', source: 'Gutenberg', isFallback: false };
-            MEMORY_CACHE.chapters.set(cacheKey, payload);
-            return res.json(payload);
-        }
-
-        // 4. Dedicated Verified Novel Providers (Shadow Slave, Locke Lamora, etc.)
-        const dedicatedChapters = getUniversalChapters(cleanQuery, '', '');
-        if (dedicatedChapters && dedicatedChapters.length > 0) {
-            const payload = { 
-                chapters: dedicatedChapters, 
-                type: 'book', 
-                source: 'DedicatedProvider', 
-                isFallback: false 
-            };
             MEMORY_CACHE.chapters.set(cacheKey, payload);
             return res.json(payload);
         }
@@ -876,23 +947,6 @@ app.get('/api/manga/chapter/:chapterId', async (req, res) => {
         const universalHtml = await getUniversalTelegramPanels(titleQuery, chNum).catch(() => null);
         if (universalHtml) {
             return res.json({ html: universalHtml });
-        }
-
-        // 4. Check MangaDex for chapter panels
-        const { searchMangaDex, getMangaDexFeed, getMangaDexChapterImages } = require('./mangadex');
-        const mangaResults = await searchMangaDex(titleQuery).catch(() => []);
-        if (mangaResults && mangaResults.length > 0) {
-            const targetMangaId = mangaResults[0].id.replace('mangadex-', '');
-            const feed = await getMangaDexFeed(targetMangaId).catch(() => null);
-            if (feed && feed.chapters) {
-                const matchedCh = feed.chapters.find(c => c.num === chNum);
-                if (matchedCh && matchedCh.chapterId) {
-                    const mdHtml = await getMangaDexChapterImages(matchedCh.chapterId);
-                    if (mdHtml && !mdHtml.includes('busy')) {
-                        return res.json({ html: mdHtml });
-                    }
-                }
-            }
         }
 
         const { getTelegramChaptersAndPanels } = require('./telegram');

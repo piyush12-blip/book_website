@@ -3,6 +3,7 @@
  * Real-time search, chapter scraping, and WebP panel extraction for https://divascans.org
  */
 
+const cheerio = require('cheerio');
 const { customLookup, stealthFetch, sleepJitter } = require('./stealthEngine');
 
 const BASE_URL = 'https://divascans.org';
@@ -36,46 +37,57 @@ async function searchDivaScans(query) {
     }
 
     try {
-        const searchUrl = `${BASE_URL}/api/search?q=${encodeURIComponent(cleanQ)}`;
-        let res = await fetchUrl(searchUrl, { accept: 'application/json', timeout: 5000 });
-        
-        let seriesList = [];
-        if (res.status === 200) {
-            try {
-                const data = JSON.parse(res.text);
-                seriesList = data.series || [];
-            } catch(e) {}
-        }
+        const searchUrl = `${BASE_URL}/series?q=${encodeURIComponent(cleanQ)}`;
+        let res = await fetchUrl(searchUrl, { timeout: 7000 });
+        if (res.status !== 200 || !res.text) return [];
 
-        // If no results found, return empty array (do not pollute with unrelated single-token results)
-
+        const $ = cheerio.load(res.text);
+        const results = [];
+        const seenSlugs = new Set();
         const COLORS = ['navy', 'teal', 'burgundy', 'midnight', 'sage', 'rust', 'ochre', 'brown'];
 
-        const mapped = seriesList.map((s, idx) => {
-            const color = COLORS[idx % COLORS.length];
-            const coverUrl = s.coverImage ? (s.coverImage.startsWith('http') ? s.coverImage : `${BASE_URL}${s.coverImage}`) : null;
-            const genres = (s.nsfwGenreSlugs || []).map(g => g.charAt(0).toUpperCase() + g.slice(1)).join(', ');
-            
-            return {
-                id: `divascans-${s.slug || s.urlSlug || s.id}`,
-                title: s.title || 'Unknown Title',
-                author: 'Manhwa / Comic',
-                cover: coverUrl ? `has-image ${color}` : color,
-                image: coverUrl ? `/api/proxy/image?url=${encodeURIComponent(coverUrl)}` : null,
-                lines: (s.title || '').split(' ').slice(0, 3).join('<br>'),
+        $('a[href*="/series/comic/"]').each((i, el) => {
+            const href = $(el).attr('href');
+            if (!href || href.includes('/chapter/')) return;
+
+            const slugMatch = href.match(/\/series\/comic\/([^/?#]+)/);
+            if (!slugMatch) return;
+            const slug = slugMatch[1];
+            if (seenSlugs.has(slug)) return;
+            seenSlugs.add(slug);
+
+            const imgEl = $(el).find('img').first();
+            let coverUrl = imgEl.attr('src') || imgEl.attr('data-src') || null;
+            if (coverUrl && coverUrl.includes('url=')) {
+                const m = coverUrl.match(/url=([^&]+)/);
+                if (m) coverUrl = decodeURIComponent(m[1]);
+            }
+
+            const rawTitle = slug.replace(/-/g, ' ');
+            const title = rawTitle.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            const proxiedCover = coverUrl ? `/api/proxy/image?url=${encodeURIComponent(coverUrl)}` : null;
+
+            results.push({
+                id: `divascans-${slug}`,
+                slug,
+                title,
+                author: 'Manhwa Artist',
+                cover: proxiedCover || color,
+                image: proxiedCover,
+                lines: title.split(' ').slice(0, 3).join('<br>'),
                 genre: 'Manga & Manhwa',
-                mood: genres || 'Manhwa / Comic',
-                pages: (s.chapterCount || 1) * 15,
-                rating: Math.min(5, Math.max(1, Math.round(((s.rating > 5 ? s.rating / 2 : s.rating) || 5) * 10) / 10)),
-                synopsis: `${s.title}. Total ${s.chapterCount || 1} chapters available in high-res.`,
+                mood: 'Manhwa (+18)',
+                pages: 30,
+                rating: 5,
+                synopsis: `${title} is available in high-res full color.`,
                 hasEpub: false,
                 format: 'Manga & Manhwa'
-            };
+            });
         });
 
-        // Cache search results in memory for 1 hour
-        DIVA_SEARCH_CACHE.set(cleanQ, mapped);
-        return mapped;
+        // Cache search results in memory
+        DIVA_SEARCH_CACHE.set(cleanQ, results);
+        return results;
     } catch (e) {
         console.error('[DIVASCANS] Search error:', e.message);
         return [];
