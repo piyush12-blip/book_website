@@ -5,10 +5,9 @@ const axios   = require('axios');
 const fs      = require('fs');
 const https   = require('https');
 const { findEpubUrl, extractChaptersFromUrl, extractChaptersFromFile } = require('./epubParser');
-const { searchMadaraScans, fetchMadaraScansChapters, getMadaraScansChapterImages } = require('./madarascans');
-const { searchTempleToons, fetchTempleToonsChapters, getTempleToonsChapterImages } = require('./templetoons');
-const { searchDivaScans, fetchDivaScansChapters, getDivaScansChapterImages, customLookup } = require('./divascans');
+const { searchManhwa18, fetchManhwa18Chapters, getManhwa18ChapterPanels } = require('./manhwa18');
 const { searchMangapill, fetchMangapillChapters, getMangapillChapterImages, fetchMangapillPopular } = require('./mangapill');
+const { searchMangaBuddy, fetchMangaBuddyChapters } = require('./mangabuddy');
 const { searchRoyalRoad, getRoyalRoadChapters } = require('./royalroad');
 const { 
     indexTelegramChannels, 
@@ -64,9 +63,9 @@ function levenshteinDistance(s1, s2) {
     if (s2.length === 0) return s1.length;
     const d = [];
     for (let i = 0; i <= s1.length; i++) d[i] = [i];
-    for (let j = 0; j <= s2.length; j++) d[0][j] = j;
+    for (let j = 0; j <= s1.length; j++) d[0][j] = j;
     for (let i = 1; i <= s1.length; i++) {
-        for (let j = 1; j <= s2.length; j++) {
+        for (let j = 1; j <= s1.length; j++) {
             const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
             d[i][j] = Math.min(
                 d[i - 1][j] + 1,
@@ -75,7 +74,7 @@ function levenshteinDistance(s1, s2) {
             );
         }
     }
-    return d[s1.length][s2.length];
+    return d[s1.length][s1.length];
 }
 
 function wordSimilarity(w1, w2) {
@@ -86,26 +85,18 @@ function wordSimilarity(w1, w2) {
     return 1 - (dist / maxLen);
 }
 
-function calculateSearchRelevanceScore(query, candidateItem) {
-    const item = (candidateItem && typeof candidateItem === 'object') ? candidateItem : {};
-    const candidateTitle = typeof candidateItem === 'string' ? candidateItem : (item.title || '');
-    const candidateSynopsis = item.synopsis || '';
-    const candidateId = item.id || '';
-    const isDirectMatch = !!item._isDirectSearchMatch;
-
-    const stopWords = new Set(['in', 'of', 'the', 'a', 'an', 'to', 'and', 'for', 'with', 'on', 'at', 'is', 'by', 'manga', 'manhwa', 'webtoon', 'comic', 'novel', 'read', 'chapter', 'online', 'free', 'raw']);
-    const cleanQ = (query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    const cleanT = (candidateTitle || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    const cleanSlug = candidateId.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-
-    if (!cleanQ) return 0;
+function scoreSingleTitle(cleanQ, title, cleanSlug, candidateSynopsis, isDirectMatch) {
+    const cleanT = (title || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!cleanT || !cleanQ) return 0;
 
     const noSpaceQ = cleanQ.replace(/\s+/g, '');
     const noSpaceT = cleanT.replace(/\s+/g, '');
     const noSpaceSlug = cleanSlug.replace(/\s+/g, '');
 
     // Rank 1: Exact title match (with or without spaces)
-    if (cleanT === cleanQ || (noSpaceQ.length > 2 && noSpaceT === noSpaceQ)) return 10000;
+    if (cleanT === cleanQ || (noSpaceQ.length > 2 && noSpaceT === noSpaceQ)) {
+        return 10000;
+    }
 
     // Fuzzy Full Title similarity (e.g. 1-2 letter typos across full title)
     const fullSim = Math.max(wordSimilarity(cleanQ, cleanT), wordSimilarity(noSpaceQ, noSpaceT));
@@ -118,45 +109,128 @@ function calculateSearchRelevanceScore(query, candidateItem) {
         return 9000 - Math.min(Math.abs(noSpaceT.length - noSpaceQ.length), 500);
     }
 
-    // Rank 3: Exact phrase inside title or title inside query (with or without spaces)
+    // Rank 3: Exact phrase inside title or title inside query
     if (cleanT.includes(cleanQ) || cleanQ.includes(cleanT) || (noSpaceQ.length > 2 && (noSpaceT.includes(noSpaceQ) || noSpaceQ.includes(noSpaceT)))) {
         return 8000 - Math.min(Math.abs(noSpaceT.length - noSpaceQ.length), 500);
     }
 
-    // Check if query is found in slug or synopsis
-    if (cleanSlug.includes(cleanQ) || (noSpaceQ.length > 2 && noSpaceSlug.includes(noSpaceQ)) || candidateSynopsis.toLowerCase().includes(cleanQ)) {
+    // Slug or synopsis match
+    if (cleanSlug.includes(cleanQ) || (noSpaceQ.length > 2 && noSpaceSlug.includes(noSpaceQ)) || (candidateSynopsis && candidateSynopsis.toLowerCase().includes(cleanQ))) {
         return 7800;
     }
 
-    // Rank 4: Significant keyword & Typo matching
+    // Rank 4: Keyword & Typo matching
+    const stopWords = new Set(['in', 'of', 'the', 'a', 'an', 'to', 'and', 'for', 'with', 'on', 'at', 'is', 'by', 'manga', 'manhwa', 'webtoon', 'comic', 'novel', 'read', 'chapter', 'online', 'free', 'raw']);
     const qTokens = cleanQ.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
     const tTokensArray = cleanT.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
     const tTokens = new Set(tTokensArray);
     const slugTokens = new Set(cleanSlug.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w)));
 
-    if (qTokens.length === 0) return isDirectMatch ? 3000 : 500;
+    if (qTokens.length === 0) {
+        return isDirectMatch ? 3000 : 500;
+    }
 
-    let matchCount = 0;
+    let qMatchCount = 0;
     for (const token of qTokens) {
         if (tTokens.has(token) || slugTokens.has(token) || cleanT.includes(token) || cleanSlug.includes(token)) {
-            matchCount += 1.0;
+            qMatchCount += 1.0;
         } else {
-            // Check for close typo matches
             let bestSim = 0;
             for (const tToken of tTokensArray) {
                 const sim = wordSimilarity(token, tToken);
                 if (sim > bestSim) bestSim = sim;
             }
-            if (bestSim >= 0.75) {
-                matchCount += bestSim * 0.85;
-            }
+            if (bestSim >= 0.75) qMatchCount += bestSim * 0.85;
         }
     }
 
-    const ratio = matchCount / qTokens.length;
-    const computedScore = Math.round(7000 * Math.pow(ratio, 1.3));
-    return computedScore;
+    let tMatchCount = 0;
+    if (tTokensArray.length > 0) {
+        for (const token of tTokensArray) {
+            if (qTokens.includes(token) || cleanQ.includes(token)) tMatchCount += 1.0;
+        }
+    }
+
+    const qRatio = qMatchCount / qTokens.length;
+    const tRatio = tTokensArray.length > 0 ? (tMatchCount / tTokensArray.length) : 0;
+    const bestRatio = Math.max(qRatio, tRatio * 0.95);
+    return Math.round(7500 * Math.pow(bestRatio, 1.2));
 }
+
+function calculateSearchRelevanceScore(query, candidateItem) {
+    const item = (candidateItem && typeof candidateItem === 'object') ? candidateItem : {};
+    const candidateTitle = typeof candidateItem === 'string' ? candidateItem : (item.title || '');
+    const candidateAltTitle = item.altTitle || '';
+    const candidateSynopsis = item.synopsis || '';
+    const candidateId = item.id || '';
+    const isDirectMatch = !!item._isDirectSearchMatch;
+
+    // ─── UNOFFICIAL CONTENT PENALTY SYSTEM ───────────────────────────────────
+    const tLower = (candidateTitle || '').toLowerCase();
+    const idLower = (candidateId || '').toLowerCase();
+
+    const isDJ          = /\bdj\b/.test(tLower) || idLower.includes('-dj-') || idLower.includes('-dj.');
+    const isDoujinshi   = tLower.includes('doujinshi') || idLower.includes('doujinshi');
+    const isFanTitle    = tLower.includes('i wish') || tLower.includes('kiss kiss') || tLower.includes('zenryoku') || tLower.includes('shishunki') || tLower.includes('schrodinger') || tLower.includes('my name is') || tLower.includes('harajuku, afterwards') || tLower.includes('oshiete');
+    const isRoyalRoadFanfic = idLower.startsWith('royalroad-') && (tLower.includes('fanfic') || tLower.includes('fan fic'));
+
+    // Build penalty: 0.0 = hidden, 1.0 = no change
+    let penalty = 1.0;
+    if (isDJ)              penalty = Math.min(penalty, 0.08);
+    if (isDoujinshi)       penalty = Math.min(penalty, 0.06);
+    if (isFanTitle)        penalty = Math.min(penalty, 0.08);
+    if (isRoyalRoadFanfic) penalty = Math.min(penalty, 0.05);
+
+    // ─── QUERY IS A MULTI-WORD PHRASE ─────────────────────────────────────────
+    const cleanQ = (query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!cleanQ) return 0;
+
+    const qWords = cleanQ.split(/\s+/).filter(w => w.length > 1);
+    const cleanSlug = candidateId.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // Check all title variants (primary title + comma-separated alternative/English/Romaji titles)
+    const titleCandidates = [candidateTitle];
+    if (candidateAltTitle) {
+        const alts = candidateAltTitle.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+        titleCandidates.push(...alts);
+    }
+
+    let maxScore = 0;
+    for (const titleVariant of titleCandidates) {
+        let varScore = scoreSingleTitle(cleanQ, titleVariant, cleanSlug, candidateSynopsis, isDirectMatch);
+
+        // Apply multi-word validation to this specific title variant
+        if (qWords.length >= 2) {
+            const vLower = titleVariant.toLowerCase();
+            const tTokensSet = new Set(vLower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean));
+            const matchedQWords = qWords.filter(w => {
+                if (tTokensSet.has(w)) return true;
+                for (const tw of tTokensSet) {
+                    if (tw === w + 's' || tw === w + 'es') return true;
+                    if (wordSimilarity(w, tw) >= 0.75) return true;
+                }
+                return false;
+            });
+
+            const matchRatio = matchedQWords.length / qWords.length;
+            if (matchRatio < 1.0) {
+                const noSpaceQ = qWords.join('');
+                const noSpaceT = vLower.replace(/[^a-z0-9]/g, '');
+                const isPrefix = noSpaceT.startsWith(noSpaceQ) || noSpaceQ.startsWith(noSpaceT);
+                if (!isPrefix) {
+                    varScore = Math.round(varScore * (0.05 + 0.15 * matchRatio));
+                }
+            }
+        }
+
+        if (varScore > maxScore) {
+            maxScore = varScore;
+        }
+    }
+
+    return Math.round(maxScore * penalty);
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TRENDING / POPULAR MANGA API — Live Mangapill & Scans Showcase
@@ -189,6 +263,16 @@ app.get('/api/trending', async (req, res) => {
     res.json(fallbackList);
 });
 
+// ── In-Memory Search Cache for Ultra-Fast Typing Responses (10-minute TTL) ──
+const GLOBAL_SEARCH_CACHE = new Map();
+
+function withTimeout(promise, ms, fallback = []) {
+    return Promise.race([
+        promise,
+        new Promise(resolve => setTimeout(() => resolve(fallback), ms))
+    ]);
+}
+
 app.get('/api/books/search', async (req, res) => {
     const query = req.query.q;
     if (!query) return res.json([]);
@@ -211,6 +295,16 @@ app.get('/api/books/search', async (req, res) => {
             .trim();
 
         const qLower = cleanQuery.toLowerCase();
+
+        // 1. Instant Cache Check (<1ms response while typing)
+        const now = Date.now();
+        if (GLOBAL_SEARCH_CACHE.has(qLower)) {
+            const cached = GLOBAL_SEARCH_CACHE.get(qLower);
+            if (now - cached.timestamp < 10 * 60 * 1000) {
+                return res.json(cached.results);
+            }
+        }
+
         const { fetchRealCoverImage } = require('./coverFetcher');
 
         // Extract primary title segment if query is long
@@ -219,223 +313,239 @@ app.get('/api/books/search', async (req, res) => {
 
         // ─────────────────────────────────────────────────────────────────────
         // ADVANCED MULTI-RESULT SMART AGGREGATOR & HIERARCHICAL RANKER
-        // 1. Searches Instant Catalog Index (<1ms) + Web Scrapers (Mangapill, Diva, Madara, Temple)
-        // 2. Automatically tests spaced variations for concatenated words (e.g. "bluelock" -> "blue lock", "chainsawman" -> "chainsaw man")
+        // 1. Searches Instant Catalog Index (<1ms) + Web Scrapers (Mangapill, Diva, Temple, MangaBuddy)
+        // 2. Automatically tests spaced variations for concatenated words
         // ─────────────────────────────────────────────────────────────────────
         const { searchCatalogIndex } = require('./mangaCatalogIndex');
         const instantIndexMatches = searchCatalogIndex(cleanQuery);
 
-        // Generate spaced search variations for joined words
+        // Generate cleaned queries
+        const strippedPunctuation = cleanQuery.replace(/[.,'"`~!@#$%^&*()_+=/\\|<>?:;[\]{}]/g, ' ').replace(/\s+/g, ' ').trim();
         const queryVariants = [cleanQuery];
+        if (strippedPunctuation && strippedPunctuation !== cleanQuery && !queryVariants.includes(strippedPunctuation)) {
+            queryVariants.push(strippedPunctuation);
+        }
+
+        // Add hyphenated variant
+        const hyphenated = cleanQuery.replace(/\s+/g, '-');
+        if (hyphenated !== cleanQuery && !queryVariants.includes(hyphenated)) {
+            queryVariants.push(hyphenated);
+        }
+
+        const qWords = strippedPunctuation.split(/\s+/).filter(w => w.length > 1);
+        if (qWords.length >= 3) {
+            const first3 = qWords.slice(0, 3).join(' ');
+            if (!queryVariants.includes(first3)) queryVariants.push(first3);
+            const first2 = qWords.slice(0, 2).join(' ');
+            if (!queryVariants.includes(first2)) queryVariants.push(first2);
+        }
+
         if (!cleanQuery.includes(' ')) {
-            // Try common prefix cuts for manga titles (e.g. bluelock -> blue lock, sololeveling -> solo leveling)
             const splitCandidate = cleanQuery.replace(/(blue|solo|chain|fairy|tokyo|jujutsu|hunter|demon|spy|one|death|myhero|black|fire|world)(.+)/i, '$1 $2').trim();
             if (splitCandidate !== cleanQuery && !queryVariants.includes(splitCandidate)) {
                 queryVariants.push(splitCandidate);
             }
         }
 
-        const mangapillPromises = queryVariants.map(q => searchMangapill(q).catch(() => []));
+        // Fast & Lean Scraper Dispatching (Guard with 3000ms timeouts on cold search)
+        const primaryVariants = queryVariants.slice(0, 2);
 
-        const [mangapillVariantResults, divaRaw, madaraRaw, madaraAltRaw, templeRaw, privateRaw, tgIndexed] = await Promise.all([
+        const mangapillPromises = primaryVariants.map(q => withTimeout(searchMangapill(q).catch(() => []), 2800));
+        const manhwa18Promises = [withTimeout(searchManhwa18(cleanQuery).catch(() => []), 3000)];
+        const mangaBuddyPromises = [withTimeout(searchMangaBuddy(cleanQuery).catch(() => []), 3000)];
+        const royalRoadPromises = [withTimeout(searchRoyalRoad(cleanQuery).catch(() => []), 2800)];
+
+        if (primaryVariants.length > 1) {
+            manhwa18Promises.push(withTimeout(searchManhwa18(primaryVariants[1]).catch(() => []), 3000));
+            mangaBuddyPromises.push(withTimeout(searchMangaBuddy(primaryVariants[1]).catch(() => []), 3000));
+        }
+
+        const [
+            mangapillVariantResults, 
+            m18VariantResults,
+            mbVariantResults,
+            rrVariantResults
+        ] = await Promise.all([
             Promise.all(mangapillPromises),
-            searchDivaScans(cleanQuery).catch(() => []),
-            searchMadaraScans(cleanQuery).catch(() => []),
-            altQuery ? searchMadaraScans(altQuery).catch(() => []) : Promise.resolve([]),
-            searchTempleToons(cleanQuery).catch(() => []),
-            searchPrivateChannels(cleanQuery).catch(() => []),
-            searchTelegramIndex(cleanQuery).catch(() => [])
+            Promise.all(manhwa18Promises),
+            Promise.all(mangaBuddyPromises),
+            Promise.all(royalRoadPromises)
         ]);
 
         const mangapillRaw = [...instantIndexMatches, ...mangapillVariantResults.flat()];
+        const manhwa18Raw = m18VariantResults.flat();
+        const mangaBuddyRaw = mbVariantResults.flat();
+        const royalRoadRaw = rrVariantResults.flat();
 
         const candidateList = [];
-        const seenMangapill = new Set();
-        const seenDiva = new Set();
-        const seenMadara = new Set();
-        const seenTemple = new Set();
-        const seenTg = new Set();
+        // GLOBAL DEDUPLICATION: Normalize title across all scrapers to prevent duplicate 2x cards
+        const seenGlobalTitles = new Map();
+
+        function normalizeKey(str) {
+            if (!str) return '';
+            return str
+                .toLowerCase()
+                .replace(/\s*(?:manga|manhwa|webtoon|comic|novel|scanlation|scans|official)\s*$/i, '')
+                .replace(/\s+(?:vol(?:ume)?\.?\s*\d+|\d+)$/i, '')
+                .replace(/[^a-z0-9]/g, '');
+        }
+
+        function addCandidate(item, priorityWeight = 0) {
+            if (!item || !item.title) return;
+            
+            // Gather all normalized keys for this series (title + altTitles)
+            const allKeys = [];
+            const primaryKey = normalizeKey(item.title);
+            const rawKey = item.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (primaryKey) allKeys.push(primaryKey);
+            if (rawKey && !allKeys.includes(rawKey)) allKeys.push(rawKey);
+
+            if (item.altTitle) {
+                const alts = item.altTitle.split(/[,;/]+/).filter(Boolean);
+                for (const alt of alts) {
+                    const normAlt = normalizeKey(alt);
+                    const rawAlt = alt.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (normAlt && !allKeys.includes(normAlt)) allKeys.push(normAlt);
+                    if (rawAlt && !allKeys.includes(rawAlt)) allKeys.push(rawAlt);
+                }
+            }
+
+            if (allKeys.length === 0) return;
+
+            item._isDirectSearchMatch = true;
+            item._priorityWeight = priorityWeight;
+
+            // Check if any key exists in global index
+            let existing = null;
+            for (const key of allKeys) {
+                if (seenGlobalTitles.has(key)) {
+                    existing = seenGlobalTitles.get(key);
+                    break;
+                }
+            }
+
+            if (existing) {
+                // If new item has higher priority source (e.g. Mangapill 100 > MangaBuddy 90)
+                if (priorityWeight > (existing._priorityWeight || 0)) {
+                    // Retain existing image if new item is missing one
+                    if ((!item.image || item.image.includes('has-image')) && existing.image && !existing.image.includes('has-image')) {
+                        item.image = existing.image;
+                        item.cover = existing.cover;
+                    }
+                    // Ensure altTitle has both names
+                    if (!item.altTitle && existing.title && existing.title !== item.title) {
+                        item.altTitle = existing.title;
+                    }
+                    // Replace existing in list
+                    const idx = candidateList.findIndex(c => c === existing);
+                    if (idx !== -1) candidateList[idx] = item;
+                    // Point all keys to new winner
+                    for (const key of allKeys) seenGlobalTitles.set(key, item);
+                } else {
+                    // Existing item remains, upgrade its image / altTitle if missing
+                    if ((!existing.image || existing.image.includes('has-image')) && item.image && !item.image.includes('has-image')) {
+                        existing.image = item.image;
+                        existing.cover = item.cover;
+                    }
+                    if (!existing.altTitle && item.title && item.title !== existing.title) {
+                        existing.altTitle = item.title;
+                    }
+                    // Map new keys to existing
+                    for (const key of allKeys) seenGlobalTitles.set(key, existing);
+                }
+                return;
+            }
+
+            // New entry
+            for (const key of allKeys) seenGlobalTitles.set(key, item);
+            candidateList.push(item);
+        }
 
         // 1. Process Mangapill Series (1st Priority - High-Speed Direct Scans)
         for (const item of (mangapillRaw || [])) {
-            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenMangapill.has(normT)) continue;
-            seenMangapill.add(normT);
-            item._isDirectSearchMatch = true;
-            candidateList.push(item);
+            addCandidate(item, 100);
         }
 
-        // 2. Process DivaScans Series (1st/2nd Priority)
-        for (const item of (divaRaw || [])) {
-            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenDiva.has(normT)) continue;
-            seenDiva.add(normT);
-            item._isDirectSearchMatch = true;
-            candidateList.push(item);
+        // 2. Process Manhwa18 Series (Priority 96 for Full +18 Color Manhwa Archives)
+        for (const item of (manhwa18Raw || [])) {
+            addCandidate(item, 96);
         }
 
-        // 3. Process MadaraScans Series (2nd Priority)
-        const combinedMadara = [...(madaraRaw || []), ...(madaraAltRaw || [])];
-        for (const item of combinedMadara) {
-            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenMadara.has(normT)) continue;
-            seenMadara.add(normT);
-            item._isDirectSearchMatch = true;
-            candidateList.push(item);
+        // 3. Process MangaBuddy Series (High Priority Full Catalog)
+        for (const item of (mangaBuddyRaw || [])) {
+            addCandidate(item, 90);
         }
 
-        // 4. Process TempleToons Series (2nd/3rd Priority)
-        for (const item of (templeRaw || [])) {
-            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenTemple.has(normT)) continue;
-            seenTemple.add(normT);
-            item._isDirectSearchMatch = true;
-            candidateList.push(item);
-        }
-
-        // 5. Process Telegram Main Channel Results (Lowest Favor / Fallback)
-        for (const item of (privateRaw || [])) {
-            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenTg.has(normT)) continue;
-            seenTg.add(normT);
-
-            const encodedHash = item.inviteHash ? encodeURIComponent(item.inviteHash) : 'nohash';
-            const coverImg = await fetchRealCoverImage(item.title).catch(() => null);
-
-            candidateList.push({
-                id: `private-tg-${encodedHash}-${item.messageId}`,
-                title: item.title,
-                author: 'Manga / Manhwa',
-                cover: coverImg ? 'has-image teal' : 'midnight',
-                image: coverImg,
-                lines: item.title.split(' ').slice(0, 3).join('<br>'),
-                genre: 'Manga',
-                mood: 'Exclusive',
-                pages: 87,
-                rating: 5,
-                synopsis: (item.text || '').substring(0, 200),
-                hasEpub: true,
-                privateInviteHash: item.inviteHash,
-                _isDirectSearchMatch: true
-            });
-        }
-
-        // 6. Process Telegram Alternative Channels (Lowest Favor / Fallback)
-        for (const item of (tgIndexed || [])) {
-            const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (seenTg.has(normT)) continue;
-            seenTg.add(normT);
-            if (!item.image) {
-                item.image = await fetchRealCoverImage(item.title).catch(() => null);
-                if (item.image) item.cover = 'has-image teal';
-            }
-            item._isDirectSearchMatch = true;
-            candidateList.push(item);
+        // 5. Process RoyalRoad Web Novels (1st Priority for Web Novels)
+        for (const item of (royalRoadRaw || [])) {
+            item.format = item.format || 'Web Novel';
+            item.genre = item.genre || 'Web Novel';
+            addCandidate(item, 80);
         }
 
         // Score and rank all candidate results hierarchically
         if (candidateList.length > 0) {
+            // Smart Volume Collapsing: e.g. "My Dress-Up Darling 13" -> "My Dress-Up Darling"
+            const rootTitles = new Set();
+            for (const item of candidateList) {
+                const rootT = (item.title || '')
+                    .replace(/\s+(?:vol(?:ume)?\.?\s*\d+|\d+)$/i, '')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]/g, '');
+                if (rootT) rootTitles.add(rootT);
+            }
+
             const scored = candidateList
+                .filter(item => {
+                    const t = (item.title || '');
+                    const hasVolSuffix = /\s+(?:vol(?:ume)?\.?\s*\d+|\d+)$/i.test(t);
+                    if (hasVolSuffix) {
+                        const rootT = t.replace(/\s+(?:vol(?:ume)?\.?\s*\d+|\d+)$/i, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        // If root master title also exists without the volume number, drop the fragmented volume card
+                        const hasMaster = candidateList.some(other => {
+                            if (other === item) return false;
+                            const otherNorm = (other.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                            return otherNorm === rootT;
+                        });
+                        if (hasMaster) return false;
+                    }
+                    return true;
+                })
                 .map(item => {
                     let baseScore = calculateSearchRelevanceScore(cleanQuery, item);
-                    let score = baseScore;
-                    // Source tie-breakers: Direct Web Scrapers (Top) >>> Telegram (Lowest/Fallback)
-                    if (baseScore >= 3000) {
-                        if (item.id.startsWith('mangapill-')) score += 700;
-                        else if (item.id.startsWith('divascans-')) score += 650;
-                        else if (item.id.startsWith('madara-')) score += 600;
-                        else if (item.id.startsWith('temple-')) score += 550;
-                        else if (item.id.startsWith('private-tg-')) score += 50;  // Demoted to bottom
-                        else if (item.id.startsWith('telegram-')) score += 20;    // Demoted to bottom
-                    }
+                    let score = baseScore + (item._priorityWeight || 0);
                     return { item, score, baseScore };
                 })
-                .filter(r => r.baseScore > 200)
+                .filter(r => r.score > 2500)   // Only genuinely relevant titles
                 .sort((a, b) => b.score - a.score)
                 .map(r => r.item);
 
             if (scored.length > 0) {
-                return res.json(scored.slice(0, 20));
+                const finalResults = scored.slice(0, 20);
+                GLOBAL_SEARCH_CACHE.set(qLower, { results: finalResults, timestamp: Date.now() });
+                return res.json(finalResults);
             }
         }
 
-        // Fallback to Novels / Gutenberg / iTunes / Google Books if not a manga
-        const [webnovelResults, itunesResp, googleBooksResp] = await Promise.all([
-            searchRoyalRoad(cleanQuery).catch(() => []),
-            axios.get(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanQuery)}&entity=ebook&limit=5`, { timeout: 2500 }).catch(() => ({ data: { results: [] } })),
-            axios.get(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(cleanQuery)}&maxResults=5`, { timeout: 2500 }).catch(() => ({ data: { items: [] } }))
-        ]);
-
-        const seenNovelTitles = new Set();
-        for (const w of (webnovelResults || [])) {
-            const normT = (w.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (!seenNovelTitles.has(normT)) {
-                seenNovelTitles.add(normT);
-                candidateList.push(w);
-            }
-        }
-
-        for (const book of (itunesResp.data.results || [])) {
-            const title = book.trackName || cleanQuery;
-            const normT = title.toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (!seenNovelTitles.has(normT)) {
-                seenNovelTitles.add(normT);
-                let coverUrl = book.artworkUrl100 ? book.artworkUrl100.replace('100x100bb', '600x600bb') : null;
-                const releaseYear = book.releaseDate ? book.releaseDate.slice(0, 4) : '';
-                candidateList.push({
-                    id: `itunes-${book.trackId}-${cleanQuery.replace(/[^a-z0-9]/g, '-').slice(0, 30)}`,
-                    title,
-                    author: book.artistName || 'Author',
-                    year: releaseYear,
-                    cover: coverUrl ? 'has-image navy' : 'navy',
-                    image: coverUrl,
-                    lines: title.split(' ').slice(0, 3).join('<br>'),
-                    genre: book.genres?.[0] || 'Novel',
-                    mood: 'Classic',
-                    pages: 300,
-                    rating: 5,
-                    synopsis: (book.description || '').replace(/<[^>]*>?/gm, '').substring(0, 200),
-                    hasEpub: true
-                });
-            }
-        }
-
-        if (googleBooksResp && googleBooksResp.data && Array.isArray(googleBooksResp.data.items)) {
-            for (const item of googleBooksResp.data.items) {
-                const info = item.volumeInfo || {};
-                const title = info.title || cleanQuery;
-                const normT = title.toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (!seenNovelTitles.has(normT)) {
-                    seenNovelTitles.add(normT);
-                    const author = (info.authors && info.authors.length) ? info.authors.join(', ') : 'Author';
-                    const coverUrl = info.imageLinks ? (info.imageLinks.thumbnail || info.imageLinks.smallThumbnail || '').replace('http://', 'https://') : null;
-                    const releaseYear = info.publishedDate ? info.publishedDate.slice(0, 4) : '';
-                    candidateList.push({
-                        id: `gbook-${item.id}-${cleanQuery.replace(/[^a-z0-9]/g, '-').slice(0, 30)}`,
-                        title,
-                        author,
-                        year: releaseYear,
-                        cover: coverUrl ? 'has-image navy' : 'navy',
-                        image: coverUrl,
-                        lines: title.split(' ').slice(0, 3).join('<br>'),
-                        genre: (info.categories && info.categories[0]) || 'Book',
-                        mood: 'Classic',
-                        pages: info.pageCount || 300,
-                        rating: info.averageRating || 5,
-                        synopsis: info.description ? info.description.slice(0, 300) : 'A volume from the digital catalog.',
-                        hasEpub: true
-                    });
+        // Fallback for Web Novels on Royal Road if no manga matched
+        try {
+            const webnovelResults = await searchRoyalRoad(cleanQuery).catch(() => []);
+            if (webnovelResults && webnovelResults.length > 0) {
+                const scoredNovels = webnovelResults
+                    .map(item => ({ item, score: calculateSearchRelevanceScore(cleanQuery, item) }))
+                    .filter(r => r.score > 2000)
+                    .sort((a, b) => b.score - a.score)
+                    .map(r => r.item);
+                if (scoredNovels.length > 0) {
+                    const finalResults = scoredNovels.slice(0, 15);
+                    GLOBAL_SEARCH_CACHE.set(qLower, { results: finalResults, timestamp: Date.now() });
+                    return res.json(finalResults);
                 }
             }
-        }
+        } catch (e) {}
 
-        const scoredFallback = candidateList
-            .map(item => ({ item, score: calculateSearchRelevanceScore(cleanQuery, item) }))
-            .filter(r => r.score > 0)
-            .sort((a, b) => b.score - a.score)
-            .map(r => r.item);
-
-        return res.json(scoredFallback.slice(0, 15));
+        GLOBAL_SEARCH_CACHE.set(qLower, { results: [], timestamp: Date.now() });
+        return res.json([]);
     } catch (err) {
         console.error('[SEARCH] Error:', err.message);
         res.status(500).json([]);
@@ -551,94 +661,70 @@ app.get('/api/books/:id/chapters', async (req, res) => {
 
     const getUniversalChapters = require('./universalNovelEngine');
     try {
-        const isManga = id.startsWith('telegram-') || id.startsWith('tg-') ||
-                        id.startsWith('private-tg-') || id.startsWith('webtoon-') ||
-                        id.startsWith('mangapill-') || id.startsWith('divascans-') || id.startsWith('madara-') || id.startsWith('temple-') ||
+        const isManga = id.startsWith('mangapill-') || id.startsWith('mangabuddy-') || id.startsWith('manhwa18-') ||
                         /manga|manhwa|manhua|webtoon|comic|spearman|resurrection|mount hua|solo leveling|jujutsu|demon slayer|chainsaw|blue lock|one piece|naruto|bleach|hero|leveling|assassin|swordmaster|borderland|dungeon|delicious/i.test(cleanQuery);
 
-        if (isManga || id.startsWith('mangapill-') || id.startsWith('private-tg-') || id.startsWith('telegram-') || id.startsWith('madara-') || id.startsWith('divascans-') || id.startsWith('temple-')) {
+        // --- ROYAL ROAD WEB NOVEL HANDLER ---
+        if (id.startsWith('royalroad-')) {
+            const fictionId = id.replace(/^royalroad-/, '');
+            const { getRoyalRoadChapters } = require('./royalroad');
+            const rrChapters = await getRoyalRoadChapters(fictionId).catch(() => []);
+            if (rrChapters && rrChapters.length > 0) {
+                console.log(`[CHAPTERS] RoyalRoad Engine served ${rrChapters.length} genuine web novel chapters for fiction "${fictionId}"`);
+                const payload = { chapters: rrChapters, type: 'webnovel', format: 'Web Novel', source: 'RoyalRoadEngine' };
+                MEMORY_CACHE.chapters.set(cacheKey, payload);
+                return res.json(payload);
+            }
+        }
+
+        // ── 0.1 GOD-LEVEL ASSASSIN DEDICATED OFFLINE & STREAMING ENGINE ──
+        const isGodLevelAssassin = id.includes('god-level-assassin') || id.includes('god_level_assassin') ||
+                                  (cleanQuery.toLowerCase().includes('god') && cleanQuery.toLowerCase().includes('assassin')) ||
+                                  (cleanQuery.toLowerCase().includes('shadow') && (cleanQuery.toLowerCase().includes('assassin') || cleanQuery.toLowerCase().includes('god')));
+        if (isGodLevelAssassin) {
+            const { getGodLevelAssassinChapters } = require('./godLevelAssassinManhwa');
+            const chapters = getGodLevelAssassinChapters(133);
+            console.log(`[CHAPTERS] Served ${chapters.length} chapters (offline downloaded + full list) for God-level Assassin`);
+            const payload = { chapters, type: 'manga', format: 'Manga & Manhwa', source: 'RealImageEngine' };
+            MEMORY_CACHE.chapters.set(cacheKey, payload);
+            return res.json(payload);
+        }
+
+        if (isManga || id.startsWith('mangapill-') || id.startsWith('mangabuddy-') || id.startsWith('manhwa18-')) {
+            // --- 0.3 MANGABUDDY HANDLER ---
+            if (id.startsWith('mangabuddy-')) {
+                const { fetchMangaBuddyChapters } = require('./mangabuddy');
+                const mbChapters = await fetchMangaBuddyChapters(id);
+                if (mbChapters && mbChapters.length > 0) {
+                    console.log(`[CHAPTERS] MangaBuddy Engine served ${mbChapters.length} genuine chapters for "${id}"`);
+                    const payload = { chapters: mbChapters, type: 'manga', format: 'Manga & Manhwa', source: 'MangaBuddyEngine' };
+                    MEMORY_CACHE.chapters.set(cacheKey, payload);
+                    return res.json(payload);
+                }
+            }
+
             // --- 0.4 MANGAPILL HANDLER ---
             if (id.startsWith('mangapill-')) {
                 const { fetchMangapillChapters } = require('./mangapill');
                 const mangapillChapters = await fetchMangapillChapters(id);
                 if (mangapillChapters && mangapillChapters.length > 0) {
                     console.log(`[CHAPTERS] Mangapill Engine served ${mangapillChapters.length} genuine chapters for "${id}"`);
-                    const payload = { chapters: mangapillChapters, type: 'manga', source: 'MangapillEngine' };
+                    const payload = { chapters: mangapillChapters, type: 'manga', format: 'Manga & Manhwa', source: 'MangapillEngine' };
                     MEMORY_CACHE.chapters.set(cacheKey, payload);
                     return res.json(payload);
                 }
             }
 
-            // --- 0. PRIVATE TELEGRAM (Manga Horizon) RESULTS ---
-            // Manga Horizon posts are ANNOUNCEMENT CARDS with inline buttons.
-            // The button contains an invite link to the ACTUAL per-title reading channel.
-            // We extract that invite hash from the encoded ID and join the reading channel.
-            if (id.startsWith('private-tg-')) {
-                // ID format: private-tg-{encodedInviteHash}-{messageId}
-                const hashMatch = id.match(/^private-tg-([^-]+(?:-[^-]+)*)-\d+$/);
-                const encodedHash = hashMatch?.[1];
-                const inviteHash = encodedHash && encodedHash !== 'nohash' ? decodeURIComponent(encodedHash) : null;
-
-                if (inviteHash) {
-                    console.log(`[CHAPTERS] Fetching reading channel chapters for "${cleanQuery}" via invite hash...`);
-                    const tgChapters = await getReadingChannelChapters(inviteHash, cleanQuery).catch(() => []);
-                    if (tgChapters && tgChapters.length > 0) {
-                        console.log(`[CHAPTERS] Reading channel served ${tgChapters.length} genuine chapters for "${cleanQuery}"`);
-                        const payload = { chapters: tgChapters, type: 'manga', source: 'PrivateTelegramReading' };
-                        MEMORY_CACHE.chapters.set(cacheKey, payload);
-                        return res.json(payload);
-                    }
-                }
-                console.log(`[CHAPTERS] No invite hash or empty reading channel for "${cleanQuery}" — falling through to scan engines`);
-            }
-
-            // --- 0.5 DIVASCANS HANDLER ---
-            if (id.startsWith('divascans-')) {
-                const { fetchDivaScansChapters } = require('./divascans');
-                const divaChapters = await fetchDivaScansChapters(id);
-                if (divaChapters && divaChapters.length > 0) {
-                    console.log(`[CHAPTERS] DivaScans Engine served ${divaChapters.length} genuine chapters for "${id}"`);
-                    const payload = { chapters: divaChapters, type: 'manga', source: 'DivaScansEngine' };
+            // --- 0.5 MANHWA18 HANDLER ---
+            if (id.startsWith('manhwa18-')) {
+                const { fetchManhwa18Chapters } = require('./manhwa18');
+                const m18Chapters = await fetchManhwa18Chapters(id);
+                if (m18Chapters && m18Chapters.length > 0) {
+                    console.log(`[CHAPTERS] Manhwa18 Engine served ${m18Chapters.length} genuine chapters for "${id}"`);
+                    const payload = { chapters: m18Chapters, type: 'manga', format: 'Manga & Manhwa', source: 'Manhwa18Engine' };
                     MEMORY_CACHE.chapters.set(cacheKey, payload);
                     return res.json(payload);
                 }
-            }
-
-            // --- 0.6 MADARASCANS HANDLER ---
-            if (id.startsWith('madara-')) {
-                const { fetchMadaraScansChapters } = require('./madarascans');
-                const madaraChapters = await fetchMadaraScansChapters(id);
-                if (madaraChapters && madaraChapters.length > 0) {
-                    console.log(`[CHAPTERS] MadaraScans Engine served ${madaraChapters.length} genuine chapters for "${id}"`);
-                    const payload = { chapters: madaraChapters, type: 'manga', source: 'MadaraScansEngine' };
-                    MEMORY_CACHE.chapters.set(cacheKey, payload);
-                    return res.json(payload);
-                }
-            }
-
-            // --- 0.7 TEMPLETOONS HANDLER ---
-            if (id.startsWith('temple-')) {
-                const { fetchTempleToonsChapters } = require('./templetoons');
-                const templeChapters = await fetchTempleToonsChapters(id);
-                if (templeChapters && templeChapters.length > 0) {
-                    console.log(`[CHAPTERS] TempleToons Engine served ${templeChapters.length} genuine chapters for "${id}"`);
-                    const payload = { chapters: templeChapters, type: 'manga', source: 'TempleToonsEngine' };
-                    MEMORY_CACHE.chapters.set(cacheKey, payload);
-                    return res.json(payload);
-                }
-            }
-
-            // ── GOD-LEVEL ASSASSIN: Only match exact series queries (never random titles with words 'god' or 'assassin')
-            const qLow = cleanQuery.toLowerCase();
-            const isExactAssassin = (qLow.includes('god') && qLow.includes('assassin')) ||
-                                    (qLow.includes('shadow') && (qLow.includes('assassin') || qLow.includes('god')));
-            if (isExactAssassin) {
-                const { getGodLevelAssassinChapters } = require('./godLevelAssassinManhwa');
-                const chapters = getGodLevelAssassinChapters();
-                console.log(`[CHAPTERS] Served ${chapters.length} chapters (real panels + TG links) for God-level Assassin`);
-                const payload = { chapters, type: 'manga', source: 'RealImageEngine' };
-                MEMORY_CACHE.chapters.set(cacheKey, payload);
-                return res.json(payload);
             }
 
             // 1. Check RAM Telegram index & per-title Telegram channels for instant chapter list (Top Priority)
@@ -657,36 +743,6 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             if (masterManhwaChapters && masterManhwaChapters.length > 0) {
                 console.log(`[CHAPTERS] Master Manhwa Engine served ${masterManhwaChapters.length} genuine visual chapters for "${cleanQuery}"`);
                 const payload = { chapters: masterManhwaChapters, type: 'manga', source: 'MasterManhwaEngine' };
-                MEMORY_CACHE.chapters.set(cacheKey, payload);
-                return res.json(payload);
-            }
-
-
-
-            // 4. Live Telegram MTProto / Scraper fallback
-            const { getTelegramChaptersAndPanels } = require('./telegram');
-            const tgChapters = await getTelegramChaptersAndPanels(cleanQuery).catch(() => null);
-
-            if (tgChapters && tgChapters.length > 0) {
-                console.log(`[CHAPTERS] Telegram live found ${tgChapters.length} chapters for "${cleanQuery}"`);
-
-                const chapters = tgChapters.map(ch => ({
-                    title: ch.title,
-                    chapterId: `tg-ch-${ch.chapterNum}-${encodeURIComponent(cleanQuery)}`,
-                    html: ch.html
-                }));
-
-                const payload = { chapters, type: 'manga', source: 'TelegramOnly' };
-                MEMORY_CACHE.chapters.set(cacheKey, payload);
-                return res.json(payload);
-            }
-
-            // 5. ── UNIVERSAL TELEGRAM PDF COMIC ENGINE (Checks all downloaded manga PDFs) ──
-            const { buildUniversalTelegramChapters } = require('./universalTelegramPdfEngine');
-            const universalPdfChapters = await buildUniversalTelegramChapters(cleanQuery).catch(() => null);
-            if (universalPdfChapters && universalPdfChapters.length > 0 && universalPdfChapters.some(c => c.html && c.html.includes('<img'))) {
-                console.log(`[CHAPTERS] Universal PDF Engine served ${universalPdfChapters.length} real comic chapters for "${cleanQuery}"`);
-                const payload = { chapters: universalPdfChapters, type: 'manga', source: 'UniversalTelegramPdfEngine' };
                 MEMORY_CACHE.chapters.set(cacheKey, payload);
                 return res.json(payload);
             }
@@ -900,30 +956,51 @@ app.get('/api/manga/chapter/:chapterId', async (req, res) => {
             }
         }
 
-        // 1.5 DivaScans Direct Chapter Trigger (diva-ch-{slug}-{chNum})
-        if (chapterId.startsWith('diva-ch-')) {
-            const { getDivaScansChapterImages } = require('./divascans');
-            const divaHtml = await getDivaScansChapterImages(chapterId);
-            if (divaHtml) {
-                return res.json({ html: divaHtml });
+        // 2.8 MangaBuddy Direct Chapter Trigger (mb-{slug}-ch-{chNum} or mangabuddy-ch-{encodedUrl})
+        if (chapterId.startsWith('mb-') || chapterId.startsWith('mangabuddy-')) {
+            const { getMangaBuddyChapterPanels, fetchMangaBuddyChapters } = require('./mangabuddy');
+            let chapterUrl = null;
+            if (chapterId.startsWith('mangabuddy-ch-')) {
+                chapterUrl = decodeURIComponent(chapterId.replace('mangabuddy-ch-', ''));
+            } else {
+                const m = chapterId.match(/^mb-(.+)-ch-([\d\.]+)$/);
+                if (m) {
+                    const slug = m[1];
+                    const chNum = parseFloat(m[2]);
+                    const chapters = await fetchMangaBuddyChapters(`mangabuddy-${slug}`);
+                    const targetCh = chapters.find(c => c.chNum === chNum || String(c.chNum) === String(chNum));
+                    if (targetCh) chapterUrl = targetCh.url;
+                }
+            }
+            if (chapterUrl) {
+                const panelsHtml = await getMangaBuddyChapterPanels(chapterUrl);
+                if (panelsHtml) {
+                    return res.json({ html: panelsHtml });
+                }
             }
         }
 
-        // 2. MadaraScans Direct Chapter Trigger (madara-ch-{encodedUrl})
-        if (chapterId.startsWith('madara-ch-')) {
-            const { getMadaraScansChapterImages } = require('./madarascans');
-            const madaraHtml = await getMadaraScansChapterImages(chapterId);
-            if (madaraHtml) {
-                return res.json({ html: madaraHtml });
+        // 2.9 Manhwa18 Direct Chapter Trigger (m18-{slug}-ch-{chNum} or manhwa18-ch-{encodedUrl})
+        if (chapterId.startsWith('m18-') || chapterId.startsWith('manhwa18-')) {
+            const { getManhwa18ChapterPanels, fetchManhwa18Chapters } = require('./manhwa18');
+            let chapterUrl = null;
+            if (chapterId.startsWith('manhwa18-ch-')) {
+                chapterUrl = decodeURIComponent(chapterId.replace('manhwa18-ch-', ''));
+            } else {
+                const m = chapterId.match(/^m18-(.+)-ch-([\d\.]+)$/);
+                if (m) {
+                    const slug = m[1];
+                    const chNum = parseFloat(m[2]);
+                    const chapters = await fetchManhwa18Chapters(`manhwa18-${slug}`);
+                    const targetCh = chapters.find(c => c.chNum === chNum || String(c.chNum) === String(chNum));
+                    if (targetCh) chapterUrl = targetCh.url;
+                }
             }
-        }
-
-        // 2.5 TempleToons Direct Chapter Trigger (temple-ch-{encodedKey})
-        if (chapterId.startsWith('temple-ch-')) {
-            const { getTempleToonsChapterImages } = require('./templetoons');
-            const templeHtml = await getTempleToonsChapterImages(chapterId);
-            if (templeHtml) {
-                return res.json({ html: templeHtml });
+            if (chapterUrl) {
+                const panelsHtml = await getManhwa18ChapterPanels(chapterUrl);
+                if (panelsHtml) {
+                    return res.json({ html: panelsHtml });
+                }
             }
         }
 
@@ -997,11 +1074,10 @@ app.get('/api/proxy/image', async (req, res) => {
             return res.send(cached.buffer);
         }
 
-        let referer = 'https://divascans.org/';
+        let referer = 'https://manhwa18.cc/';
         if (targetUrl.includes('mangapill') || targetUrl.includes('readdetectiveconan')) referer = 'https://mangapill.com/';
-        else if (targetUrl.includes('divascans')) referer = 'https://divascans.org/';
-        else if (targetUrl.includes('madarascans')) referer = 'https://madarascans.org/';
-        else if (targetUrl.includes('templetoons')) referer = 'https://templetoons.com/';
+        else if (targetUrl.includes('manhwa18')) referer = 'https://manhwa18.cc/';
+        else if (targetUrl.includes('mangabuddy') || targetUrl.includes('love4awalk') || targetUrl.includes('mbcdn')) referer = 'https://mangabuddy1.co.uk/';
         else if (targetUrl.includes('mangakatana')) referer = 'https://mangakatana.com/';
         else if (targetUrl.includes('manganato') || targetUrl.includes('mkklcdn')) referer = 'https://chapmanganato.to/';
         else if (targetUrl.includes('asura')) referer = 'https://asuracomic.net/';

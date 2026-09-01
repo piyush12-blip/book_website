@@ -30,12 +30,12 @@ function buildPanelHtml(chNum, files, usedDir, title) {
 
     return `
         <div style="background:#000;min-height:100vh;padding:0;margin:0 0 4rem 0;">
-            <div style="background:#0a0e17;padding:1.25rem 1.5rem;text-align:center;border-bottom:1px solid #1e293b;position:sticky;top:0;z-index:30;box-shadow:0 4px 25px rgba(0,0,0,0.9);">
-                <div style="display:inline-block;background:#0284c7;color:#fff;padding:4px 14px;border-radius:12px;font-size:0.75rem;font-weight:800;letter-spacing:0.5px;margin-bottom:0.4rem;">
+            <div style="background:#0a0e17;padding:1rem 1.25rem;text-align:center;border-bottom:1px solid #1e293b;position:relative;box-shadow:0 4px 20px rgba(0,0,0,0.5);margin-bottom:0.5rem;">
+                <div style="display:inline-block;background:#0284c7;color:#fff;padding:3px 12px;border-radius:10px;font-size:0.72rem;font-weight:800;letter-spacing:0.5px;margin-bottom:0.3rem;">
                     OFFICIAL MANHWA • CHAPTER ${chNum}
                 </div>
-                <h2 style="color:#f8fafc;font-size:1.4rem;margin:0.4rem 0 0 0;font-weight:800;">${title}</h2>
-                <span style="color:#64748b;font-size:0.8rem;">${files.length} Full HD Pages</span>
+                <h2 style="color:#f8fafc;font-size:1.2rem;margin:0.25rem 0 0 0;font-weight:800;">${title}</h2>
+                <span style="color:#64748b;font-size:0.75rem;">${files.length} Full HD Pages</span>
             </div>
             <div style="display:flex;flex-direction:column;align-items:center;background:#000;gap:0;padding:0;margin:0;width:100%;">
                 ${panelImgs.join('\n')}

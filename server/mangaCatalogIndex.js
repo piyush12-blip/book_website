@@ -188,13 +188,13 @@ const POPULAR_MANGA_CATALOG = [
         synopsis: 'Ichigo Kurosaki gains the powers of a Soul Reaper and must protect the living and the spirit world from malicious spirits called Hollows.'
     },
     {
-        id: 'mangapill-61-berserk',
+        id: 'mangapill-1-berserk',
         title: 'Berserk',
         altTitle: 'The Black Swordsman',
         author: 'Miura Kentaro',
         slug: 'berserk',
-        mangaId: '61',
-        coverImage: 'https://cdn.readdetectiveconan.com/file/mangapill/i/61.jpeg',
+        mangaId: '1',
+        coverImage: 'https://cdn.readdetectiveconan.com/file/mangapill/i/1.jpeg',
         genre: 'MANGA',
         status: 'Publishing',
         year: '1989',
@@ -240,17 +240,30 @@ const POPULAR_MANGA_CATALOG = [
         synopsis: 'A master spy must construct a fake family for a mission, unknowingly adopting a telepathic daughter and marrying a professional assassin.'
     },
     {
-        id: 'mangapill-5353-tokyo-revengers',
+        id: 'mangapill-5085-tokyo-revengers',
         title: 'Tokyo Revengers',
-        altTitle: 'Tokyo Manji Gang',
+        altTitle: 'Tokyo Manji Gang, Tokyo Manji Revengers',
         author: 'Wakui Ken',
         slug: 'tokyo-revengers',
-        mangaId: '5353',
-        coverImage: 'https://cdn.readdetectiveconan.com/file/mangapill/i/5353.jpeg',
+        mangaId: '5085',
+        coverImage: 'https://cdn.readdetectiveconan.com/file/mangapill/i/5085.jpeg',
         genre: 'MANGA',
         status: 'Finished',
         year: '2017',
         synopsis: 'Takemichi Hanagaki travels 12 years back in time to his middle school years to save his ex-girlfriend Hinata from being murdered by the Tokyo Manji Gang.'
+    },
+    {
+        id: 'mangapill-4080-sono-bisque-doll-wa-koi-wo-suru',
+        title: 'Sono Bisque Doll wa Koi wo Suru',
+        altTitle: 'My Dress-Up Darling',
+        author: 'Fukuda Shinichi',
+        slug: 'sono-bisque-doll-wa-koi-wo-suru',
+        mangaId: '4080',
+        coverImage: 'https://cdn.readdetectiveconan.com/file/mangapill/i/4080.jpeg',
+        genre: 'MANGA',
+        status: 'Finished',
+        year: '2018',
+        synopsis: 'Traumatized by a childhood incident, doll-artisan hopeful Wakana Gojou passes his days as a loner until popular girl Marin Kitagawa discovers his secret talent.'
     },
     {
         id: 'mangapill-4081-vinland-saga',

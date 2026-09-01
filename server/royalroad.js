@@ -93,31 +93,44 @@ async function getRoyalRoadChapters(fictionId) {
             return [];
         }
 
-        console.log(`[ROYALROAD] Found ${chapterLinks.length} total chapters for fiction ${fictionId}, fetching all...`);
+        console.log(`[ROYALROAD] Found ${chapterLinks.length} total chapters for fiction ${fictionId}, preparing immediate response...`);
         
-        // Fetch ALL chapter contents in parallel batches of 5
-        const chapters = [];
-        const batchSize = 5;
-        for (let i = 0; i < chapterLinks.length; i += batchSize) {
-            const batch = chapterLinks.slice(i, i + batchSize);
-            const promises = batch.map(link => 
-                axios.get(link.url, { headers: UA, timeout: 8000 })
-                    .then(cr => {
-                        const $c = cheerio.load(cr.data);
-                        let content = $c('.chapter-content').html() || '';
-                        content = content.replace(/<script[\s\S]*?<\/script>/gi, '');
-                        content = content.replace(/<style[\s\S]*?<\/style>/gi, '');
-                        if (content.length > 50) {
-                            return { title: link.title, html: content };
-                        }
-                        return null;
-                    })
-                    .catch(e => null)
-            );
+        // 1. Fetch first 5 chapters immediately for instant reading (<1s)
+        const initialBatch = chapterLinks.slice(0, 5);
+        const initialPromises = initialBatch.map((link, idx) => 
+            axios.get(link.url, { headers: UA, timeout: 6000 })
+                .then(cr => {
+                    const $c = cheerio.load(cr.data);
+                    let content = $c('.chapter-content').html() || '';
+                    content = content.replace(/<script[\s\S]*?<\/script>/gi, '');
+                    content = content.replace(/<style[\s\S]*?<\/style>/gi, '');
+                    return { title: link.title, url: link.url, html: content };
+                })
+                .catch(() => null)
+        );
 
-            const batchResults = await Promise.all(promises);
-            batchResults.forEach(res => { if (res) chapters.push(res); });
-        }
+        const initialResults = await Promise.all(initialPromises);
+
+        const chapters = chapterLinks.map((link, i) => {
+            const fetched = initialResults[i];
+            let htmlContent = '';
+            if (fetched && fetched.html) {
+                htmlContent = fetched.html;
+            } else {
+                htmlContent = `<div class="lazy-rr-trigger" data-url="${encodeURIComponent(link.url)}" style="background:#111827;padding:1.5rem;border-radius:8px;margin:2rem 0;text-align:center;border:1px solid #374151;">` +
+                    `<h3 style="color:#f3f4f6;margin:0 0 0.5rem 0;">${link.title}</h3>` +
+                    `<p style="color:#9ca3af;font-size:0.9rem;">Reading online from Royal Road. Click to load chapter text.</p>` +
+                    `<a href="${link.url}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#3b82f6;color:#fff;padding:8px 18px;border-radius:6px;font-size:0.85rem;font-weight:700;text-decoration:none;margin-top:0.5rem;">Read Chapter on Royal Road ↗</a>` +
+                    `</div>`;
+            }
+
+            return {
+                title: link.title,
+                chapterId: `rr-ch-${fictionId}-${i+1}`,
+                url: link.url,
+                html: htmlContent
+            };
+        });
 
         return chapters;
     } catch (err) {

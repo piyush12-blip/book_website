@@ -101,10 +101,8 @@ function buildStealthHeaders(targetUrl, type = 'html', customReferer = null) {
         if (u.hostname.includes('mangapill') || u.hostname.includes('readdetectiveconan')) referer = 'https://mangapill.com/';
         else if (u.hostname.includes('wuxiaworld')) referer = 'https://wuxiaworld.eu/';
         else if (u.hostname.includes('royalroad')) referer = 'https://www.royalroad.com/';
-        else if (u.hostname.includes('divascans')) referer = 'https://divascans.org/';
-        else if (u.hostname.includes('madarascans')) referer = 'https://madarascans.org/';
-        else if (u.hostname.includes('templetoons')) referer = 'https://templetoons.com/';
-        else if (u.hostname.includes('cmzcdn') || u.hostname.includes('mangabuddy')) referer = 'https://mangabuddy.com/';
+        else if (u.hostname.includes('manhwa18')) referer = 'https://manhwa18.cc/';
+        else if (u.hostname.includes('cmzcdn') || u.hostname.includes('mangabuddy') || u.hostname.includes('love4awalk')) referer = 'https://mangabuddy1.co.uk/';
         else referer = `${u.protocol}//${u.hostname}/`;
     }
 

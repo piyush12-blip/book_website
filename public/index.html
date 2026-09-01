@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=20260801" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
 </head>
 <body>
   <main class="bibliotheque" aria-label="Bibliothèque book reading application homepage">
@@ -329,8 +330,17 @@
       <button class="manga-pill-btn" data-action="next-chapter-btn" title="Next Chapter" aria-label="Next Chapter">›</button>
     </div>
 
-    <!-- Dedicated Side Control Bar (All Features Visible in Blank Margin) -->
+    <!-- Dedicated Side Control Bar (Collapsible with Toggle) -->
+    <button class="reader-side-rail-toggle" id="reader-side-rail-toggle" title="Hide/Show Controls (H)" aria-label="Toggle Controls">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
     <aside class="reader-side-rail" id="reader-side-rail" aria-label="Reading controls">
+      <!-- Top Rail Toggle Header -->
+      <div class="side-rail-head">
+        <span class="side-rail-title">Tools</span>
+        <button class="side-rail-close-btn" data-action="toggle-side-rail" title="Hide Tools Panel">✕</button>
+      </div>
+
       <!-- Section 1: Navigation -->
       <div class="side-rail-group">
         <button class="side-rail-btn" data-action="back-to-detail" title="Back to Details">

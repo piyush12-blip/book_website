@@ -72,10 +72,10 @@ const book = id => {
   let found = BOOKS.find(b => b.id === id) || (state.cachedBooks && state.cachedBooks[id]);
   if (found) return found;
 
-  const isManga = id.startsWith('madara-') || id.startsWith('divascans-') || id.startsWith('telegram-') || id.startsWith('private-tg-');
+  const isManga = id.startsWith('manhwa18-') || id.startsWith('mangabuddy-') || id.startsWith('mangapill-') || id.startsWith('telegram-') || id.startsWith('private-tg-');
   const isWebnovel = id.startsWith('royalroad-');
 
-  let rawClean = id.replace(/^(itunes|madara|royalroad|divascans|telegram|private-tg)-/, '')
+  let rawClean = id.replace(/^(itunes|manhwa18|mangabuddy|mangapill|royalroad|telegram|private-tg)-/, '')
                     .replace(/^\d+[-_\s]*/, '')
                     .replace(/:\s*(reese's book club|oprah's book club|a novel|a memoir).*/gi, '')
                     .replace(/[-_]/g, ' ')
@@ -193,7 +193,7 @@ async function handleLiveSearchInput(query) {
       }
     });
 
-    const results = [...uniqueMap.values()].slice(0, 10);
+    const results = [...uniqueMap.values()].slice(0, 40);
 
     if (results.length === 0) {
       dropdown.innerHTML = `
@@ -216,43 +216,71 @@ async function handleLiveSearchInput(query) {
       const tLower = (b.title || '').toLowerCase();
       const gLower = (b.genre || '').toLowerCase();
       const mLower = (b.mood || '').toLowerCase();
+      const fLower = (b.format || '').toLowerCase();
 
-      const isAdult    = tLower.includes('pornhwa') || tLower.includes('doujinshi') || gLower.includes('adult') || mLower.includes('adult') || mLower.includes('smut') || b.id.startsWith('divascans-');
-      const isOneShot  = gLower === 'one-shot' || tLower.includes('one-shot') || tLower.includes('oneshot');
-      const isManhua   = gLower === 'manhua' || tLower.includes('manhua') || mLower.includes('manhua');
-      const isManhwa   = gLower === 'manhwa' || tLower.includes('manhwa') || mLower.includes('manhwa');
-      const isLightNovel = gLower === 'light novel' || tLower.includes('light novel') || (b.altTitle && b.altTitle.toLowerCase().includes('light novel')) || tLower.includes('shousetsu');
-      const isWebNovel = b.id.startsWith('royalroad-') || gLower === 'web novel' || tLower.includes('web novel') || (gLower.includes('novel') && !isLightNovel);
-      const isMangaType = b.id.startsWith('mangapill-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || gLower.includes('manga') || mLower.includes('manga');
+      // True Content-Type Classification (Purely based on scraped metadata: Manga, Manhwa, Comic, Webtoon, Web Novel, Light Novel, Book)
+      const isAdult      = tLower.includes('pornhwa') || tLower.includes('doujinshi') || gLower.includes('adult') || mLower.includes('adult') || mLower.includes('smut') || mLower.includes('+18');
+      const isOneShot    = gLower.includes('one-shot') || tLower.includes('one-shot') || tLower.includes('oneshot');
+      const isLightNovel = fLower.includes('light novel') || gLower.includes('light novel') || tLower.includes('light novel') || (b.altTitle && b.altTitle.toLowerCase().includes('light novel')) || tLower.includes('shousetsu');
+      const isWebNovel   = fLower.includes('web novel') || gLower.includes('web novel') || tLower.includes('web novel') || (fLower === 'novels' && !isLightNovel) || (gLower === 'novel' && !isLightNovel);
+      const isManhwa     = fLower.includes('manhwa') || gLower.includes('manhwa') || tLower.includes('manhwa') || mLower.includes('manhwa') || fLower.includes('webtoon') || gLower.includes('webtoon');
+      const isManhua     = fLower.includes('manhua') || gLower.includes('manhua') || tLower.includes('manhua') || mLower.includes('manhua');
+      const isComic      = fLower.includes('comic') || gLower.includes('comic') || tLower.includes('comic');
+      const isManga      = fLower.includes('manga') || gLower.includes('manga') || tLower.includes('manga') || mLower.includes('manga');
 
       let typeLabel = 'BOOK';
       let typeBg    = '#d97706';
 
-      if (isAdult)          { typeLabel = isManhwa ? 'MANHWA (+18)' : isMangaType ? 'MANGA (+18)' : 'ADULT (+18)'; typeBg = '#dc2626'; }
-      else if (isOneShot)   { typeLabel = 'ONE-SHOT';    typeBg = '#6366f1'; }
-      else if (isLightNovel){ typeLabel = 'LIGHT NOVEL'; typeBg = '#9333ea'; }
-      else if (isManhua)    { typeLabel = 'MANHUA';     typeBg = '#0891b2'; }
-      else if (isManhwa)    { typeLabel = 'MANHWA';     typeBg = '#16a34a'; }
-      else if (isWebNovel)  { typeLabel = 'WEB NOVEL';  typeBg = '#7c3aed'; }
-      else if (isMangaType) { typeLabel = 'MANGA';      typeBg = '#2563eb'; }
+      if (isAdult)           { typeLabel = isManhwa ? 'MANHWA (+18)' : (isManga ? 'MANGA (+18)' : 'ADULT (+18)'); typeBg = '#dc2626'; }
+      else if (isOneShot)    { typeLabel = 'ONE-SHOT';    typeBg = '#6366f1'; }
+      else if (isLightNovel) { typeLabel = 'LIGHT NOVEL'; typeBg = '#9333ea'; }
+      else if (isWebNovel)   { typeLabel = 'WEB NOVEL';   typeBg = '#7c3aed'; }
+      else if (isManhwa)     { typeLabel = 'MANHWA';      typeBg = '#16a34a'; }
+      else if (isManhua)     { typeLabel = 'MANHUA';      typeBg = '#0891b2'; }
+      else if (isComic)      { typeLabel = 'COMIC';       typeBg = '#0284c7'; }
+      else if (isManga)      { typeLabel = 'MANGA';       typeBg = '#2563eb'; }
 
-      let cleanAuthor = (b.author || '').replace(/@\w+/g, '').replace(/^by\s+/i, '').trim() || 'Manga Artist';
-      const yearStr = b.year ? ` • ${b.year}` : '';
+      let cleanAuthor = (b.author || '').replace(/@\w+/g, '').replace(/^by\s+/i, '').trim();
+      if (!cleanAuthor || cleanAuthor.toLowerCase() === 'author') {
+        cleanAuthor = (isManga || isManhwa || isManhua) ? 'Manga Artist' : 'Author';
+      }
+
+      // Metadata elements: Author, Year, Status (No source scraper names)
+      const metaParts = [];
+      if (cleanAuthor) metaParts.push(cleanAuthor);
+      if (b.year) metaParts.push(b.year);
+      if (b.status && b.status !== 'Unknown') metaParts.push(b.status);
+
+      const metaStr = metaParts.join(' • ');
+
       const coverSrc = (b.cover && typeof b.cover === 'string' && (b.cover.startsWith('http') || b.cover.startsWith('/'))) 
         ? b.cover 
         : ((b.image && typeof b.image === 'string' && (b.image.startsWith('http') || b.image.startsWith('/'))) ? b.image : '');
       const thumbHtml = coverSrc
-        ? `<img src="${coverSrc}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;background:#ff6740;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;\\'>📖</div>';" />`
-        : `<div style="width:100%;height:100%;background:#ff6740;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;">📖</div>`;
+        ? `<img src="${coverSrc}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;background:#222;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#888;\\'>📖</div>';" />`
+        : `<div style="width:100%;height:100%;background:#222;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#888;">📖</div>`;
+
+      // Determine Primary vs Secondary Display Title
+      let displayTitle = b.title;
+      let displayAlt = b.altTitle || '';
+
+      // If user's query matches the altTitle better than the primary title, show the matched English/alt title first!
+      if (cleanQ && b.altTitle && b.altTitle.toLowerCase().includes(cleanQ) && !b.title.toLowerCase().includes(cleanQ)) {
+        displayTitle = b.altTitle;
+        displayAlt = b.title;
+      }
+
+      const altSubHtml = displayAlt ? `<div style="font-size:0.75rem;color:rgba(255,255,255,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;">${highlightMatchText(displayAlt, cleanQ)}</div>` : '';
 
       return `
         <div class="md-live-result-item" data-book-id="${b.id}" data-item-index="${idx}" role="option">
           <div class="md-live-thumb">${thumbHtml}</div>
           <div class="md-live-details">
-            <div class="md-live-title">${highlightMatchText(b.title, cleanQ)}</div>
-            <div class="md-live-sub">${cleanAuthor}${yearStr}</div>
+            <div class="md-live-title">${highlightMatchText(displayTitle, cleanQ)}</div>
+            ${altSubHtml}
+            <div class="md-live-sub">${metaStr}</div>
           </div>
-          <span class="md-live-badge" style="background:${typeBg};">${typeLabel}</span>
+          <span class="md-live-badge" style="background:rgba(255,255,255,0.06);color:#b0b0b0;border:1px solid rgba(255,255,255,0.12);font-weight:600;">${typeLabel}</span>
         </div>
       `;
     }).join('');
@@ -367,11 +395,11 @@ async function renderSearch(){
         let cleanAuthor = (b.author || '').trim();
         cleanAuthor = cleanAuthor
           .replace(/@\w+/g, '')
-          .replace(/\b(telegram|divascans|madarascans|madara|channel|global vault|complete series|high.?res)\b/gi, '')
+          .replace(/\b(telegram|manhwa18|mangabuddy|mangapill|channel|global vault|complete series|high.?res)\b/gi, '')
           .replace(/^by\s+/i, '')
           .trim();
         if (!cleanAuthor || cleanAuthor.toLowerCase() === 'author' || cleanAuthor.toLowerCase() === 'royal road author') {
-          cleanAuthor = b.id.startsWith('royalroad-') ? 'Royal Road Author' : (b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('madara-') || b.id.startsWith('divascans-') ? 'Manga Artist' : 'Classic Author');
+          cleanAuthor = b.id.startsWith('royalroad-') ? 'Royal Road Author' : (b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('manhwa18-') || b.id.startsWith('mangabuddy-') ? 'Manga Artist' : 'Classic Author');
         }
 
         const rawYear = b.year || b.releaseDate || b.publishedDate || '';
@@ -383,13 +411,13 @@ async function renderSearch(){
         const gLower = (b.genre || '').toLowerCase();
         const mLower = (b.mood || '').toLowerCase();
 
-        const isAdult    = tLower.includes('pornhwa') || tLower.includes('doujinshi') || gLower.includes('adult') || mLower.includes('adult') || mLower.includes('smut') || b.id.startsWith('divascans-');
+        const isAdult    = tLower.includes('pornhwa') || tLower.includes('doujinshi') || gLower.includes('adult') || mLower.includes('adult') || mLower.includes('smut') || b.id.startsWith('manhwa18-');
         const isOneShot  = gLower === 'one-shot' || tLower.includes('one-shot') || tLower.includes('oneshot');
         const isManhua   = gLower === 'manhua' || tLower.includes('manhua') || mLower.includes('manhua');
-        const isManhwa   = gLower === 'manhwa' || tLower.includes('manhwa') || mLower.includes('manhwa');
+        const isManhwa   = b.id.startsWith('manhwa18-') || gLower === 'manhwa' || tLower.includes('manhwa') || mLower.includes('manhwa');
         const isLightNovel = gLower === 'light novel' || tLower.includes('light novel') || (b.altTitle && b.altTitle.toLowerCase().includes('light novel')) || tLower.includes('shousetsu');
         const isWebNovel = b.id.startsWith('royalroad-') || gLower === 'web novel' || tLower.includes('web novel') || (gLower.includes('novel') && !isLightNovel);
-        const isMangaType = b.id.startsWith('mangapill-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || gLower.includes('manga') || mLower.includes('manga');
+        const isMangaType = b.id.startsWith('mangapill-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || gLower.includes('manga') || mLower.includes('manga');
 
         let typeLabel = 'BOOK';
         let typeBg    = '#d97706';
@@ -407,14 +435,17 @@ async function renderSearch(){
         if (isMdSearch) {
           // New Mangadex grid search rendering
           return `
-            <div class="md-cover-card" style="cursor:pointer;" onclick="openBook('${b.id}')" title="${b.title.replace(/"/g, '&quot;')}">
-              <div class="md-card-img" style="${imgStyle}"></div>
+            <div class="md-cover-card" style="cursor:pointer;position:relative;" onclick="openBook('${b.id}')" title="${b.title.replace(/"/g, '&quot;')}">
+              <div class="md-card-img" style="${imgStyle}">
+                <span class="md-card-badge" style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,0.65);color:#b0b0b0;border:1px solid rgba(255,255,255,0.15);padding:2px 6px;border-radius:4px;font-size:0.65rem;font-weight:600;letter-spacing:0.02em;backdrop-filter:blur(4px);">${typeLabel}</span>
+              </div>
               <div class="md-card-title">${highlightMatchText(b.title, q)}</div>
+              ${yearStr ? `<div style="font-size:0.72rem;color:rgba(255,255,255,0.5);margin-top:2px;">${yearStr}</div>` : ''}
             </div>
           `;
         }
 
-        const catBadge = `<span style="background:${typeBg};color:#fff;padding:3px 8px;border-radius:4px;font-size:0.72rem;font-weight:800;flex-shrink:0;letter-spacing:0.03em;">${typeLabel}</span>`;
+        const catBadge = `<span style="background:rgba(255,255,255,0.06);color:#b0b0b0;border:1px solid rgba(255,255,255,0.12);padding:3px 8px;border-radius:4px;font-size:0.72rem;font-weight:600;flex-shrink:0;letter-spacing:0.03em;">${typeLabel}</span>`;
 
         return `<div class="search-result-item" data-book="${b.id}" onclick="openBook('${b.id}')" style="cursor:pointer;display:flex;align-items:center;gap:16px;padding:14px 16px;border-bottom:1px solid #2a2a2a;border-radius:8px;margin-bottom:8px;background:#141414;transition:background 0.2s ease;" onmouseover="this.style.background='#1f1f1f'" onmouseout="this.style.background='#141414'">
           <span class="result-cover ${(b.cover||'').split(' ')[0]}" style="${imgStyle};width:44px;height:60px;border-radius:6px;flex-shrink:0;"></span>
@@ -422,7 +453,9 @@ async function renderSearch(){
             <strong style="display:block;font-size:1.05rem;color:#fff;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${highlightMatchText(b.title, q)}</strong>
             <em style="color:#aaa;font-size:0.85rem;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;">${subtitleLine}</em>
           </div>
-          ${catBadge}
+          <div>
+            ${catBadge}
+          </div>
         </div>`;
       }).join('');
       
@@ -472,7 +505,7 @@ function renderDetail(rawId) {
   // Extract / Map Author
   let authorLine = (b.author || 'Manga Artist').trim()
     .replace(/@\w+/g, '')
-    .replace(/\b(telegram|divascans|madarascans|madara|channel|global vault|complete series|high.?res)\b/gi, '')
+    .replace(/\b(telegram|manhwa18|mangabuddy|mangapill|channel|global vault|complete series|high.?res)\b/gi, '')
     .replace(/^by\s+/i, '')
     .trim();
   if (!authorLine || authorLine.toLowerCase() === 'author') authorLine = 'Manga Artist';
@@ -577,6 +610,12 @@ function renderDetail(rawId) {
 
   g.innerHTML = `
     <div class="md-detail-wrapper">
+      <!-- Back Navigation Button -->
+      <button class="md-detail-back-btn md-nav-back-pill" data-action="back-to-home" style="position:fixed;top:16px;left:20px;z-index:99999;display:flex;align-items:center;gap:6px;background:rgba(20,24,33,0.92);color:#ffffff;border:1px solid rgba(255,255,255,0.18);padding:6px 16px;border-radius:9999px;font-size:0.85rem;font-weight:700;cursor:pointer;backdrop-filter:blur(16px);box-shadow:0 4px 16px rgba(0,0,0,0.6);transition:all 0.18s ease;">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        <span>Back</span>
+      </button>
+
       <!-- 0. FULL SCREEN FIXED BACKGROUND IMAGE (Dynamic per book, slightly blurred & framed up) -->
       <div class="md-bg-fixed-layer" ${bookBg ? `style="background-image: url('${bookBg}');"` : ''}></div>
 
@@ -706,15 +745,35 @@ function renderReader(){
   const idx=Math.max(0,Math.min(total-1,state.activeChapter||0));
   const selected=chapters[idx]||{title:'Preview Chapter',content:['The reader opens with a quiet page and remembers every setting you choose.'],quote:'A good reading room disappears around the book.'};
   const p=pct(b.id), r=state.reader, notes=state.notes[b.id]||[];
-  const hasTextContent = chapters.some(c => c?.html) || (selected && selected.html);
-  const isManga = !hasTextContent && ((b.format||inferFormat(b))==='Manga & Manhwa');
+  const hasImagePanels = chapters.some(c => c?.html && c.html.includes('<img'));
+  const fLower = (b.format || inferFormat(b)).toLowerCase();
+  const isMangaFormat = fLower.includes('manga') || fLower.includes('manhwa') || fLower.includes('manhua') || fLower.includes('comic') || fLower.includes('webtoon');
+  
+  // A work is rendered as Manga only if it has image panels or is tagged as a visual comic
+  const isManga = hasImagePanels || isMangaFormat;
+
   const chapterNav=chapters.map((c,i)=>`<a class="${i===idx?'active':''}" data-action="open-chapter" data-book="${b.id}" data-chapter-index="${i}" href="#/read/${b.id}/${i+1}" data-chapter-title="${(c.title||'').toLowerCase()}">${i+1}. ${c.title}<small>${c.minutes||12} min</small></a>`).join('');
+  
   const renderTextChapter=(ch,i)=>{
-    const proseHTML = ch.html || (ch.content||[]).map((x,j)=>`<p class="${j===0&&state.highlighted[b.id]?'highlighted':''}">${j===0?'<span class="dropcap">'+x.charAt(0)+'</span>'+x.slice(1):x}</p>`).join('');
+    let proseHTML = '';
+    if (ch.html) {
+      proseHTML = ch.html;
+    } else if (Array.isArray(ch.content) && ch.content.length > 0) {
+      proseHTML = ch.content.map((x,j)=>`<p class="${j===0&&state.highlighted[b.id]?'highlighted':''}">${j===0?'<span class="dropcap">'+x.charAt(0)+'</span>'+x.slice(1):x}</p>`).join('');
+    } else if (typeof ch.content === 'string') {
+      proseHTML = ch.content.split(/\n+/).map(para => `<p>${para.trim()}</p>`).join('');
+    } else {
+      proseHTML = `<p>Chapter text is loading from server...</p>`;
+    }
+
     const fig=ch.image?`<figure class="reader-figure"><img src="${ch.image}" alt="${ch.imageCaption||ch.title}"><figcaption>${ch.imageCaption||''}</figcaption></figure>`:'';
     return `<section class="chapter-block" id="chapter-${i+1}" data-chapter-index="${i}"><p class="chapter-count">Chapter ${i+1} of ${total}</p><h2>${ch.title}</h2><span class="reader-progress-note">${ch.minutes||12} min · ${ch.publicDomain?'Public domain · ':''}${b.author}</span><div class="reading-prose stolen-prose" style="font-size:var(--reader-font);line-height:var(--reader-line)">${proseHTML}${fig}${ch.quote?`<blockquote>${ch.quote}</blockquote>`:''}</div></section>`;
   };
+
   const renderMangaChapter=(ch,i)=>{
+    if (ch.html && ch.html.includes('<img')) {
+      return `<section class="chapter-block manga-chapter" id="chapter-${i+1}" data-chapter-index="${i}">${ch.html}</section>`;
+    }
     const lines=ch.content||[];
     return `<section class="chapter-block manga-chapter" id="chapter-${i+1}" data-chapter-index="${i}"><p class="chapter-count">Chapter ${i+1} of ${total}</p><h2>${ch.title}</h2><div class="manga-panels ${r.mangaMode==='paged'?'paged':''} ${r.mangaDirection==='rtl'?'rtl':''}"><figure class="manga-panel cover-panel-page"><img src="${b.image}" alt="${b.title} cover panel"><figcaption>${b.title}</figcaption></figure>${lines.map((line,j)=>`<div class="manga-panel text-panel"><span>Panel ${j+1}</span><p>${line}</p></div>`).join('')}<div class="manga-panel quote-panel"><p>${ch.quote||'To be continued.'}</p></div></div></section>`;
   };
@@ -747,8 +806,8 @@ function renderReader(){
     }
   }, 100);
 
-  // Fire for external books (mangapill, divascans, madara, telegram, royalroad, searched) ONLY if chapters aren't loaded yet
-  const isExternal = b.genre === 'searched' || b.genre === 'Manga' || b.genre === 'Web Novel' || b.id.startsWith('mangapill-') || b.id.startsWith('divascans-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('telegram-') || b.id.startsWith('itunes-') || b.id.startsWith('royalroad-');
+  // Fire for external books (mangapill, manhwa18, mangabuddy, telegram, royalroad, searched) ONLY if chapters aren't loaded yet
+  const isExternal = b.genre === 'searched' || b.genre === 'Manga' || b.genre === 'Web Novel' || b.id.startsWith('mangapill-') || b.id.startsWith('manhwa18-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('telegram-') || b.id.startsWith('itunes-') || b.id.startsWith('royalroad-');
   if(isExternal && (!b.chapters || !b.chapters.length)) setTimeout(()=>loadStolenChapters(b.id, b.title, b.author, b.genre), 80);
 }
 
@@ -831,7 +890,7 @@ async function loadStolenChapters(id, title, author, genre){
   const nativeReader=document.querySelector('#reader .native-reader');
   if(!nativeReader) return;
   
-  const isMangaLoad = id.startsWith('telegram-') || id.startsWith('tg-') || id.startsWith('divascans-') || id.startsWith('madara-') || id.startsWith('temple-') || id.startsWith('private-tg-') || (genre || '').toLowerCase().includes('manga');
+  const isMangaLoad = id.startsWith('manhwa18-') || id.startsWith('mangabuddy-') || id.startsWith('mangapill-') || id.startsWith('telegram-') || id.startsWith('tg-') || id.startsWith('private-tg-') || (genre || '').toLowerCase().includes('manga');
   nativeReader.innerHTML=`<div style="padding:4rem 2rem;text-align:center;opacity:.6;font-family:Georgia,serif">
     <p style="font-size:1.1rem;margin-bottom:.5rem">📚 Loading chapters...</p>
     <p style="font-size:.85rem;opacity:.7">${title}</p>
@@ -849,7 +908,7 @@ async function loadStolenChapters(id, title, author, genre){
     
     if(!data.isFallback && !data.pdfUrl && (data.error || !data.chapters || !data.chapters.length)){
       const realTitle = (title || 'this book').replace(/^\d+\s*/, '').trim();
-      const isManga = id.startsWith('telegram-') || id.startsWith('tg-') || id.startsWith('private-tg-') || (genre || '').toLowerCase().includes('manga') || id.startsWith('madara-') || id.startsWith('divascans-') || id.startsWith('temple-');
+      const isManga = id.startsWith('manhwa18-') || id.startsWith('mangabuddy-') || id.startsWith('mangapill-') || id.startsWith('telegram-') || id.startsWith('tg-') || id.startsWith('private-tg-') || (genre || '').toLowerCase().includes('manga');
       
       if (isManga) {
         nativeReader.innerHTML = `
@@ -1013,8 +1072,20 @@ async function loadStolenChapters(id, title, author, genre){
 
       applyWindow(currentWindowCenter);
 
+      // Scroll immediately and smoothly to the selected chapter
+      setTimeout(() => {
+        const targetSec = document.querySelector(`#chapter-${currentWindowCenter + 1}`);
+        if (targetSec) {
+          targetSec.scrollIntoView({ behavior: 'instant', block: 'start' });
+        }
+      }, 50);
+
+      let observerReady = false;
+      setTimeout(() => { observerReady = true; }, 600);
+
       if ('IntersectionObserver' in window) {
         const sectionObserver = new IntersectionObserver((entries) => {
+          if (!observerReady) return;
           entries.forEach(entry => {
             if (entry.isIntersecting) {
               const idx = parseInt(entry.target.dataset.chapterIndex, 10);
@@ -1156,8 +1227,8 @@ function openBook(id){
 
   // Auto-prefetch chapters for external items if not loaded yet
   const b = book(id);
-  const isExternal = b && (b.id.startsWith('mangapill-') || b.id.startsWith('divascans-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('mangadex-') || b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.id.startsWith('itunes-') || (b.genre || '').toLowerCase().includes('manga') || (b.genre || '').toLowerCase().includes('novel'));
-  if (isExternal && (!b.chapters || !b.chapters.length)) {
+  const isExternal = b && (b.id.startsWith('manhwa18-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('mangapill-') || b.id.startsWith('divascans-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('mangadex-') || b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.id.startsWith('itunes-') || (b.genre || '').toLowerCase().includes('manga') || (b.genre || '').toLowerCase().includes('novel'));
+  if (isExternal) {
     fetch(`/api/books/${id}/chapters?q=${encodeURIComponent(b.title)}&_cb=${Date.now()}`)
       .then(r => r.json())
       .then(data => {
@@ -1179,7 +1250,7 @@ function openReader(id=state.currentBook, targetChapterIdx = 0){
   state.currentBook=id;
   state.activeChapter=targetChapterIdx;
   const b=book(id);
-  const isManga = b && (b.id.startsWith('mangapill-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || b.id.startsWith('mangadex-') || b.id.startsWith('divascans-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || (b.genre || '').toLowerCase().includes('manga') || (b.format || '').toLowerCase().includes('manga'));
+  const isManga = b && (b.id.startsWith('manhwa18-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('mangapill-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || b.id.startsWith('mangadex-') || b.id.startsWith('divascans-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || (b.genre || '').toLowerCase().includes('manga') || (b.format || '').toLowerCase().includes('manga'));
   if (isManga) {
     document.body.classList.add('is-manga-mode');
   } else {
@@ -1193,7 +1264,7 @@ function openReader(id=state.currentBook, targetChapterIdx = 0){
   saveState();
   renderReader();
   showView('reader');
-  const isExternal = b && (b.genre === 'searched' || b.genre === 'Manga' || b.genre === 'Web Novel' || b.id.startsWith('divascans-') || b.id.startsWith('mangadex-') || b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.id.includes('-'));
+  const isExternal = b && (b.genre === 'searched' || b.genre === 'Manga' || b.genre === 'Web Novel' || b.id.startsWith('manhwa18-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('mangapill-') || b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.id.includes('-'));
   if(isExternal || !b.chapters || !b.chapters.length || b.chapters.some(c=>!c.html)){
     setTimeout(()=>loadStolenChapters(b.id, b.title, b.author, b.genre), 50);
   } else {
@@ -1235,24 +1306,33 @@ function setupReaderScroll(){
   let scrollDimTimer;
 
   const onScroll=()=>{
+    const currentY = window.scrollY;
+    const topPill = document.querySelector('.manga-top-pill');
+    
+    // Smart auto-hide top pill when scrolling down, reveal when scrolling up
+    if (topPill) {
+      if (currentY > lastY + 20 && currentY > 120) {
+        topPill.classList.add('scrolled-hidden');
+      } else if (currentY < lastY - 15) {
+        topPill.classList.remove('scrolled-hidden');
+      }
+    }
+
     // Auto-dim floating controls when actively scrolling down in manga mode
     if (document.body.classList.contains('is-manga-mode')) {
-      const topPill = document.querySelector('.manga-top-pill');
       const sideDock = document.querySelector('.manga-side-dock');
-      const currentY = window.scrollY;
       if (currentY > lastY + 15 && currentY > 100) {
-        if (topPill) topPill.style.opacity = '0.2';
         if (sideDock) sideDock.style.opacity = '0.2';
       } else if (currentY < lastY - 10) {
-        if (topPill) topPill.style.opacity = '1';
         if (sideDock) sideDock.style.opacity = '1';
       }
       lastY = currentY;
       clearTimeout(scrollDimTimer);
       scrollDimTimer = setTimeout(() => {
-        if (topPill) topPill.style.opacity = '1';
         if (sideDock) sideDock.style.opacity = '1';
       }, 1200);
+    } else {
+      lastY = currentY;
     }
 
     if (isProgrammaticScrolling) return;
@@ -1305,7 +1385,28 @@ function setupReaderScroll(){
   window.addEventListener('scroll', onScroll, {passive:true});
 }
 
-document.addEventListener('click',e=>{const action=e.target.closest('[data-action]');if(action){e.preventDefault();e.stopPropagation();const id=action.dataset.book||state.currentBook,a=action.dataset.action;if(a==='back-step'||a==='back-to-detail'){if(window.history.length>1){window.history.back();}else{showView('book-detail');}}if(a==='save')toggleSave(id);if(a==='like')toggleLike(id);if(a==='read')openReader(id, 0);if(a==='open-book'){const cachedB=state.cachedBooks[id];if(cachedB&&!BOOKS.some(b=>b.id===id)){BOOKS.push(cachedB);}openBook(id);return;}if(a==='prev-chapter-btn'){window.jumpToChapter((state.activeChapter||0)-1);return;}if(a==='next-chapter-btn'){window.jumpToChapter((state.activeChapter||0)+1);return;}if(a==='toggle-contents-drawer'){state.reader.navOpen=!state.reader.navOpen;saveState();renderReader();return;}if(a==='line-toggle'){state.reader.line = state.reader.line===1.7 ? 2.0 : (state.reader.line===2.0 ? 2.25 : 1.7);saveState();renderReader();toast(`Line spacing: ${state.reader.line===1.7?'Tight':(state.reader.line===2.0?'Classic':'Open')}`);return;}if(a==='toggle-manga-width'){document.body.classList.toggle('manga-full-width');toast(document.body.classList.contains('manga-full-width')?'Full Width View':'Standard Width View');return;}if(a==='scroll-top'){window.scrollTo({top:0,behavior:'smooth'});return;}if(a==='next-page'){state.progress[id]=Math.min(100,pct(id)+Math.ceil(100/Math.max(1,(book(id).chapters||[]).length)));state.activeChapter=Math.min(((book(id).chapters||[]).length-1), (state.activeChapter||0)+1);state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100);toast(`${book(id).title} is now ${pct(id)}% complete.`)}if(a==='prev-page'){state.activeChapter=Math.max(0,(state.activeChapter||0)-1);state.progress[id]=Math.max(0,pct(id)-8);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100)}if(a==='font-up'){state.reader.font=Math.min(24,state.reader.font+1);saveState();renderReader();const fd=document.querySelector('#quick-font-display');if(fd)fd.textContent=`${state.reader.font}px`}if(a==='font-down'){state.reader.font=Math.max(15,state.reader.font-1);saveState();renderReader();const fd=document.querySelector('#quick-font-display');if(fd)fd.textContent=`${state.reader.font}px`}if(a==='theme'){state.reader.theme=action.dataset.theme;saveState();renderReader();toast(`Theme set to ${action.dataset.theme}`)}if(a==='reader-mode'){state.reader.mode=action.dataset.mode;saveState();renderReader();setTimeout(()=>scrollReaderChapter(state.activeChapter||0),80)}if(a==='focus-reader'){state.reader.focus=!state.reader.focus;saveState();renderReader();document.body.classList.toggle('reader-focus',!!state.reader.focus);toast(state.reader.focus?'Focus reading on.':'Focus reading off.')}if(a==='fullscreen-reader'){const el=document.querySelector('#reader');if(!document.fullscreenElement&&el?.requestFullscreen){el.requestFullscreen();state.reader.focus=true;}else if(document.exitFullscreen){document.exitFullscreen();state.reader.focus=false;}saveState();renderReader()}if(a==='highlight'){state.highlighted[id]=!state.highlighted[id];saveState();renderReader()}if(a==='open-chapter'){state.currentBook=id;const chIdx=Number(action.dataset.chapterIndex||0);openReader(id, chIdx);return;}
+document.addEventListener('click',e=>{
+  const toggleRail = e.target.closest('#reader-side-rail-toggle, [data-action="toggle-side-rail"]');
+  if (toggleRail) {
+    e.preventDefault();
+    e.stopPropagation();
+    document.body.classList.toggle('reader-side-rail-hidden');
+    const isHidden = document.body.classList.contains('reader-side-rail-hidden');
+    toast(isHidden ? 'Controls hidden (Press H or click tab to show)' : 'Controls restored');
+    return;
+  }
+  const action=e.target.closest('[data-action]');if(action){e.preventDefault();e.stopPropagation();const id=action.dataset.book||state.currentBook,a=action.dataset.action;if(a==='back-to-home'){showView('home');return;}if(a==='back-step'||a==='back-to-detail'){if(window.history.length>1){window.history.back();}else{showView('book-detail');}return;}if(a==='save')toggleSave(id);if(a==='like')toggleLike(id);if(a==='read')openReader(id, 0);if(a==='open-book'){const cachedB=state.cachedBooks[id];if(cachedB&&!BOOKS.some(b=>b.id===id)){BOOKS.push(cachedB);}openBook(id);return;}if(a==='prev-chapter-btn'){window.jumpToChapter((state.activeChapter||0)-1);return;}if(a==='next-chapter-btn'){window.jumpToChapter((state.activeChapter||0)+1);return;}if(a==='toggle-contents-drawer'){state.reader.navOpen=!state.reader.navOpen;saveState();renderReader();return;}if(a==='line-toggle'){state.reader.line = state.reader.line===1.7 ? 2.0 : (state.reader.line===2.0 ? 2.25 : 1.7);saveState();renderReader();toast(`Line spacing: ${state.reader.line===1.7?'Tight':(state.reader.line===2.0?'Classic':'Open')}`);return;}if(a==='toggle-manga-width'){document.body.classList.toggle('manga-full-width');const isFull = document.body.classList.contains('manga-full-width');const paper = document.querySelector('.reader-paper');if(paper){paper.style.maxWidth = isFull ? '100%' : '960px';}toast(isFull?'Full Width View':'Standard Width View');return;}
+if(a==='scroll-top'){window.scrollTo({top:0,behavior:'smooth'});document.querySelector('.reader-paper')?.scrollIntoView({behavior:'smooth'});return;}
+if(a==='next-page'){state.progress[id]=Math.min(100,pct(id)+Math.ceil(100/Math.max(1,(book(id).chapters||[]).length)));state.activeChapter=Math.min(((book(id).chapters||[]).length-1), (state.activeChapter||0)+1);state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100);toast(`${book(id).title} is now ${pct(id)}% complete.`)}
+if(a==='prev-page'){state.activeChapter=Math.max(0,(state.activeChapter||0)-1);state.progress[id]=Math.max(0,pct(id)-8);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100)}
+if(a==='font-up'){state.reader.font=Math.min(28, (state.reader.font||19)+1);saveState();renderReader();return;}
+if(a==='font-down'){state.reader.font=Math.max(14, (state.reader.font||19)-1);saveState();renderReader();return;}
+if(a==='theme'){const chosenTheme = action.dataset.theme || 'paper'; state.reader.theme=chosenTheme; saveState(); const paper = document.querySelector('.reader-paper'); if(paper){paper.className = paper.className.replace(/\btheme-\w+/g, '') + ` theme-${chosenTheme}`;} renderReader(); toast(`Theme set to ${chosenTheme}`); return;}
+if(a==='reader-mode'){state.reader.mode=action.dataset.mode;saveState();renderReader();setTimeout(()=>scrollReaderChapter(state.activeChapter||0),80)}
+if(a==='focus-reader'){state.reader.focus=!state.reader.focus;saveState();renderReader();document.body.classList.toggle('reader-focus',!!state.reader.focus);toast(state.reader.focus?'Focus reading on.':'Focus reading off.')}
+if(a==='fullscreen-reader'){if(!document.fullscreenElement){if(document.documentElement.requestFullscreen){document.documentElement.requestFullscreen();}else if(document.body.requestFullscreen){document.body.requestFullscreen();}}else{if(document.exitFullscreen){document.exitFullscreen();}}return;}
+if(a==='highlight'){state.highlighted[id]=!state.highlighted[id];saveState();renderReader()}
+if(a==='open-chapter'){state.currentBook=id;const chIdx=Number(action.dataset.chapterIndex||0);openReader(id, chIdx);return;}
 if(a==='signin-local'){const name=document.querySelector('#account-name')?.value.trim();state.account=name||'Local reader';saveState();renderAll();toast('Signed in locally.')}if(a==='signout-local'){state.account=null;saveState();renderAll();toast('Signed out locally.')}if(a==='export-state'){exportState()}if(a==='app-theme'){state.appTheme=action.dataset.themeChoice||'system';saveState();applyAppTheme();renderSettings();toast(`Theme set to ${state.appTheme}.`)}if(a==='save-note'){const text=document.querySelector('#reader-note')?.value.trim();if(text){state.notes[id]=[...(state.notes[id]||[]),{text,at:new Date().toISOString()}];saveState();renderAll();toast('Margin note saved.')}}return}const view=e.target.closest('[data-view]');if(view){e.preventDefault();showView(view.dataset.view);return}const shelf=e.target.closest('.shelf-tabs button');if(shelf){state.activeShelf=shelf.dataset.shelf;saveState();renderLibrary();return}const exp=e.target.closest('.explore-controls button');if(exp){state.exploreFilter=exp.dataset.exploreFilter;saveState();renderExplore();return}const themeChoice=e.target.closest('[data-theme-choice]');if(themeChoice){state.appTheme=themeChoice.dataset.themeChoice;saveState();renderSettings();applyAppTheme();return}const filter=e.target.closest('.filter-row button');if(filter){state.searchFilter=filter.dataset.filter;saveState();renderSearch();return}const author=e.target.closest('[data-author]');if(author){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${author.dataset.author}</h3><p>Author shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.author===author.dataset.author).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.genre}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const mood=e.target.closest('[data-mood]');if(mood){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${mood.dataset.mood}</h3><p>Mood shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.mood===mood.dataset.mood).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const cat=e.target.closest('[data-category]');if(cat){const name=cat.dataset.category;document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${name}</h3><p>Dedicated shelf for ${name.toLowerCase()} only.</p></header><div class="explore-books">${BOOKS.filter(b=>(b.format||inferFormat(b))===name).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author} · ${b.mood}</p><span class="book-type-badge">${b.format||inferFormat(b)}</span>${actions(b.id)}</article>`).join('')||'<div class="empty-state"><h3>No titles yet.</h3><p>This shelf is ready for future catalogue items.</p></div>'}</div></section>`;return}const cover=e.target.closest('[data-book]');if(cover&&!e.target.closest('button'))openBook(cover.dataset.book)});
 document.addEventListener('change',e=>{if(e.target?.dataset.action==='line'){state.reader.line=Number(e.target.value);saveState();renderReader()}if(e.target?.id==='setting-line'){state.reader.line=Number(e.target.value);saveState();renderAll()}if(e.target?.id==='import-state'){const file=e.target.files[0];if(file){file.text().then(txt=>{state={...DEFAULT_STATE,...JSON.parse(txt)};saveState();renderAll();toast('Sync file imported.')}).catch(()=>toast('Import failed.'))}}});
 function inferFormat(b) {
@@ -1313,7 +1414,7 @@ function inferFormat(b) {
   if (b.format) return b.format;
   const g = (b.genre || '').toLowerCase();
   const id = (b.id || '').toLowerCase();
-  if (id.startsWith('mangapill-') || id.startsWith('divascans-') || id.startsWith('madara-') || id.startsWith('temple-') || id.startsWith('telegram-') || id.startsWith('private-tg-') || g.includes('manga') || g.includes('manhwa')) return 'Manga & Manhwa';
+  if (id.startsWith('mangapill-') || id.startsWith('manhwa18-') || id.startsWith('mangabuddy-') || id.startsWith('telegram-') || id.startsWith('private-tg-') || g.includes('manga') || g.includes('manhwa')) return 'Manga & Manhwa';
   if (id.startsWith('royalroad-') || g.includes('novel')) return 'Web Novels';
   return 'Books';
 }
@@ -1528,6 +1629,18 @@ document.addEventListener('input', e => {
 
 document.addEventListener('change', e => {
   if (e.target?.id === 'epub-upload') loadEpubFile(e.target.files[0]);
+});
+
+document.addEventListener('keydown', e => {
+  // If user is typing in an input, don't trigger shortcuts
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+  if ((e.key === 'h' || e.key === 'H') && document.querySelector('#reader.active-view')) {
+    e.preventDefault();
+    document.body.classList.toggle('reader-side-rail-hidden');
+    const isHidden = document.body.classList.contains('reader-side-rail-hidden');
+    toast(isHidden ? 'Controls hidden (Press H to restore)' : 'Controls restored');
+  }
 });
 
 document.addEventListener('fullscreenchange', () => {
