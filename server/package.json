@@ -17,6 +17,7 @@
     "cors": "^2.8.6",
     "epub": "^2.1.1",
     "epub2": "^3.0.2",
+    "epubjs": "^0.3.93",
     "express": "^5.2.1",
     "puppeteer": "^25.4.0",
     "puppeteer-extra": "^3.3.6",

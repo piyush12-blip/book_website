@@ -26,12 +26,18 @@ async function searchRoyalRoad(query) {
             if (!idMatch) return;
             const fictionId = idMatch[1];
 
+            const tags = [];
+            $el.find('a.fiction-tag, .tags a').each((_, tagEl) => {
+                const t = $(tagEl).text().trim();
+                if (t && !tags.includes(t)) tags.push(t);
+            });
+
             let author = $el.find('a[href*="/profile/"]').first().text().trim()
                 || $el.find('.author a, .author, span:contains("by") a, .fiction-info span a, .author-name').first().text().trim();
             if (author.toLowerCase().startsWith('by ')) {
                 author = author.replace(/^by\s+/i, '').trim();
             }
-            if (!author) author = 'Web Novel Author';
+
             let coverImg = $el.find('img').first().attr('src') || null;
             if (coverImg) {
                 if (coverImg.includes('nocover') || coverImg.includes('default')) {
@@ -42,21 +48,23 @@ async function searchRoyalRoad(query) {
                     coverImg = 'https://www.royalroad.com' + coverImg;
                 }
             }
-            let synopsis = $el.find('.description, .fiction-description').first().text().trim().slice(0, 400);
+            let synopsis = $el.find('div[id^="description-"] p, .description, .fiction-description').first().text().trim().slice(0, 400);
             const color = COLORS[i % COLORS.length];
 
             results.push({
                 id: `royalroad-${fictionId}`,
                 title,
-                author,
+                author: author || (tags.length > 0 ? tags.slice(0, 2).join(' · ') : 'Web Novel'),
+                tags: tags.length > 0 ? tags : ['Web Novel', 'Fantasy'],
+                genres: tags,
                 cover: coverImg ? `has-image ${color}` : color,
                 image: coverImg,
                 lines: title.split(' ').slice(0,3).join('<br>'),
-                genre: 'Web Novel',
-                mood: 'Adventure',
+                genre: tags[0] || 'Web Novel',
+                mood: tags[1] || 'Adventure',
                 pages: 999,
                 rating: 5,
-                synopsis: synopsis || `A web novel on Royal Road.`,
+                synopsis: synopsis || '',
                 hasEpub: true,
                 sourceUrl: `https://www.royalroad.com/fiction/${fictionId}`
             });
@@ -132,6 +140,20 @@ async function getRoyalRoadChapters(fictionId) {
             };
         });
 
+        // Scrape Royal Road metadata
+        const metaTitle = $('h1').first().text().trim();
+        const author = $('h4 a[href*="/profile/"], a[href*="/profile/"]').first().text().trim() || 'Royal Road Author';
+        const synopsis = $('.description, .fiction-description').first().text().trim() || '';
+        const coverImg = $('img.cover-art-other, .fiction-cover img').first().attr('src') || '';
+
+        const metadata = {
+            title: metaTitle,
+            author: author,
+            synopsis: synopsis,
+            cover: coverImg.startsWith('//') ? 'https:' + coverImg : (coverImg.startsWith('/') ? 'https://www.royalroad.com' + coverImg : coverImg)
+        };
+
+        chapters.metadata = metadata;
         return chapters;
     } catch (err) {
         console.error('[ROYALROAD] Chapter fetch error:', err.message);

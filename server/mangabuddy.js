@@ -102,7 +102,7 @@ async function searchMangaBuddy(query) {
                 mood: 'Action',
                 pages: 150,
                 rating: 4.8,
-                synopsis: `Read ${title} free on MangaBuddy online.`,
+                synopsis: '',
                 hasEpub: false,
                 format: 'Manga & Manhwa',
                 _isDirectSearchMatch: true,
@@ -137,7 +137,7 @@ async function searchMangaBuddy(query) {
                     mood: 'Action',
                     pages: 150,
                     rating: 4.8,
-                    synopsis: `Read ${title} free on MangaBuddy online.`,
+                    synopsis: '',
                     hasEpub: false,
                     format: 'Manga & Manhwa',
                     _isDirectSearchMatch: true,
@@ -255,6 +255,45 @@ async function fetchMangaBuddyChapters(id) {
             }));
         }
 
+        // Extract MangaBuddy rich series metadata
+        let metaTitle = $('h1[itemprop="name"]').text().trim() || $('h1').last().text().trim() || slug.replace(/\.[a-zA-Z0-9]+$/, '').replace(/-/g, ' ');
+        let author = '';
+        let status = '';
+        let type = '';
+        const genres = [];
+
+        $('h1').each((i, el) => {
+            const h = $(el).text().trim().toLowerCase();
+            const parentText = $(el).parent().text().replace(/\s+/g, ' ').trim();
+            if (h === 'author') author = parentText.replace(/^author\s*/i, '').trim();
+            if (h === 'status') status = parentText.replace(/^status\s*/i, '').trim();
+            if (h === 'type') type = parentText.replace(/^type\s*/i, '').trim();
+        });
+
+        $('a[href*="/genres/"], a[href*="/genre/"]').each((i, el) => {
+            const g = $(el).text().trim();
+            if (g && !genres.includes(g)) genres.push(g);
+        });
+
+        const synopsis = $('p').map((i, el) => $(el).text().trim()).get().find(t => 
+            t.length > 30 && 
+            !t.toLowerCase().includes('mangabuddy') && 
+            !t.toLowerCase().includes('released') &&
+            !t.toLowerCase().includes('review') &&
+            !t.toLowerCase().includes('comment')
+        ) || '';
+
+        const finalAuthor = (author && author !== 'Updating' && author !== 'Unknown') ? author : 'Manga Artist';
+
+        const metadata = {
+            title: metaTitle,
+            author: finalAuthor,
+            status: status || 'Ongoing',
+            type: type || 'Manga',
+            genres: genres,
+            synopsis: synopsis
+        };
+
         // Prefetch first chapter panels immediately for instant reader opening
         if (structuredChapters.length > 0) {
             const panelsHtml = await getMangaBuddyChapterPanels(structuredChapters[0].url).catch(() => null);
@@ -263,6 +302,7 @@ async function fetchMangaBuddyChapters(id) {
             }
         }
 
+        structuredChapters.metadata = metadata;
         MANGABUDDY_CHAPTERS_CACHE.set(slug, structuredChapters);
         return structuredChapters;
     } catch(err) {

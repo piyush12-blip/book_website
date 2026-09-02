@@ -24,60 +24,77 @@ async function searchManhwa18(query) {
     }
 
     try {
-        const searchUrl = `${BASE_URL}/search?q=${encodeURIComponent(cleanQ)}`;
-        const res = await stealthFetch(searchUrl, { type: 'html', timeout: 5000 }).catch(() => null);
-        if (!res || res.status !== 200 || !res.text) return [];
+        // Generate Smart Query Variants to handle punctuation (., -, ', etc.)
+        const queryVariants = [cleanQ];
+        const noPunctSpace = cleanQ.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (noPunctSpace && !queryVariants.includes(noPunctSpace)) queryVariants.push(noPunctSpace);
 
-        const $ = cheerio.load(res.text);
+        const strippedPunct = cleanQ.replace(/['’\.\-_]/g, '').trim();
+        if (strippedPunct && !queryVariants.includes(strippedPunct)) queryVariants.push(strippedPunct);
+
+        const singularStem = cleanQ.replace(/['’]s\b/gi, '').replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (singularStem && !queryVariants.includes(singularStem)) queryVariants.push(singularStem);
+
         const results = [];
         const seenSlugs = new Set();
 
-        $('div.manga-item, div.story-item, div.item, article, div.thumb').each((i, el) => {
-            const linkEl = $(el).find('a[href*="/webtoon/"]').first();
-            let href = linkEl.attr('href') || '';
-            if (!href || href.includes('/chapter-')) return;
+        // Run search variants in parallel
+        await Promise.all(queryVariants.slice(0, 3).map(async (vQ) => {
+            try {
+                const searchUrl = `${BASE_URL}/search?q=${encodeURIComponent(vQ)}`;
+                const res = await stealthFetch(searchUrl, { type: 'html', timeout: 5000 }).catch(() => null);
+                if (!res || res.status !== 200 || !res.text) return;
 
-            const slugMatch = href.match(/\/webtoon\/([^/?#]+)/);
-            if (!slugMatch) return;
-            const slug = slugMatch[1];
-            if (seenSlugs.has(slug)) return;
-            seenSlugs.add(slug);
+                const $ = cheerio.load(res.text);
 
-            // Clean title
-            const titleEl = $(el).find('h3 a, .title a, a[title]').first();
-            let rawTitle = titleEl.attr('title') || titleEl.text() || $(el).find('h3').first().text() || '';
-            rawTitle = rawTitle.replace(/18\+/g, '').replace(/Chapter\s*[\d\.]+/gi, '').replace(/\s+/g, ' ').trim();
-            if (!rawTitle || rawTitle.length < 2) {
-                rawTitle = slug.replace(/-\d+$/, '').replace(/-/g, ' ');
-            }
+                $('div.manga-item, div.story-item, div.item, article, div.thumb').each((i, el) => {
+                    const linkEl = $(el).find('a[href*="/webtoon/"]').first();
+                    let href = linkEl.attr('href') || '';
+                    if (!href || href.includes('/chapter-')) return;
 
-            const title = rawTitle.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    const slugMatch = href.match(/\/webtoon\/([^/?#]+)/);
+                    if (!slugMatch) return;
+                    const slug = slugMatch[1];
+                    if (seenSlugs.has(slug)) return;
+                    seenSlugs.add(slug);
 
-            let imgUrl = $(el).find('img').attr('data-src') || $(el).find('img').attr('src') || '';
-            if (imgUrl && imgUrl.startsWith('//')) imgUrl = 'https:' + imgUrl;
-            if (imgUrl && imgUrl.startsWith('/')) imgUrl = BASE_URL + imgUrl;
+                    // Clean title
+                    const titleEl = $(el).find('h3 a, .title a, a[title]').first();
+                    let rawTitle = titleEl.attr('title') || titleEl.text() || $(el).find('h3').first().text() || '';
+                    rawTitle = rawTitle.replace(/18\+/g, '').replace(/Chapter\s*[\d\.]+/gi, '').replace(/\s+/g, ' ').trim();
+                    if (!rawTitle || rawTitle.length < 2) {
+                        rawTitle = slug.replace(/-\d+$/, '').replace(/-/g, ' ');
+                    }
 
-            const proxiedCover = imgUrl ? `/api/proxy/image?url=${encodeURIComponent(imgUrl)}` : null;
+                    const title = rawTitle.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
-            results.push({
-                id: `manhwa18-${slug}`,
-                slug,
-                title,
-                author: 'Manhwa Artist',
-                cover: proxiedCover || 'burgundy',
-                image: proxiedCover,
-                lines: title.split(' ').slice(0, 3).join('<br>'),
-                genre: 'Manga & Manhwa',
-                mood: 'Manhwa (+18)',
-                pages: 50,
-                rating: 5,
-                synopsis: `Read ${title} raw & scanlations in full color HD.`,
-                hasEpub: false,
-                format: 'Manga & Manhwa',
-                _isDirectSearchMatch: true,
-                _source: 'Manhwa18'
-            });
-        });
+                    let imgUrl = $(el).find('img').attr('data-src') || $(el).find('img').attr('src') || '';
+                    if (imgUrl && imgUrl.startsWith('//')) imgUrl = 'https:' + imgUrl;
+                    if (imgUrl && imgUrl.startsWith('/')) imgUrl = BASE_URL + imgUrl;
+
+                    const proxiedCover = imgUrl ? `/api/proxy/image?url=${encodeURIComponent(imgUrl)}` : null;
+
+                    results.push({
+                        id: `manhwa18-${slug}`,
+                        slug,
+                        title,
+                        author: 'Manhwa Artist',
+                        cover: proxiedCover || 'burgundy',
+                        image: proxiedCover,
+                        lines: title.split(' ').slice(0, 3).join('<br>'),
+                        genre: 'Manga & Manhwa',
+                        mood: 'Manhwa (+18)',
+                        pages: 50,
+                        rating: 5,
+                        synopsis: '',
+                        hasEpub: false,
+                        format: 'Manga & Manhwa',
+                        _isDirectSearchMatch: true,
+                        _source: 'Manhwa18'
+                    });
+                });
+            } catch(err) {}
+        }));
 
         MANHWA18_SEARCH_CACHE.set(cleanQ, results);
         return results;
@@ -147,6 +164,38 @@ async function fetchManhwa18Chapters(id) {
             html: `<div class="lazy-manga-trigger" data-m18-url="${encodeURIComponent(ch.url)}" data-chapter="${ch.chNum}"><p>⚡ Loading ${ch.title} panels from Manhwa18...</p></div>`
         }));
 
+        // Scrape Rich Series Metadata
+        let metaTitle = $('h1').first().text().replace(/18\+/g, '').trim();
+        let altTitle = '';
+        let author = '';
+        let artist = '';
+        let genres = [];
+        let status = '';
+
+        $('div, p, li, tr').each((i, el) => {
+            const t = $(el).text().trim();
+            if (t.startsWith('Alternative:')) altTitle = t.replace('Alternative:', '').trim();
+            if (t.startsWith('Author(s)')) author = t.replace('Author(s)', '').trim();
+            if (t.startsWith('Artist(s)')) artist = t.replace('Artist(s)', '').trim();
+            if (t.startsWith('Genre(s)')) genres = t.replace('Genre(s)', '').split(/\s+/).filter(Boolean);
+            if (t.startsWith('Status')) status = t.replace('Status', '').trim();
+        });
+
+        const synopsis = $('.summary, .description, .dsct, .panel-story-info-description').first().text().trim() ||
+                         $('p').map((i, el) => $(el).text().trim()).get().find(t => t.length > 40 && !t.toLowerCase().includes('manhwa18')) || '';
+
+        const finalAuthor = author || artist || 'Manhwa Artist';
+
+        const metadata = {
+            title: metaTitle,
+            altTitle: altTitle,
+            author: finalAuthor,
+            artist: artist,
+            genres: genres,
+            status: status,
+            synopsis: synopsis
+        };
+
         // Prefetch first chapter images immediately
         if (structured.length > 0) {
             const panelsHtml = await getManhwa18ChapterPanels(structured[0].url).catch(() => null);
@@ -155,6 +204,7 @@ async function fetchManhwa18Chapters(id) {
             }
         }
 
+        structured.metadata = metadata;
         MANHWA18_CHAPTERS_CACHE.set(slug, structured);
         return structured;
     } catch(e) {

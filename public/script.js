@@ -186,8 +186,16 @@ async function handleLiveSearchInput(query) {
 
     const uniqueMap = new Map();
     list.forEach(b => {
-      const cleanTitle = (b.title || '').trim();
-      const normKey = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cleanTitle = (b.title || '').trim().replace(/\s+(?:vol(?:ume)?\.?\s*\d+|\d+)$/i, '');
+      const normKey = cleanTitle.toLowerCase()
+        .replace(/\b(i'm|im)\b/g, 'iam')
+        .replace(/\b(you're)\b/g, 'youare')
+        .replace(/\b(it's)\b/g, 'itis')
+        .replace(/\b(who's)\b/g, 'whois')
+        .replace(/\b(don't)\b/g, 'donot')
+        .replace(/\b(can't)\b/g, 'cannot')
+        .replace(/\s*(?:manga|manhwa|webtoon|comic|novel|scanlation|scans|official|raw)\s*$/i, '')
+        .replace(/[^a-z0-9]/g, '');
       if (!uniqueMap.has(normKey)) {
         uniqueMap.set(normKey, b);
       }
@@ -226,32 +234,37 @@ async function handleLiveSearchInput(query) {
       const isManhwa     = fLower.includes('manhwa') || gLower.includes('manhwa') || tLower.includes('manhwa') || mLower.includes('manhwa') || fLower.includes('webtoon') || gLower.includes('webtoon');
       const isManhua     = fLower.includes('manhua') || gLower.includes('manhua') || tLower.includes('manhua') || mLower.includes('manhua');
       const isComic      = fLower.includes('comic') || gLower.includes('comic') || tLower.includes('comic');
-      const isManga      = fLower.includes('manga') || gLower.includes('manga') || tLower.includes('manga') || mLower.includes('manga');
+      const isManga      = b.id.startsWith('mangadna-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('mangapill-') || fLower.includes('manga') || gLower.includes('manga') || tLower.includes('manga') || mLower.includes('manga');
 
       let typeLabel = 'BOOK';
       let typeBg    = '#d97706';
 
       if (isAdult)           { typeLabel = isManhwa ? 'MANHWA (+18)' : (isManga ? 'MANGA (+18)' : 'ADULT (+18)'); typeBg = '#dc2626'; }
       else if (isOneShot)    { typeLabel = 'ONE-SHOT';    typeBg = '#6366f1'; }
-      else if (isLightNovel) { typeLabel = 'LIGHT NOVEL'; typeBg = '#9333ea'; }
-      else if (isWebNovel)   { typeLabel = 'WEB NOVEL';   typeBg = '#7c3aed'; }
-      else if (isManhwa)     { typeLabel = 'MANHWA';      typeBg = '#16a34a'; }
-      else if (isManhua)     { typeLabel = 'MANHUA';      typeBg = '#0891b2'; }
+      else if (isLightNovel) { typeLabel = 'LIGHT NOVEL'; typeBg = '#8b5cf6'; }
+      else if (isWebNovel)   { typeLabel = 'WEB NOVEL';   typeBg = '#ec4899'; }
+      else if (isManhwa)     { typeLabel = 'MANHWA';      typeBg = '#10b981'; }
+      else if (isManhua)     { typeLabel = 'MANHUA';      typeBg = '#f59e0b'; }
       else if (isComic)      { typeLabel = 'COMIC';       typeBg = '#0284c7'; }
       else if (isManga)      { typeLabel = 'MANGA';       typeBg = '#2563eb'; }
 
       let cleanAuthor = (b.author || '').replace(/@\w+/g, '').replace(/^by\s+/i, '').trim();
-      if (!cleanAuthor || cleanAuthor.toLowerCase() === 'author') {
-        cleanAuthor = (isManga || isManhwa || isManhua) ? 'Manga Artist' : 'Author';
-      }
+      const isGenericAuthor = !cleanAuthor || cleanAuthor.toLowerCase() === 'author' || cleanAuthor.toLowerCase() === 'manga artist' || cleanAuthor.toLowerCase() === 'web novel author' || cleanAuthor.toLowerCase() === 'manhwa artist';
+      
+      const genresList = (Array.isArray(b.genres) && b.genres.length > 0) ? b.genres : (Array.isArray(b.tags) ? b.tags : []);
+      const genreStr = genresList.slice(0, 2).join(' · ');
 
-      // Metadata elements: Author, Year, Status (No source scraper names)
+      // Metadata elements: Real Author or Genres, Year, Status
       const metaParts = [];
-      if (cleanAuthor) metaParts.push(cleanAuthor);
+      if (!isGenericAuthor) {
+        metaParts.push(cleanAuthor);
+      } else if (genreStr) {
+        metaParts.push(genreStr);
+      }
       if (b.year) metaParts.push(b.year);
       if (b.status && b.status !== 'Unknown') metaParts.push(b.status);
 
-      const metaStr = metaParts.join(' • ');
+      const metaStr = metaParts.length > 0 ? metaParts.join(' • ') : typeLabel;
 
       const coverSrc = (b.cover && typeof b.cover === 'string' && (b.cover.startsWith('http') || b.cover.startsWith('/'))) 
         ? b.cover 
@@ -260,17 +273,25 @@ async function handleLiveSearchInput(query) {
         ? `<img src="${coverSrc}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;background:#222;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#888;\\'>📖</div>';" />`
         : `<div style="width:100%;height:100%;background:#222;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#888;">📖</div>`;
 
-      // Determine Primary vs Secondary Display Title
-      let displayTitle = b.title;
-      let displayAlt = b.altTitle || '';
+      // Determine Primary vs Secondary Display Title (Prevent duplicate titles!)
+      let displayTitle = (b.title || '').trim();
+      let displayAlt = (b.altTitle || '').trim();
 
-      // If user's query matches the altTitle better than the primary title, show the matched English/alt title first!
-      if (cleanQ && b.altTitle && b.altTitle.toLowerCase().includes(cleanQ) && !b.title.toLowerCase().includes(cleanQ)) {
-        displayTitle = b.altTitle;
-        displayAlt = b.title;
+      const normTitle = displayTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normAlt = displayAlt.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      if (!displayAlt || normAlt === normTitle || normTitle.includes(normAlt) || normAlt.includes(normTitle)) {
+        displayAlt = '';
       }
 
-      const altSubHtml = displayAlt ? `<div style="font-size:0.75rem;color:rgba(255,255,255,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;">${highlightMatchText(displayAlt, cleanQ)}</div>` : '';
+      // If user's query matches the altTitle better than the primary title, show the matched English/alt title first!
+      if (cleanQ && displayAlt && displayAlt.toLowerCase().includes(cleanQ) && !displayTitle.toLowerCase().includes(cleanQ)) {
+        const temp = displayTitle;
+        displayTitle = displayAlt;
+        displayAlt = temp;
+      }
+
+      const altSubHtml = displayAlt ? `<div class="md-live-alt" style="font-size:0.78rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">${highlightMatchText(displayAlt, cleanQ)}</div>` : '';
 
       return `
         <div class="md-live-result-item" data-book-id="${b.id}" data-item-index="${idx}" role="option">
@@ -405,7 +426,12 @@ async function renderSearch(){
         const rawYear = b.year || b.releaseDate || b.publishedDate || '';
         const yearMatch = String(rawYear).match(/\d{4}/);
         const yearStr = yearMatch ? yearMatch[0] : '';
-        let subtitleLine = b.altTitle ? `${b.altTitle} • ${cleanAuthor}` : (yearStr && !cleanAuthor.includes(yearStr) ? `${cleanAuthor} • ${yearStr}` : cleanAuthor);
+        const rawAlt = (b.altTitle || '').trim();
+        const normTitle = (b.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const normAlt = rawAlt.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const validAlt = (rawAlt && normAlt !== normTitle && !normTitle.includes(normAlt) && !normAlt.includes(normTitle)) ? rawAlt : '';
+
+        let subtitleLine = validAlt ? `${validAlt} • ${cleanAuthor}` : (yearStr && !cleanAuthor.includes(yearStr) ? `${cleanAuthor} • ${yearStr}` : cleanAuthor);
 
         const tLower = (b.title || '').toLowerCase();
         const gLower = (b.genre || '').toLowerCase();
@@ -417,7 +443,7 @@ async function renderSearch(){
         const isManhwa   = b.id.startsWith('manhwa18-') || gLower === 'manhwa' || tLower.includes('manhwa') || mLower.includes('manhwa');
         const isLightNovel = gLower === 'light novel' || tLower.includes('light novel') || (b.altTitle && b.altTitle.toLowerCase().includes('light novel')) || tLower.includes('shousetsu');
         const isWebNovel = b.id.startsWith('royalroad-') || gLower === 'web novel' || tLower.includes('web novel') || (gLower.includes('novel') && !isLightNovel);
-        const isMangaType = b.id.startsWith('mangapill-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || gLower.includes('manga') || mLower.includes('manga');
+        const isMangaType = b.id.startsWith('mangadna-') || b.id.startsWith('mangapill-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('telegram-') || b.id.startsWith('private-tg-') || gLower.includes('manga') || mLower.includes('manga');
 
         let typeLabel = 'BOOK';
         let typeBg    = '#d97706';
@@ -512,6 +538,16 @@ function renderDetail(rawId) {
 
   // Extract Tags & Category Pills (MangaDex style)
   const tagSet = new Set();
+  if (Array.isArray(b.genres)) {
+    b.genres.forEach(g => {
+      if (g && typeof g === 'string') tagSet.add(g.trim().toUpperCase());
+    });
+  }
+  if (Array.isArray(b.tags)) {
+    b.tags.forEach(t => {
+      if (t && typeof t === 'string') tagSet.add(t.trim().toUpperCase());
+    });
+  }
   const tLower = (mainTitle + ' ' + (b.synopsis || '') + ' ' + (b.genre || '') + ' ' + (b.mood || '')).toLowerCase();
   
   if (b.genre) tagSet.add(b.genre.toUpperCase());
@@ -604,8 +640,13 @@ function renderDetail(rawId) {
   const coverSrc = validCover;
   const firstChIdx = 0;
 
-  // Format synopsis into clean readable paragraphs
-  const rawSynopsis = (b.synopsis || 'No synopsis provided for this volume.').trim();
+  // Format synopsis into clean readable paragraphs with dynamic loading state
+  const isPendingMetadata = (!b.synopsis || b.synopsis.trim().length === 0) && (!b.chapters || b.chapters.length === 0);
+  const rawSynopsis = (b.synopsis && b.synopsis.trim().length > 0)
+    ? b.synopsis.trim()
+    : (isPendingMetadata 
+        ? `Fetching official synopsis, genre tags, and chapter list from digital scanlation archives...`
+        : `${mainTitle} is currently cataloged in the Bibliothèque digital library with high-resolution chapters and reading panels.`);
   const synopsisParagraphs = rawSynopsis.split(/\n+/).map(para => `<p>${para.trim()}</p>`).join('');
 
   g.innerHTML = `
@@ -952,11 +993,41 @@ async function loadStolenChapters(id, title, author, genre){
       targetBook.chapters = data.chapters;
       targetBook.isFallback = !!data.isFallback;
       targetBook.isLocal = !!data.isLocal;
+      
+      if (data.metadata) {
+        const meta = data.metadata;
+        if (meta.author && meta.author !== 'Unknown' && meta.author !== 'Updating' && !meta.author.toLowerCase().includes('manga artist') && !meta.author.toLowerCase().includes('royal road author')) {
+          targetBook.author = meta.author;
+        } else if (meta.author && (!targetBook.author || targetBook.author === 'Manga Artist' || targetBook.author === 'Author' || targetBook.author === 'Royal Road Author')) {
+          targetBook.author = meta.author;
+        }
+        if (meta.synopsis && meta.synopsis.length > 20 && !meta.synopsis.toLowerCase().includes('mangabuddy online')) {
+          targetBook.synopsis = meta.synopsis;
+        }
+        if (meta.altTitle && meta.altTitle.toLowerCase().trim() !== targetBook.title.toLowerCase().trim()) {
+          targetBook.altTitle = meta.altTitle;
+        }
+        if (meta.genres && meta.genres.length) {
+          targetBook.genres = meta.genres;
+        }
+        if (meta.status) {
+          targetBook.status = meta.status;
+        }
+        if (meta.year && !targetBook.year) {
+          targetBook.year = meta.year;
+        }
+      }
+
       if (data.type === 'webnovel' || data.type === 'book') {
         targetBook.format = 'Novel & Fiction';
         targetBook.genre = 'Web Novel';
       }
       saveState();
+
+      // If user is currently looking at book details, immediately refresh with genuine scraped metadata!
+      if (state.currentBook === id && document.querySelector('#book-detail')?.style.display !== 'none') {
+        renderDetail();
+      }
     }
 
     const rawTitle = targetBook && !isNaN(Number(targetBook.title)) ? title || targetBook.title : (targetBook ? targetBook.title : title || 'Book');
@@ -1227,7 +1298,7 @@ function openBook(id){
 
   // Auto-prefetch chapters for external items if not loaded yet
   const b = book(id);
-  const isExternal = b && (b.id.startsWith('manhwa18-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('mangapill-') || b.id.startsWith('divascans-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('mangadex-') || b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.id.startsWith('itunes-') || (b.genre || '').toLowerCase().includes('manga') || (b.genre || '').toLowerCase().includes('novel'));
+  const isExternal = b && (b.id.startsWith('mangadna-') || b.id.startsWith('manhwa18-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('mangapill-') || b.id.startsWith('divascans-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('mangadex-') || b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.id.startsWith('itunes-') || (b.genre || '').toLowerCase().includes('manga') || (b.genre || '').toLowerCase().includes('novel'));
   if (isExternal) {
     fetch(`/api/books/${id}/chapters?q=${encodeURIComponent(b.title)}&_cb=${Date.now()}`)
       .then(r => r.json())
@@ -1235,6 +1306,18 @@ function openBook(id){
         if (data.chapters && data.chapters.length > 0) {
           b.chapters = data.chapters;
           b.isFallback = !!data.isFallback;
+          if (data.metadata) {
+            const meta = data.metadata;
+            if (meta.synopsis && meta.synopsis.length > 10) b.synopsis = meta.synopsis;
+            if (meta.author && meta.author !== 'Unknown' && meta.author !== 'Manga Artist') b.author = meta.author;
+            if (meta.artist) b.artist = meta.artist;
+            if (meta.status) b.status = meta.status;
+            if (meta.genres && meta.genres.length > 0) b.genres = meta.genres;
+            if (meta.image && (!b.image || b.image === 'null')) {
+              b.image = meta.image;
+              b.cover = meta.image;
+            }
+          }
           saveState();
           if(state.currentBook === id) {
             renderDetail();
@@ -1768,7 +1851,7 @@ function renderMangaDexHome() {
               <p>${m.synopsis || 'Explore this trending manga series on Mangapill with full scanlations.'}</p>
             </div>
             <div class="md-hero-bottom-row">
-              <span class="md-hero-author-text">${m.author || 'Manga Artist'}</span>
+              <span class="md-hero-author-text">${m.author || 'Manga Artist'}${m.year ? ` • ${m.year}` : ''}${m.status ? ` • ${m.status}` : ''}</span>
               <div class="md-hero-slider-nav">
                 <span class="md-hero-slide-num">NO. ${idx + 1}</span>
                 <button type="button" class="md-nav-arrow-btn md-slide-prev" data-slide-prev aria-label="Previous">‹</button>

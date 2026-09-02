@@ -275,6 +275,43 @@ async function fetchMangapillChapters(seriesId) {
             };
         });
 
+        // Scrape Mangapill Rich Series Metadata
+        let metaTitle = $('h1').first().text().trim() || mangaSlug.replace(/-/g, ' ');
+        let author = '';
+        let artist = '';
+        let year = '';
+        let status = '';
+        let genres = [];
+
+        $('div.grid > div, div.flex > div').each((i, el) => {
+            const t = $(el).text().replace(/\s+/g, ' ').trim();
+            if (t.startsWith('Author')) author = t.replace(/^Author\s*/i, '').trim();
+            if (t.startsWith('Artist')) artist = t.replace(/^Artist\s*/i, '').trim();
+            if (t.startsWith('Year')) year = t.replace(/^Year\s*/i, '').trim();
+            if (t.startsWith('Status')) status = t.replace(/^Status\s*/i, '').trim();
+            if (t.startsWith('Genres')) genres = t.replace(/^Genres\s*/i, '').split(/\s+/).filter(Boolean);
+        });
+
+        const synopsis = $('p.text--secondary, p[class*="text--secondary"], p.text-sm').map((i, el) => $(el).text().trim()).get().find(t => 
+            t.length > 30 && 
+            !t.toLowerCase().includes('discontinue') && 
+            !t.toLowerCase().includes('mangapill') &&
+            !t.toLowerCase().includes('chapter not found')
+        ) || '';
+
+        const finalAuthor = author || artist || 'Manga Artist';
+
+        const metadata = {
+            title: metaTitle,
+            author: finalAuthor,
+            artist: artist,
+            year: year,
+            status: status || 'Publishing',
+            genres: genres,
+            synopsis: synopsis
+        };
+
+        formatted.metadata = metadata;
         MANGAPILL_CHAPTERS_CACHE.set(cacheKey, formatted);
         return formatted;
     } catch (e) {
@@ -360,6 +397,8 @@ async function fetchMangapillPopular() {
 
             list.push({
                 id: `mangapill-${mangaId}-${slug}`,
+                mangaId: mangaId,
+                slug: slug,
                 title: rawTitle,
                 author: 'Manga Artist',
                 cover: proxiedCover,
@@ -374,7 +413,70 @@ async function fetchMangapillPopular() {
             });
         });
 
-        return list;
+        const { POPULAR_MANGA_CATALOG } = require('./mangaCatalogIndex');
+
+        // Scrape metadata in parallel for top 12 popular items
+        const enrichedList = await Promise.all(list.slice(0, 24).map(async (item, idx) => {
+            // 1. Check curated catalog
+            const catalogMatch = POPULAR_MANGA_CATALOG.find(c => 
+                (c.mangaId && String(c.mangaId) === String(item.mangaId)) ||
+                (c.slug && c.slug === item.slug) ||
+                (c.title && c.title.toLowerCase() === item.title.toLowerCase())
+            );
+
+            if (catalogMatch) {
+                return {
+                    ...item,
+                    author: catalogMatch.author || item.author,
+                    synopsis: catalogMatch.synopsis || item.synopsis,
+                    tags: catalogMatch.tags || (catalogMatch.genre ? [catalogMatch.genre] : item.tags),
+                    year: catalogMatch.year || item.year,
+                    status: catalogMatch.status || item.status,
+                    genre: catalogMatch.genre || item.genre
+                };
+            }
+
+            // 2. For top 10 hero banner slides, fetch genuine page metadata if not in catalog
+            if (idx < 10) {
+                try {
+                    const mangaUrl = `${BASE_URL}/manga/${item.mangaId}/${item.slug}`;
+                    const detRes = await fetchHtml(mangaUrl, { timeout: 4000 }).catch(() => null);
+                    if (detRes && detRes.status === 200 && detRes.text) {
+                        const $d = cheerio.load(detRes.text);
+                        const realSynopsis = $d('p.text--secondary, p[class*="text--secondary"], .description').first().text().trim();
+                        let realType = '';
+                        let realStatus = '';
+                        let realYear = '';
+                        const realGenres = [];
+
+                        $d('div.grid > div, div.flex > div, div').each((_, el) => {
+                            const pText = $d(el).text().replace(/\s+/g, ' ').trim();
+                            if (pText.startsWith('Type')) realType = pText.replace(/^Type\s*/i, '').trim();
+                            if (pText.startsWith('Status')) realStatus = pText.replace(/^Status\s*/i, '').trim();
+                            if (pText.startsWith('Year')) realYear = pText.replace(/^Year\s*/i, '').trim();
+                        });
+
+                        $d('a[href*="genre="], a[href*="/genre/"], a[href*="/mangas/genre/"]').each((_, el) => {
+                            const g = $d(el).text().trim();
+                            if (g && !realGenres.includes(g)) realGenres.push(g);
+                        });
+
+                        return {
+                            ...item,
+                            synopsis: (realSynopsis && realSynopsis.length > 30) ? realSynopsis : item.synopsis,
+                            tags: realGenres.length > 0 ? realGenres : item.tags,
+                            year: realYear || item.year,
+                            status: realStatus || item.status,
+                            format: realType ? realType.toUpperCase() : item.format
+                        };
+                    }
+                } catch(e) {}
+            }
+
+            return item;
+        }));
+
+        return [...enrichedList, ...list.slice(24)];
     } catch (e) {
         console.error('[MANGAPILL] Error fetching popular:', e.message);
         return [];
