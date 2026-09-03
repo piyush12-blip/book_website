@@ -2058,21 +2058,21 @@ body.theme-night .bibliotheque {
 .md-hero-details-grid {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 10px;
   height: 255px;
   max-height: 255px;
   max-width: 900px;
   width: 100%;
   min-height: 0;
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .md-hero-title-h2 {
   font-size: clamp(1.25rem, 2.8vw, 2.25rem);
   font-weight: 700;
   color: #ffffff;
-  line-height: 2.75rem;
+  line-height: 1.25;
   margin: 0;
   cursor: pointer;
   display: -webkit-box;
@@ -2513,3 +2513,824 @@ body.theme-night .bibliotheque {
 .w-full { width: 100%; }
 .h-full { height: 100%; }
 .aspect-7\/10 { aspect-ratio: 7 / 10; }
+
+/* ── NIGHT THEME TRANSPARENT FLOATING RIGHT-SIDE QUICK NAV ── */
+/* "dont add any bar add on that transparant dont add any box or bar or blur thing just otpion" */
+.md-hero-floating-nav {
+  position: absolute;
+  right: 28px;
+  top: 138px;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 13px;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  pointer-events: auto;
+}
+
+.md-hero-nav-item {
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  color: rgba(255, 255, 255, 0.82) !important;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95);
+  transition: color 0.16s ease, transform 0.16s ease;
+  cursor: pointer;
+  user-select: none;
+}
+
+.md-hero-nav-item:hover {
+  color: #ff6740 !important;
+  transform: translateX(-4px);
+  text-shadow: 0 0 12px rgba(255, 103, 64, 0.7);
+}
+
+.md-hero-nav-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+  opacity: 0.9;
+}
+
+@media (max-width: 1024px) {
+  .md-hero-floating-nav {
+    display: none !important;
+  }
+}
+
+/* ── SETTINGS FONT SIZE STEPPER CONTROLS ── */
+.font-size-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.font-stepper-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.font-step-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  width: 32px;
+  height: 32px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.theme-day .font-step-btn {
+  background: #f1ede4;
+  border-color: #d1c7b7;
+  color: #2c251e;
+}
+
+.font-step-btn:hover {
+  background: #ff6740;
+  color: #ffffff;
+  border-color: #ff6740;
+  transform: translateY(-1px);
+}
+
+#setting-font-out {
+  min-width: 44px;
+  font-weight: 700;
+  text-align: right;
+}
+
+/* ── LO × ENI ARTISAN BRAND EMBLEM & LOGO ── */
+.lo-eni-brand {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 11px !important;
+  text-decoration: none !important;
+  user-select: none !important;
+  transition: opacity 0.18s ease, transform 0.18s ease !important;
+}
+
+.lo-eni-brand:hover {
+  opacity: 0.92 !important;
+  transform: translateY(-1px) !important;
+}
+
+.lo-eni-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #111726;
+  border: 1px solid rgba(255, 62, 85, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.lo-eni-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.lo-eni-name {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif !important;
+  font-size: 1.12rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.06em !important;
+  color: #ffffff !important;
+}
+
+.lo-eni-cross {
+  color: #ff3e55 !important;
+  font-weight: 900 !important;
+  margin: 0 2px;
+}
+
+.lo-eni-tag {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif !important;
+  font-size: 0.58rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.18em !important;
+  text-transform: uppercase !important;
+  color: #94a3b8 !important;
+}
+
+/* ── REFINED MODERN DARK THEME FOR LIBRARY, EXPLORE, PROFILE & SETTINGS ── */
+body.theme-night #library-view,
+body.theme-night #explore-view,
+body.theme-night #profile,
+body.theme-night #settings,
+body.theme-night #search {
+  background: #080c14 !important;
+  color: #e2e8f0 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif !important;
+  min-height: 100vh;
+  padding: 85px 24px 60px 24px !important;
+}
+
+body.theme-night .view-return {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #94a3b8 !important;
+  padding: 6px 14px !important;
+  border-radius: 6px !important;
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  text-decoration: none !important;
+  margin-bottom: 20px !important;
+  transition: all 0.18s ease !important;
+}
+
+body.theme-night .view-return:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Restrained, elegant header typography - NOT huge AI sizes */
+body.theme-night .section-intro h2,
+body.theme-night .explore-header-box h2,
+body.theme-night .explore-hero h2,
+body.theme-night .dashboard-panel h2,
+body.theme-night .profile-card h2,
+body.theme-night .settings-card h3,
+#library-view-title,
+#explore-view-title {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif !important;
+  color: #ffffff !important;
+  font-size: 1.55rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.015em !important;
+  margin: 0 0 6px 0 !important;
+}
+
+body.theme-night .kicker {
+  color: #ff3e55 !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  text-transform: uppercase !important;
+  margin-bottom: 4px !important;
+}
+
+body.theme-night .section-intro p,
+body.theme-night .explore-header-box p,
+body.theme-night .explore-hero p,
+body.theme-night .settings-card p,
+body.theme-night .profile-card p {
+  color: #94a3b8 !important;
+  font-size: 0.88rem !important;
+  line-height: 1.5 !important;
+  margin: 0 0 20px 0 !important;
+}
+
+/* Shelf Tabs in Library */
+body.theme-night .shelf-tabs {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  display: flex !important;
+  gap: 10px !important;
+  margin-bottom: 22px !important;
+  padding-bottom: 12px !important;
+}
+
+body.theme-night .shelf-tabs button {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #94a3b8 !important;
+  padding: 7px 16px !important;
+  border-radius: 6px !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.16s ease !important;
+}
+
+body.theme-night .shelf-tabs button.active,
+body.theme-night .shelf-tabs button:hover {
+  background: #ff3e55 !important;
+  color: #ffffff !important;
+  border-color: #ff3e55 !important;
+}
+
+/* ── COMPACT EXPLORE HEADER (NO WASTED EMPTY SPACE) ── */
+body.theme-night #explore-view {
+  padding: 68px 20px 40px 20px !important;
+}
+
+.explore-shell {
+  max-width: 1540px !important;
+  margin: 0 auto !important;
+  width: 100% !important;
+}
+
+.explore-top-bar {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  margin-bottom: 16px !important;
+}
+
+.explore-nav-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.explore-nav-row .view-return {
+  margin-bottom: 0 !important;
+}
+
+.explore-compact-title {
+  font-size: 1.3rem !important;
+  font-weight: 800 !important;
+  color: #ffffff !important;
+  margin: 0 !important;
+  letter-spacing: -0.015em !important;
+}
+
+.explore-count-pill {
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  color: #ff3e55 !important;
+  background: rgba(255, 62, 85, 0.1) !important;
+  border: 1px solid rgba(255, 62, 85, 0.28) !important;
+  padding: 3px 9px !important;
+  border-radius: 12px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+/* ── CLASSIC CATEGORY DROPDOWN SELECTOR ── */
+.explore-filter-select-wrap {
+  position: relative !important;
+  display: inline-block !important;
+}
+
+.explore-dropdown-toggle {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  background: #111726 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  color: #f1f5f9 !important;
+  padding: 6px 14px !important;
+  border-radius: 6px !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  user-select: none !important;
+}
+
+.explore-dropdown-toggle:hover,
+.explore-dropdown-toggle[aria-expanded="true"] {
+  background: #161f33 !important;
+  border-color: #ff3e55 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(255, 62, 85, 0.25) !important;
+}
+
+.dropdown-active-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.dropdown-caret-svg {
+  transition: transform 0.2s ease !important;
+  color: #94a3b8 !important;
+}
+
+.explore-dropdown-toggle[aria-expanded="true"] .dropdown-caret-svg {
+  transform: rotate(180deg) !important;
+  color: #ff3e55 !important;
+}
+
+.explore-dropdown-menu {
+  position: absolute !important;
+  top: calc(100% + 6px) !important;
+  left: 0 !important;
+  min-width: 200px !important;
+  background: #0f1624 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+  padding: 6px !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 62, 85, 0.1) !important;
+  z-index: 100 !important;
+  display: none;
+  flex-direction: column !important;
+  gap: 3px !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+.explore-dropdown-menu.active {
+  display: flex !important;
+  animation: dropFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes dropFadeIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.dropdown-option-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  width: 100% !important;
+  text-align: left !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  border: none !important;
+  color: #cbd5e1 !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.14s ease !important;
+}
+
+.dropdown-option-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+.dropdown-option-item.active {
+  background: rgba(255, 62, 85, 0.15) !important;
+  color: #ff3e55 !important;
+  font-weight: 700 !important;
+}
+
+.dropdown-opt-icon {
+  font-size: 0.95rem !important;
+}
+
+/* ── MANGADEX FULL-BLEED POSTER GRID WITH TRANSPARENT TITLE OVERLAY ── */
+.mangadex-card-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)) !important;
+  gap: 16px 14px !important;
+  padding-bottom: 40px !important;
+}
+
+@media (min-width: 1200px) {
+  .mangadex-card-grid {
+    grid-template-columns: repeat(5, 1fr) !important;
+    gap: 18px 16px !important;
+  }
+}
+
+.md-poster-card {
+  position: relative !important;
+  border-radius: 6px !important;
+  overflow: hidden !important;
+  background: #111726 !important;
+  cursor: pointer !important;
+  transition: transform 0.22s ease, box-shadow 0.22s ease !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45) !important;
+  user-select: none !important;
+}
+
+.md-poster-card:hover {
+  transform: translateY(-5px) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.85), 0 0 16px rgba(255, 62, 85, 0.28) !important;
+}
+
+.md-poster-wrap {
+  position: relative !important;
+  width: 100% !important;
+  aspect-ratio: 1 / 1.45 !important;
+  overflow: hidden !important;
+  background: #131a28 !important;
+}
+
+.md-poster-wrap img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+  transition: transform 0.25s ease !important;
+}
+
+.md-poster-card:hover .md-poster-wrap img {
+  transform: scale(1.05) !important;
+}
+
+/* Transparent title overlay directly on bottom of poster */
+.md-title-overlay {
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  padding: 44px 10px 10px 10px !important;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.72) 48%, rgba(0, 0, 0, 0) 100%) !important;
+  pointer-events: none !important;
+  z-index: 2 !important;
+}
+
+.md-title-flag-row {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 6px !important;
+}
+
+.md-card-flag {
+  font-size: 0.85rem !important;
+  line-height: 1.25 !important;
+  flex-shrink: 0 !important;
+}
+
+.md-title-text {
+  font-size: 0.9rem !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  line-height: 1.25 !important;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 2px 8px rgba(0, 0, 0, 0.8) !important;
+  overflow: hidden !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  word-break: break-word !important;
+}
+
+/* Three action options on card */
+.md-poster-actions {
+  position: absolute !important;
+  top: 8px !important;
+  right: 8px !important;
+  display: flex !important;
+  gap: 5px !important;
+  z-index: 4 !important;
+  opacity: 0.85 !important;
+  transition: opacity 0.18s ease !important;
+}
+
+.md-poster-card:hover .md-poster-actions {
+  opacity: 1 !important;
+}
+
+.md-card-action-btn {
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 6px !important;
+  background: rgba(8, 12, 20, 0.8) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  color: #f1f5f9 !important;
+  font-size: 0.82rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  padding: 0 !important;
+}
+
+.md-card-action-btn:hover {
+  background: #ff3e55 !important;
+  color: #ffffff !important;
+  border-color: #ff3e55 !important;
+  transform: scale(1.1) !important;
+}
+
+.md-card-action-btn.active {
+  background: #ff3e55 !important;
+  color: #ffffff !important;
+  border-color: #ff3e55 !important;
+}
+
+.md-card-action-btn.md-read-btn {
+  font-size: 0.75rem !important;
+  font-weight: 800 !important;
+}
+
+/* ── REAL MANGA & BOOK POSTER GRID (HUMAN-DESIGNED, NO AI BOX SLOP) ── */
+.manga-poster-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)) !important;
+  gap: 18px 14px !important;
+}
+
+.manga-card-item {
+  background: #0d121c !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  transition: transform 0.18s ease, border-color 0.18s ease !important;
+  cursor: pointer !important;
+  position: relative !important;
+}
+
+.manga-card-item:hover {
+  transform: translateY(-4px) !important;
+  border-color: rgba(255, 62, 85, 0.5) !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6) !important;
+}
+
+.manga-card-cover-wrap {
+  width: 100% !important;
+  aspect-ratio: 2 / 3 !important;
+  background: #141a26 !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.manga-card-cover-wrap img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+.manga-card-body {
+  padding: 8px 10px 10px 10px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  flex: 1 !important;
+}
+
+.manga-card-title {
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  color: #f1f5f9 !important;
+  line-height: 1.25 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+}
+
+.manga-card-sub {
+  font-size: 0.72rem !important;
+  color: #64748b !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.manga-card-footer {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-top: auto !important;
+  padding-top: 6px !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.manga-card-tag {
+  font-size: 0.68rem !important;
+  color: #ff3e55 !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
+.manga-card-btn-remove {
+  background: transparent !important;
+  border: none !important;
+  color: #64748b !important;
+  font-size: 0.8rem !important;
+  cursor: pointer !important;
+  padding: 2px 4px !important;
+  border-radius: 4px !important;
+  transition: color 0.15s ease !important;
+}
+
+.manga-card-btn-remove:hover {
+  color: #ff3e55 !important;
+}
+
+/* Empty State */
+.empty-gallery-state {
+  grid-column: 1 / -1 !important;
+  padding: 48px 16px !important;
+  text-align: center !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: 8px !important;
+}
+
+.empty-gallery-state h3 {
+  color: #ffffff !important;
+  font-size: 1.15rem !important;
+  font-weight: 700 !important;
+  margin-bottom: 6px !important;
+}
+
+.empty-gallery-state p {
+  color: #64748b !important;
+  font-size: 0.85rem !important;
+  margin-bottom: 16px !important;
+}
+
+.empty-gallery-btn {
+  background: #ff3e55 !important;
+  color: #ffffff !important;
+  border: none !important;
+  padding: 8px 18px !important;
+  border-radius: 6px !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+/* Profile Section Styling */
+body.theme-night .profile-grid {
+  display: grid !important;
+  grid-template-columns: 300px 1fr !important;
+  gap: 24px !important;
+}
+
+@media (max-width: 860px) {
+  body.theme-night .profile-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+body.theme-night .profile-card,
+body.theme-night .dashboard-panel {
+  background: #0d121c !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 10px !important;
+  padding: 24px !important;
+}
+
+body.theme-night .profile-avatar {
+  width: 64px !important;
+  height: 64px !important;
+  border-radius: 50% !important;
+  background: #ff3e55 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 1.3rem !important;
+  font-weight: 800 !important;
+  color: #ffffff !important;
+  margin-bottom: 14px !important;
+}
+
+body.theme-night .dash-stats {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) !important;
+  gap: 12px !important;
+  margin: 18px 0 !important;
+}
+
+body.theme-night .dash-stats article {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: 8px !important;
+  padding: 14px !important;
+  text-align: center !important;
+}
+
+body.theme-night .dash-stats article span {
+  color: #94a3b8 !important;
+  font-size: 0.75rem !important;
+  display: block !important;
+  margin-bottom: 4px !important;
+}
+
+body.theme-night .dash-stats article strong {
+  color: #ffffff !important;
+  font-size: 1.4rem !important;
+  font-weight: 700 !important;
+}
+
+/* Settings Cards Grid */
+body.theme-night .settings-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 18px !important;
+}
+
+@media (max-width: 768px) {
+  body.theme-night .settings-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+body.theme-night .settings-card {
+  background: #0d121c !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 10px !important;
+  padding: 22px !important;
+}
+
+body.theme-night .setting-buttons button,
+body.theme-night .import-label {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #f1f5f9 !important;
+  padding: 8px 16px !important;
+  border-radius: 6px !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.16s ease !important;
+}
+
+body.theme-night .setting-buttons button.active,
+body.theme-night .setting-buttons button:hover,
+body.theme-night .import-label:hover {
+  background: #ff3e55 !important;
+  color: #ffffff !important;
+  border-color: #ff3e55 !important;
+}
+
+body.theme-night .setting-row input,
+body.theme-night .setting-row select {
+  background: #080c14 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+  padding: 9px 12px !important;
+  border-radius: 6px !important;
+  font-size: 0.85rem !important;
+  outline: none !important;
+}
+
+body.theme-night .setting-row input:focus,
+body.theme-night .setting-row select:focus {
+  border-color: #ff3e55 !important;
+}
+

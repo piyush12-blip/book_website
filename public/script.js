@@ -104,7 +104,8 @@ const book = id => {
   return found;
 };
 const pct=id=>Math.max(0,Math.min(100,Number(state.progress[id]||0)));
-const saved=id=>state.saved.includes(id), liked=id=>state.liked.includes(id);
+const saved=id=>(state.saved||[]).includes(id), liked=id=>(state.liked||[]).includes(id);
+const isSaved=saved, isLiked=liked;
 const unique=a=>[...new Set(a.filter(Boolean))];
 function toast(msg){let el=document.querySelector('.toast');if(!el){el=document.createElement('div');el.className='toast';document.body.appendChild(el)}el.textContent=msg;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),1800)}
 function stars(n){const num=Number(n)||5,norm=num>5?num/2:num,count=Math.min(5,Math.max(0,Math.round(norm)));return '★'.repeat(count)+'<i>'+'★'.repeat(5-count)+'</i>'}
@@ -133,6 +134,7 @@ let searchInputTimer = null;
 let liveSearchAbortController = null;
 let liveSearchDebounceTimer = null;
 let activeLiveSearchIndex = -1;
+const LIVE_SEARCH_CACHE = new Map();
 
 function closeLiveSearchDropdown() {
   const dropdown = document.getElementById('md-live-search-dropdown');
@@ -143,23 +145,185 @@ function closeLiveSearchDropdown() {
   activeLiveSearchIndex = -1;
 }
 
-async function handleLiveSearchInput(query) {
+function renderDropdownItemsHTML(results, cleanQ, dropdown) {
+  if (!dropdown) return;
+  if (!results || results.length === 0) {
+    dropdown.innerHTML = `
+      <div class="md-live-empty">
+        <span>No matching titles for "<strong>${cleanQ.replace(/</g, '&lt;')}</strong>"</span>
+      </div>
+    `;
+    return;
+  }
+
+  dropdown.innerHTML = results.map((b, idx) => {
+    const existingIdx = BOOKS.findIndex(kb => kb.id === b.id);
+    if (existingIdx >= 0) {
+      BOOKS[existingIdx] = Object.assign(BOOKS[existingIdx], b);
+    } else {
+      BOOKS.push(b);
+    }
+    state.cachedBooks[b.id] = b;
+
+    const tLower = (b.title || '').toLowerCase();
+    const gLower = (b.genre || '').toLowerCase();
+    const mLower = (b.mood || '').toLowerCase();
+    const fLower = (b.format || '').toLowerCase();
+
+    // True Content-Type Classification (Purely based on scraped metadata: Manga, Manhwa, Comic, Webtoon, Web Novel, Light Novel, Book)
+    const isAdult      = tLower.includes('pornhwa') || tLower.includes('doujinshi') || gLower.includes('adult') || mLower.includes('adult') || mLower.includes('smut') || mLower.includes('+18');
+    const isOneShot    = gLower.includes('one-shot') || tLower.includes('one-shot') || tLower.includes('oneshot');
+    const isLightNovel = fLower.includes('light novel') || gLower.includes('light novel') || tLower.includes('light novel') || (b.altTitle && b.altTitle.toLowerCase().includes('light novel')) || tLower.includes('shousetsu');
+    const isWebNovel   = fLower.includes('web novel') || gLower.includes('web novel') || tLower.includes('web novel') || (fLower === 'novels' && !isLightNovel) || (gLower === 'novel' && !isLightNovel);
+    const isManhwa     = fLower.includes('manhwa') || gLower.includes('manhwa') || tLower.includes('manhwa') || mLower.includes('manhwa') || fLower.includes('webtoon') || gLower.includes('webtoon');
+    const isManhua     = fLower.includes('manhua') || gLower.includes('manhua') || tLower.includes('manhua') || mLower.includes('manhua');
+    const isComic      = fLower.includes('comic') || gLower.includes('comic') || tLower.includes('comic');
+    const isManga      = b.id.startsWith('mangadna-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('mangapill-') || fLower.includes('manga') || gLower.includes('manga') || tLower.includes('manga') || mLower.includes('manga');
+
+    let typeLabel = 'BOOK';
+    if (isAdult)           { typeLabel = isManhwa ? 'MANHWA (+18)' : (isManga ? 'MANGA (+18)' : 'ADULT (+18)'); }
+    else if (isOneShot)    { typeLabel = 'ONE-SHOT'; }
+    else if (isLightNovel) { typeLabel = 'LIGHT NOVEL'; }
+    else if (isWebNovel)   { typeLabel = 'WEB NOVEL'; }
+    else if (isManhwa)     { typeLabel = 'MANHWA'; }
+    else if (isManhua)     { typeLabel = 'MANHUA'; }
+    else if (isComic)      { typeLabel = 'COMIC'; }
+    else if (isManga)      { typeLabel = 'MANGA'; }
+
+    let cleanAuthor = (b.author || '').replace(/@\w+/g, '').replace(/^by\s+/i, '').trim();
+    const isGenericAuthor = !cleanAuthor || cleanAuthor.toLowerCase() === 'author' || cleanAuthor.toLowerCase() === 'manga artist' || cleanAuthor.toLowerCase() === 'web novel author' || cleanAuthor.toLowerCase() === 'manhwa artist';
+    
+    const genresList = (Array.isArray(b.genres) && b.genres.length > 0) ? b.genres : (Array.isArray(b.tags) ? b.tags : []);
+    const genreStr = genresList.slice(0, 2).join(' · ');
+
+    const metaParts = [];
+    if (!isGenericAuthor) {
+      metaParts.push(cleanAuthor);
+    } else if (genreStr) {
+      metaParts.push(genreStr);
+    }
+    if (b.year) metaParts.push(b.year);
+    if (b.status && b.status !== 'Unknown') metaParts.push(b.status);
+
+    const metaStr = metaParts.length > 0 ? metaParts.join(' • ') : typeLabel;
+
+    // Determine Primary vs Secondary Display Title
+    let displayTitle = (b.title || '').trim();
+    let displayAlt = (b.altTitle || '').trim();
+
+    const coverSrc = (b.cover && typeof b.cover === 'string' && (b.cover.startsWith('http') || b.cover.startsWith('/'))) 
+      ? b.cover 
+      : ((b.image && typeof b.image === 'string' && (b.image.startsWith('http') || b.image.startsWith('/'))) ? b.image : '');
+    const firstChar = (displayTitle || 'M').charAt(0).toUpperCase();
+    const fallbackBg = 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)';
+    const thumbHtml = coverSrc
+      ? `<img src="${coverSrc}" alt="" loading="eager" decoding="async" onerror="this.onerror=null;this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;background:${fallbackBg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#38bdf8;\\'>${firstChar}</div>';" />`
+      : `<div style="width:100%;height:100%;background:${fallbackBg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#38bdf8;">${firstChar}</div>`;
+
+    // Filter out Korean and Cyrillic/Russian from displayAlt
+    if (displayAlt && (/[\uac00-\ud7af\u1100-\u11ff]/.test(displayAlt) || /[\u0400-\u04ff]/.test(displayAlt))) {
+      displayAlt = '';
+    }
+
+    const normTitle = displayTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normAlt = displayAlt.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    if (!displayAlt || normAlt === normTitle || normTitle.includes(normAlt) || normAlt.includes(normTitle)) {
+      displayAlt = '';
+    }
+
+    // If user's query matches the altTitle better than the primary title, show the matched English/alt title first!
+    if (cleanQ && displayAlt && displayAlt.toLowerCase().includes(cleanQ) && !displayTitle.toLowerCase().includes(cleanQ)) {
+      const temp = displayTitle;
+      displayTitle = displayAlt;
+      displayAlt = temp;
+    }
+
+    const altSubHtml = displayAlt ? `<div class="md-live-alt" style="font-size:0.78rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">${highlightMatchText(displayAlt, cleanQ)}</div>` : '';
+
+    return `
+      <div class="md-live-result-item" data-book-id="${b.id}" data-item-index="${idx}" role="option">
+        <div class="md-live-thumb">${thumbHtml}</div>
+        <div class="md-live-details">
+          <div class="md-live-title">${highlightMatchText(displayTitle, cleanQ)}</div>
+          ${altSubHtml}
+          <div class="md-live-sub">${metaStr}</div>
+        </div>
+        <span class="md-live-badge" style="background:rgba(255,255,255,0.06);color:#b0b0b0;border:1px solid rgba(255,255,255,0.12);font-weight:600;">${typeLabel}</span>
+      </div>
+    `;
+  }).join('');
+
+  dropdown.querySelectorAll('.md-live-result-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const bookId = item.dataset.bookId;
+      closeLiveSearchDropdown();
+      const searchInput = document.getElementById('md-search-input');
+      if (searchInput) searchInput.value = '';
+      openBook(bookId);
+    });
+  });
+}
+
+function renderInstantContinuousSearch(query) {
   const dropdown = document.getElementById('md-live-search-dropdown');
   if (!dropdown) return;
-
   const rawQ = (query || '').trim();
-  if (!rawQ || rawQ.length < 2) {
+  if (!rawQ || rawQ.length === 0) {
     closeLiveSearchDropdown();
     return;
   }
 
   dropdown.classList.add('active');
-  dropdown.innerHTML = `
-    <div class="md-live-loading">
-      <div class="md-live-spinner"></div>
-      <span>Searching manga & manhwa...</span>
-    </div>
-  `;
+  const cleanQ = rawQ.toLowerCase();
+
+  // If query is in cached map, render instantly!
+  if (LIVE_SEARCH_CACHE.has(cleanQ)) {
+    renderDropdownItemsHTML(LIVE_SEARCH_CACHE.get(cleanQ), rawQ, dropdown);
+    return;
+  }
+
+  // Instant continuous match from in-memory library (0ms latency while typing!)
+  const localList = [];
+  const seenSlugs = new Set();
+  const allKnown = [...(BOOKS || []), ...Object.values(state.cachedBooks || {})];
+  for (const b of allKnown) {
+    if (!b || !b.title) continue;
+    const t = b.title.toLowerCase();
+    const a = (b.author || '').toLowerCase();
+    const alt = (b.altTitle || '').toLowerCase();
+    if (t.includes(cleanQ) || a.includes(cleanQ) || alt.includes(cleanQ)) {
+      const norm = b.title.toLowerCase().replace(/\s+(?:vol(?:ume)?\.?\s*\d+|\d+)$/i, '').replace(/[^a-z0-9]/g, '');
+      if (!seenSlugs.has(norm)) {
+        seenSlugs.add(norm);
+        localList.push(b);
+      }
+    }
+  }
+
+  if (localList.length > 0) {
+    renderDropdownItemsHTML(localList.slice(0, 30), rawQ, dropdown);
+  } else if (!dropdown.querySelector('.md-live-result-item')) {
+    dropdown.innerHTML = `
+      <div class="md-live-loading">
+        <div class="md-live-spinner"></div>
+        <span>Searching across all scrapers...</span>
+      </div>
+    `;
+  }
+}
+
+async function handleLiveSearchInput(query) {
+  const dropdown = document.getElementById('md-live-search-dropdown');
+  if (!dropdown) return;
+
+  const rawQ = (query || '').trim();
+  if (!rawQ || rawQ.length === 0) {
+    closeLiveSearchDropdown();
+    return;
+  }
 
   if (liveSearchAbortController) liveSearchAbortController.abort();
   liveSearchAbortController = new AbortController();
@@ -177,7 +341,7 @@ async function handleLiveSearchInput(query) {
     const data = await res.json().catch(() => []);
 
     const qLower = cleanQ.toLowerCase();
-    const localMatches = BOOKS.filter(b => 
+    const localMatches = (BOOKS || []).filter(b => 
       (b.title && b.title.toLowerCase().includes(qLower)) || 
       (b.author && b.author.toLowerCase().includes(qLower))
     );
@@ -202,124 +366,11 @@ async function handleLiveSearchInput(query) {
     });
 
     const results = [...uniqueMap.values()].slice(0, 40);
-
-    if (results.length === 0) {
-      dropdown.innerHTML = `
-        <div class="md-live-empty">
-          <span>No matching titles for "<strong>${cleanQ.replace(/</g, '&lt;')}</strong>"</span>
-        </div>
-      `;
-      return;
-    }
-
-    dropdown.innerHTML = results.map((b, idx) => {
-      const existingIdx = BOOKS.findIndex(kb => kb.id === b.id);
-      if (existingIdx >= 0) {
-        BOOKS[existingIdx] = Object.assign(BOOKS[existingIdx], b);
-      } else {
-        BOOKS.push(b);
-      }
-      state.cachedBooks[b.id] = b;
-
-      const tLower = (b.title || '').toLowerCase();
-      const gLower = (b.genre || '').toLowerCase();
-      const mLower = (b.mood || '').toLowerCase();
-      const fLower = (b.format || '').toLowerCase();
-
-      // True Content-Type Classification (Purely based on scraped metadata: Manga, Manhwa, Comic, Webtoon, Web Novel, Light Novel, Book)
-      const isAdult      = tLower.includes('pornhwa') || tLower.includes('doujinshi') || gLower.includes('adult') || mLower.includes('adult') || mLower.includes('smut') || mLower.includes('+18');
-      const isOneShot    = gLower.includes('one-shot') || tLower.includes('one-shot') || tLower.includes('oneshot');
-      const isLightNovel = fLower.includes('light novel') || gLower.includes('light novel') || tLower.includes('light novel') || (b.altTitle && b.altTitle.toLowerCase().includes('light novel')) || tLower.includes('shousetsu');
-      const isWebNovel   = fLower.includes('web novel') || gLower.includes('web novel') || tLower.includes('web novel') || (fLower === 'novels' && !isLightNovel) || (gLower === 'novel' && !isLightNovel);
-      const isManhwa     = fLower.includes('manhwa') || gLower.includes('manhwa') || tLower.includes('manhwa') || mLower.includes('manhwa') || fLower.includes('webtoon') || gLower.includes('webtoon');
-      const isManhua     = fLower.includes('manhua') || gLower.includes('manhua') || tLower.includes('manhua') || mLower.includes('manhua');
-      const isComic      = fLower.includes('comic') || gLower.includes('comic') || tLower.includes('comic');
-      const isManga      = b.id.startsWith('mangadna-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('mangapill-') || fLower.includes('manga') || gLower.includes('manga') || tLower.includes('manga') || mLower.includes('manga');
-
-      let typeLabel = 'BOOK';
-      let typeBg    = '#d97706';
-
-      if (isAdult)           { typeLabel = isManhwa ? 'MANHWA (+18)' : (isManga ? 'MANGA (+18)' : 'ADULT (+18)'); typeBg = '#dc2626'; }
-      else if (isOneShot)    { typeLabel = 'ONE-SHOT';    typeBg = '#6366f1'; }
-      else if (isLightNovel) { typeLabel = 'LIGHT NOVEL'; typeBg = '#8b5cf6'; }
-      else if (isWebNovel)   { typeLabel = 'WEB NOVEL';   typeBg = '#ec4899'; }
-      else if (isManhwa)     { typeLabel = 'MANHWA';      typeBg = '#10b981'; }
-      else if (isManhua)     { typeLabel = 'MANHUA';      typeBg = '#f59e0b'; }
-      else if (isComic)      { typeLabel = 'COMIC';       typeBg = '#0284c7'; }
-      else if (isManga)      { typeLabel = 'MANGA';       typeBg = '#2563eb'; }
-
-      let cleanAuthor = (b.author || '').replace(/@\w+/g, '').replace(/^by\s+/i, '').trim();
-      const isGenericAuthor = !cleanAuthor || cleanAuthor.toLowerCase() === 'author' || cleanAuthor.toLowerCase() === 'manga artist' || cleanAuthor.toLowerCase() === 'web novel author' || cleanAuthor.toLowerCase() === 'manhwa artist';
-      
-      const genresList = (Array.isArray(b.genres) && b.genres.length > 0) ? b.genres : (Array.isArray(b.tags) ? b.tags : []);
-      const genreStr = genresList.slice(0, 2).join(' · ');
-
-      // Metadata elements: Real Author or Genres, Year, Status
-      const metaParts = [];
-      if (!isGenericAuthor) {
-        metaParts.push(cleanAuthor);
-      } else if (genreStr) {
-        metaParts.push(genreStr);
-      }
-      if (b.year) metaParts.push(b.year);
-      if (b.status && b.status !== 'Unknown') metaParts.push(b.status);
-
-      const metaStr = metaParts.length > 0 ? metaParts.join(' • ') : typeLabel;
-
-      const coverSrc = (b.cover && typeof b.cover === 'string' && (b.cover.startsWith('http') || b.cover.startsWith('/'))) 
-        ? b.cover 
-        : ((b.image && typeof b.image === 'string' && (b.image.startsWith('http') || b.image.startsWith('/'))) ? b.image : '');
-      const thumbHtml = coverSrc
-        ? `<img src="${coverSrc}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;background:#222;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#888;\\'>📖</div>';" />`
-        : `<div style="width:100%;height:100%;background:#222;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#888;">📖</div>`;
-
-      // Determine Primary vs Secondary Display Title (Prevent duplicate titles!)
-      let displayTitle = (b.title || '').trim();
-      let displayAlt = (b.altTitle || '').trim();
-
-      const normTitle = displayTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const normAlt = displayAlt.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-      if (!displayAlt || normAlt === normTitle || normTitle.includes(normAlt) || normAlt.includes(normTitle)) {
-        displayAlt = '';
-      }
-
-      // If user's query matches the altTitle better than the primary title, show the matched English/alt title first!
-      if (cleanQ && displayAlt && displayAlt.toLowerCase().includes(cleanQ) && !displayTitle.toLowerCase().includes(cleanQ)) {
-        const temp = displayTitle;
-        displayTitle = displayAlt;
-        displayAlt = temp;
-      }
-
-      const altSubHtml = displayAlt ? `<div class="md-live-alt" style="font-size:0.78rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">${highlightMatchText(displayAlt, cleanQ)}</div>` : '';
-
-      return `
-        <div class="md-live-result-item" data-book-id="${b.id}" data-item-index="${idx}" role="option">
-          <div class="md-live-thumb">${thumbHtml}</div>
-          <div class="md-live-details">
-            <div class="md-live-title">${highlightMatchText(displayTitle, cleanQ)}</div>
-            ${altSubHtml}
-            <div class="md-live-sub">${metaStr}</div>
-          </div>
-          <span class="md-live-badge" style="background:rgba(255,255,255,0.06);color:#b0b0b0;border:1px solid rgba(255,255,255,0.12);font-weight:600;">${typeLabel}</span>
-        </div>
-      `;
-    }).join('');
-
-    dropdown.querySelectorAll('.md-live-result-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const bookId = item.dataset.bookId;
-        closeLiveSearchDropdown();
-        const searchInput = document.getElementById('md-search-input');
-        if (searchInput) searchInput.value = '';
-        openBook(bookId);
-      });
-    });
+    LIVE_SEARCH_CACHE.set(qLower, results);
+    renderDropdownItemsHTML(results, cleanQ, dropdown);
 
   } catch (err) {
-    if (err.name !== 'AbortError') {
+    if (err.name !== 'AbortError' && !dropdown.querySelector('.md-live-result-item')) {
       dropdown.innerHTML = `
         <div class="md-live-empty">
           <span>Search failed. Is the server running?</span>
@@ -526,7 +577,29 @@ function renderDetail(rawId) {
   const rawTitle = b.title || 'Untitled';
   const parts = rawTitle.split(/\|\||\/\/|::/).map(s => s.trim()).filter(Boolean);
   const mainTitle = parts[0] || rawTitle;
-  let altTitle = b.altTitle || (parts.length > 1 ? parts.slice(1).join(' · ') : '');
+  
+  // Extract and filter alternative titles (Keep English and Japanese Romaji/Kanji, filter out Korean Hangul and Cyrillic/Russian)
+  let rawAltCandidates = [];
+  if (b.altTitle && typeof b.altTitle === 'string') {
+    rawAltCandidates.push(...b.altTitle.split(/[,;\/|•]+/).map(s => s.trim()).filter(Boolean));
+  }
+  if (parts.length > 1) {
+    rawAltCandidates.push(...parts.slice(1).map(s => s.trim()).filter(Boolean));
+  }
+  
+  // Korean Hangul regex: [\uac00-\ud7af\u1100-\u11ff]
+  // Cyrillic regex: [\u0400-\u04ff]
+  const hasKorean = /[\uac00-\ud7af\u1100-\u11ff]/;
+  const hasCyrillic = /[\u0400-\u04ff]/;
+  const cleanAltTitles = [...new Set(rawAltCandidates.filter(t => {
+    if (!t || t.length < 2) return false;
+    if (t.toLowerCase() === mainTitle.toLowerCase()) return false;
+    if (hasKorean.test(t)) return false;
+    if (hasCyrillic.test(t)) return false;
+    return true;
+  }))].slice(0, 3);
+  
+  let altTitle = cleanAltTitles.join(' · ');
 
   // Extract / Map Author
   let authorLine = (b.author || 'Manga Artist').trim()
@@ -586,7 +659,40 @@ function renderDetail(rawId) {
   }
 
   let chapterGridHTML = '';
-  if (chapters.length > 0) {
+  const isBookItem = (b.format && b.format.toLowerCase() === 'book') || b.id.startsWith('itunes-') || b.id.startsWith('openlib-') || b.id.startsWith('book-');
+
+  if (isBookItem) {
+    const encodedTitle = encodeURIComponent(b.title);
+    const plusTitle = encodeURIComponent(b.title).replace(/%20/g, '+');
+    chapterGridHTML = `
+      <div class="book-download-section" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:24px;margin-top:20px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+          <span style="font-size:1.6rem;">📚</span>
+          <div>
+            <h3 style="color:#ffffff;font-size:1.2rem;margin:0;font-weight:700;">Complete Digital Book Vault</h3>
+            <span style="font-size:0.8rem;color:#10b981;font-weight:600;">✨ Verified Direct EPUB & PDF Mirrors</span>
+          </div>
+        </div>
+        <p style="color:#94a3b8;font-size:0.9rem;line-height:1.6;margin-bottom:20px;">
+          This title is cataloged in the Bibliothèque digital repository. Choose a 1-click backdoor mirror below to download the complete unabridged e-book, or launch it directly in the web reader:
+        </p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:12px;">
+          <a href="https://annas-archive.org/search?q=${plusTitle}&ext=epub" target="_blank" rel="noopener" style="background:#0284c7;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:0.9rem;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700;transition:transform 0.15s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">
+            🏴‍☠️ Anna's Archive (1-Click EPUB)
+          </a>
+          <a href="https://oceanofpdf.com/?s=${plusTitle}" target="_blank" rel="noopener" style="background:#059669;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:0.9rem;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700;transition:transform 0.15s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">
+            🌊 OceanofPDF (EPUB / PDF)
+          </a>
+          <a href="http://libgen.is/search.php?req=${encodedTitle}" target="_blank" rel="noopener" style="background:#4f46e5;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:0.9rem;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700;transition:transform 0.15s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">
+            🏛️ LibGen (Global Library Mirror)
+          </a>
+          <button onclick="openReader('${b.id}')" style="background:#ea580c;color:#fff;border:none;padding:12px 18px;border-radius:8px;font-size:0.9rem;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700;cursor:pointer;transition:transform 0.15s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">
+            📖 Open In-Browser Reader
+          </button>
+        </div>
+      </div>
+    `;
+  } else if (chapters.length > 0) {
     const boxesHTML = displayChapters.map(({ ch, originalIdx }) => {
       let cleanChName = ch.title || `Chapter ${originalIdx + 1}`;
       const numMatch = cleanChName.match(/(?:chapter|ch\.?)\s*(\d+(?:\.\d+)?)/i);
@@ -640,6 +746,30 @@ function renderDetail(rawId) {
   const coverSrc = validCover;
   const firstChIdx = 0;
 
+  // Determine Source Provider for bracket annotation
+  let sourceName = 'Bibliothèque Digital Archive';
+  const bid = (b.id || '').toLowerCase();
+  const bSource = (b._source || b.source || '').toLowerCase();
+  if (bid.startsWith('mdna-') || bid.startsWith('mangadna-') || bSource.includes('mangadna')) {
+    sourceName = 'MangaDNA';
+  } else if (bid.startsWith('mangapill-') || bSource.includes('mangapill')) {
+    sourceName = 'Mangapill';
+  } else if (bid.startsWith('mb-') || bid.startsWith('mangabuddy-') || bSource.includes('mangabuddy')) {
+    sourceName = 'MangaBuddy';
+  } else if (bid.startsWith('m18-') || bid.startsWith('manhwa18-') || bSource.includes('manhwa18')) {
+    sourceName = 'Manhwa18';
+  } else if (bid.startsWith('itunes-') || bid.startsWith('apple-') || bSource.includes('apple')) {
+    sourceName = 'Apple Books';
+  } else if (bid.startsWith('royalroad-') || bSource.includes('royalroad')) {
+    sourceName = 'Royal Road';
+  } else if (bid.startsWith('tg-') || bSource.includes('telegram')) {
+    sourceName = 'Telegram Scans';
+  } else if (b.isBook || b.format === 'Book') {
+    sourceName = 'Apple Books';
+  }
+
+  const sourceBracketHTML = ` <span class="synopsis-source-bracket" style="opacity:0.75;font-size:0.85em;color:#38bdf8;font-weight:600;display:inline-block;margin-left:4px;">[Source: ${sourceName}]</span>`;
+
   // Format synopsis into clean readable paragraphs with dynamic loading state
   const isPendingMetadata = (!b.synopsis || b.synopsis.trim().length === 0) && (!b.chapters || b.chapters.length === 0);
   const rawSynopsis = (b.synopsis && b.synopsis.trim().length > 0)
@@ -647,7 +777,14 @@ function renderDetail(rawId) {
     : (isPendingMetadata 
         ? `Fetching official synopsis, genre tags, and chapter list from digital scanlation archives...`
         : `${mainTitle} is currently cataloged in the Bibliothèque digital library with high-resolution chapters and reading panels.`);
-  const synopsisParagraphs = rawSynopsis.split(/\n+/).map(para => `<p>${para.trim()}</p>`).join('');
+  
+  const rawParas = rawSynopsis.split(/\n+/).map(p => p.trim()).filter(Boolean);
+  const synopsisParagraphs = rawParas.map((para, pIdx) => {
+    if (pIdx === rawParas.length - 1 && !isPendingMetadata) {
+      return `<p>${para}${sourceBracketHTML}</p>`;
+    }
+    return `<p>${para}</p>`;
+  }).join('');
 
   g.innerHTML = `
     <div class="md-detail-wrapper">
@@ -683,7 +820,7 @@ function renderDetail(rawId) {
             <!-- SECTION 1: IN BANNER (Titles) -->
             <div class="md-banner-titles">
               <p class="md-title-text">${mainTitle}</p>
-              ${altTitle ? `<div class="md-subtitle-text">${altTitle}</div>` : ''}
+              ${altTitle ? `<div class="md-subtitle-text" style="color:#94a3b8;font-size:0.9rem;margin-top:4px;font-style:italic;"><span style="color:#38bdf8;font-style:normal;font-weight:700;font-size:0.8rem;text-transform:uppercase;margin-right:6px;letter-spacing:0.5px;">Alt:</span>${altTitle}</div>` : ''}
               <div class="md-grow-spacer"></div>
               <div class="md-author-row">
                 <div class="md-author-text">${authorLine}</div>
@@ -993,6 +1130,10 @@ async function loadStolenChapters(id, title, author, genre){
       targetBook.chapters = data.chapters;
       targetBook.isFallback = !!data.isFallback;
       targetBook.isLocal = !!data.isLocal;
+      if (data.source) {
+        targetBook.source = data.source;
+        targetBook._source = data.source;
+      }
       
       if (data.metadata) {
         const meta = data.metadata;
@@ -1084,7 +1225,8 @@ async function loadStolenChapters(id, title, author, genre){
         if (placeholder) placeholder.innerHTML = `<div style="text-align:center;padding:2rem;"><div style="display:inline-block;width:24px;height:24px;border:3px solid #0284c7;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:0.6rem;"></div><p style="color:#94a3b8;font-size:0.82rem;margin:0;">Loading Chapter ${idx+1}...</p></div>`;
 
         try {
-          const url = `/api/manga/chapter/${encodeURIComponent(ch.chapterId)}?title=${encodeURIComponent(realTitle)}`;
+          const chUrlParam = (ch.url || ch.chUrl) ? `&url=${encodeURIComponent(ch.url || ch.chUrl)}` : '';
+          const url = `/api/manga/chapter/${encodeURIComponent(ch.chapterId)}?title=${encodeURIComponent(realTitle)}${chUrlParam}`;
           const r = await fetch(url);
           const res = await r.json();
           const html = res.html || '<p style="color:#64748b;text-align:center;padding:2rem;">⚠️ Could not load panels.</p>';
@@ -1244,11 +1386,490 @@ window.jumpToChapter = function(targetIdx) {
   scrollReaderChapter(targetIdx);
 };
 
-function renderLibrary(){const root=document.querySelector('.library-results');if(!root)return;document.querySelectorAll('.shelf-tabs button').forEach(b=>b.classList.toggle('active',b.dataset.shelf===state.activeShelf));let ids=[],label=state.activeShelf;if(label==='saved')ids=state.saved;if(label==='liked')ids=state.liked;if(label==='progress')ids=BOOKS.filter(b=>pct(b.id)>0&&pct(b.id)<100).map(b=>b.id);root.innerHTML=ids.length?ids.map(id=>{const b=book(id),p=pct(id);return `<article class="library-book" data-book="${id}">${coverHTML(b,'recent-cover')}<div><h3>${b.title}</h3><p>${b.author}</p><span class="progress-label"><i class="progress"><b style="width:${p}%"></b></i>${p}% read</span></div>${actions(id)}</article>`}).join(''):`<div class="empty-library"><h3>No ${label} books yet.</h3><p>Use Save and Like anywhere in the app. The homepage remains clean while this shelf stores the full collection.</p></div>`}
-function renderProfile(){const p=document.querySelector('.dashboard-panel');if(!p)return;const finished=Object.values(state.progress).filter(v=>+v>=100).length,avg=state.saved.length?Math.round(state.saved.reduce((s,id)=>s+pct(id),0)/state.saved.length):0;p.innerHTML=`<p class="kicker">Personal library</p><h2>Dashboard</h2><div class="dash-stats"><article><span>Saved books</span><strong>${state.saved.length}</strong><small>personal shelf</small></article><article><span>Liked books</span><strong>${state.liked.length}</strong><small>taste profile</small></article><article><span>Average progress</span><strong>${avg}%</strong><small>${finished} finished</small></article></div><div class="annotation-panel"><h3>Recent activity</h3>${state.recent.length?state.recent.slice(0,3).map(id=>`<p>Opened <strong>${book(id).title}</strong> · ${pct(id)}% complete.</p>`).join(''):'<p>No reading activity yet. Open a book and the dashboard will begin tracking automatically.</p>'}</div>`}
-function renderExplore(){const c=document.querySelector('.explore-content'),sum=document.querySelector('.explore-summary');if(!c)return;document.querySelectorAll('.explore-controls button').forEach(b=>b.classList.toggle('active',b.dataset.exploreFilter===state.exploreFilter));const t=tasteProfile(),topGenre=Object.entries(t.genres).sort((a,b)=>b[1]-a[1])[0]?.[0]||'classic fiction';if(sum)sum.innerHTML=`<strong>${recommendations(1)[0].title}</strong><span>Best next read · based on ${topGenre}</span>`;const bookGrid=(items,title,sub)=>`<section class="explore-block"><header><h3>${title}</h3><p>${sub}</p></header><div class="explore-books">${items.map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author} · ${b.mood}</p><span class="book-type-badge">${b.format||inferFormat(b)}</span>${actions(b.id)}</article>`).join('')}</div></section>`;const authors=unique(BOOKS.map(b=>b.author)).map(a=>({name:a,count:BOOKS.filter(b=>b.author===a).length,match:t.authors[a]||0})).sort((a,b)=>b.match-a.match||b.count-a.count);const moods=unique(BOOKS.map(b=>b.mood));const cats=[['Books','Essays, nonfiction, study volumes, and general reading.'],['Novels','Long-form fiction, classics, mysteries, romance, fantasy, and literary stories.'],['Manga & Manhwa','Panel-based illustrated reading, manga-inspired volumes, and manhwa-style series.'],['More','Poetry, short forms, drama, anthologies, and formats outside the first three shelves.']];if(state.exploreFilter==='categories')c.innerHTML=`<section class="explore-block"><header><h3>Reading categories</h3><p>Separate discovery rooms. Items never duplicate into the wrong shelf.</p></header><div class="category-grid">${cats.map(([name,desc])=>`<div class="category-card" data-category="${name}"><div><strong>${name}</strong><p>${desc}</p></div><span>${BOOKS.filter(b=>(b.format||inferFormat(b))===name).length} titles</span></div>`).join('')}</div></section>`;else if(state.exploreFilter==='authors')c.innerHTML=`<section class="explore-block"><header><h3>Authors</h3><p>Click an author to see their books.</p></header><div class="author-grid">${authors.map(a=>`<div class="author-card" data-author="${a.name}"><strong>${a.name}</strong><span>${a.count} book${a.count>1?'s':''}${a.match?' · matches your taste':''}</span></div>`).join('')}</div></section>`;else if(state.exploreFilter==='moods')c.innerHTML=`<section class="explore-block"><header><h3>Moods</h3><p>Editorial discovery by feeling.</p></header><div class="mood-grid">${moods.map(m=>`<div class="mood-card" data-mood="${m}"><strong>${m}</strong><span>${BOOKS.filter(b=>b.mood===m).length} volume(s)</span></div>`).join('')}</div></section>`;else if(state.exploreFilter==='new')c.innerHTML=bookGrid([...BOOKS].reverse().slice(0,9),'New finds','Fresh volumes from the quiet shelves.');else c.innerHTML=bookGrid(recommendations(8),'Recommended for you','Scored by liked books, saved authors, recent reading, genre, mood, and unfinished progress.')+bookGrid(BOOKS.filter(b=>pct(b.id)>0&&pct(b.id)<100).slice(0,6),'Continue discovering','Books you already started receive priority.')}
+function renderLibrary() {
+  const root = document.querySelector('.library-results');
+  if (!root) return;
+
+  const savedCount = (state.saved || []).length;
+  const likedCount = (state.liked || []).length;
+  const elSaved = document.getElementById('lib-count-saved');
+  if (elSaved) elSaved.textContent = savedCount;
+  const elLiked = document.getElementById('lib-count-liked');
+  if (elLiked) elLiked.textContent = likedCount;
+
+  document.querySelectorAll('.shelf-tabs button').forEach(b => {
+    b.classList.toggle('active', b.dataset.shelf === state.activeShelf);
+  });
+
+  const label = (state.activeShelf === 'liked') ? 'liked' : 'saved';
+  let ids = (label === 'liked') ? (state.liked || []) : (state.saved || []);
+  ids = [...new Set(ids)];
+
+  if (ids.length === 0) {
+    const shelfName = (label === 'liked') ? 'favorites' : 'saved';
+    root.innerHTML = `
+      <div class="empty-gallery-state">
+        <h3>No ${shelfName} titles yet</h3>
+        <p>Click the bookmark or like icon on any manga or novel to keep it organized here.</p>
+        <button type="button" class="empty-gallery-btn" data-view="home">Browse Titles</button>
+      </div>
+    `;
+    return;
+  }
+
+  root.innerHTML = ids.map(id => {
+    const b = book(id);
+    if (!b) return '';
+    const coverSrc = (b.cover && typeof b.cover === 'string' && (b.cover.startsWith('http') || b.cover.startsWith('/'))) 
+      ? b.cover 
+      : ((b.image && typeof b.image === 'string' && (b.image.startsWith('http') || b.image.startsWith('/'))) ? b.image : '');
+    const firstChar = (b.title || 'M').charAt(0).toUpperCase();
+    const fallbackBg = '#141a26';
+    const thumbHtml = coverSrc 
+      ? `<img src="${coverSrc}" alt="" loading="eager" decoding="async" onerror="this.onerror=null;this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;background:${fallbackBg};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#94a3b8;\\'>${firstChar}</div>';" />`
+      : `<div style="width:100%;height:100%;background:${fallbackBg};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#94a3b8;">${firstChar}</div>`;
+
+    const tag = (b.format || inferFormat(b) || 'Manga');
+    const author = (b.author && b.author !== 'Unknown') ? b.author : 'Manga Artist';
+
+    return `
+      <article class="manga-card-item" data-book="${id}">
+        <div class="manga-card-cover-wrap" data-action="open-book" data-book="${id}">
+          ${thumbHtml}
+        </div>
+        <div class="manga-card-body">
+          <h4 class="manga-card-title" data-action="open-book" data-book="${id}">${b.title || 'Untitled'}</h4>
+          <p class="manga-card-sub">${author}</p>
+          <div class="manga-card-footer">
+            <span class="manga-card-tag">${tag}</span>
+            <button type="button" class="manga-card-btn-remove" data-action="${label==='liked'?'like':'save'}" data-book="${id}" title="Remove from ${label}">✕</button>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+function renderProfile() {
+  const savedCount = (state.saved || []).length;
+  const likedCount = (state.liked || []).length;
+  const progressCount = Object.keys(state.progress || {}).length;
+  const notesCount = Object.keys(state.notes || {}).reduce((acc, k) => acc + (state.notes[k] || []).length, 0);
+
+  const elSaved = document.getElementById('stat-saved-count');
+  if (elSaved) elSaved.textContent = savedCount;
+  const elLiked = document.getElementById('stat-liked-count');
+  if (elLiked) elLiked.textContent = likedCount;
+  const elProg = document.getElementById('stat-progress-count');
+  if (elProg) elProg.textContent = progressCount;
+  const elNotes = document.getElementById('stat-notes-count');
+  if (elNotes) elNotes.textContent = notesCount;
+
+  const activityRoot = document.getElementById('profile-recent-activity');
+  if (activityRoot) {
+    const recents = (state.recent || []).slice(0, 5);
+    if (recents.length === 0) {
+      activityRoot.innerHTML = '<p style="color:#64748b;font-size:0.9rem;">No reading activity yet. Start reading any manga or novel to track progress here.</p>';
+    } else {
+      activityRoot.innerHTML = recents.map(id => {
+        const b = book(id);
+        if (!b) return '';
+        const p = pct(id);
+        return `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;margin-bottom:8px;">
+            <div style="flex:1;min-width:0;">
+              <strong style="display:block;color:#f1f5f9;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${b.title}</strong>
+              <small style="color:#ff3e55;font-weight:600;">${p}% complete · ${b.author || 'Manga Artist'}</small>
+            </div>
+            <button type="button" class="md-btn-primary" style="padding:4px 12px;font-size:0.75rem;" data-action="open-book" data-book="${id}">Open</button>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+}
+
+const CURATED_EXPLORE_TITLES = [
+  // ── LIGHT NOVELS ──
+  {
+    id: 'ln-overlord',
+    title: 'Overlord',
+    author: 'Kugane Maruyama',
+    format: 'Light Novel',
+    genre: 'Fantasy, Isekai, Dark Fantasy',
+    cover: 'https://images.mangapill.com/mangas/overlord.jpg',
+    image: 'https://images.mangapill.com/mangas/overlord.jpg',
+    synopsis: 'When a popular MMORPG announces its shutdown, veteran player Momonga stays until the servers close, only to find himself transported into a real fantasy world as the Sorcerer King.'
+  },
+  {
+    id: 'ln-mushoku-tensei',
+    title: 'Mushoku Tensei: Jobless Reincarnation',
+    author: 'Rifujin na Magonote',
+    format: 'Light Novel',
+    genre: 'Fantasy, Isekai, Adventure',
+    cover: 'https://images.mangapill.com/mangas/mushoku-tensei-isekai-ittara-honki-dasu.jpg',
+    image: 'https://images.mangapill.com/mangas/mushoku-tensei-isekai-ittara-honki-dasu.jpg',
+    synopsis: 'A 34-year-old recluse is reincarnated into a magical world as baby Rudeus Greyrat, determined to live his second life to the absolute fullest.'
+  },
+  {
+    id: 'ln-classroom-of-the-elite',
+    title: 'Classroom of the Elite',
+    author: 'Shogo Kinugasa',
+    format: 'Light Novel',
+    genre: 'Psychological, Drama, School',
+    cover: 'https://images.mangapill.com/mangas/youkoso-jitsuryoku-shijou-shugi-no-kyoushitsu-e.jpg',
+    image: 'https://images.mangapill.com/mangas/youkoso-jitsuryoku-shijou-shugi-no-kyoushitsu-e.jpg',
+    synopsis: 'At the prestigious Tokyo Metropolitan Advanced Nurturing High School, Kiyotaka Ayanokoji is placed in Class D, concealing his terrifying intellect.'
+  },
+  {
+    id: 'ln-rezero',
+    title: 'Re:Zero - Starting Life in Another World',
+    author: 'Tappei Nagatsuki',
+    format: 'Light Novel',
+    genre: 'Fantasy, Psychological, Isekai',
+    cover: 'https://images.mangapill.com/mangas/rezero-kara-hajimeru-isekai-seikatsu.jpg',
+    image: 'https://images.mangapill.com/mangas/rezero-kara-hajimeru-isekai-seikatsu.jpg',
+    synopsis: 'Subaru Natsuki is suddenly summoned to a fantasy world with Return by Death, rewinding time whenever he dies.'
+  },
+  {
+    id: 'ln-slime',
+    title: 'That Time I Got Reincarnated as a Slime',
+    author: 'Fuse',
+    format: 'Light Novel',
+    genre: 'Fantasy, Isekai, Adventure',
+    cover: 'https://images.mangapill.com/mangas/tensei-shitara-slime-datta-ken.jpg',
+    image: 'https://images.mangapill.com/mangas/tensei-shitara-slime-datta-ken.jpg',
+    synopsis: 'After being killed in Tokyo, Satoru Mikami awakens in an alternate world reincarnated as a slime with unique predatory consumption skills.'
+  },
+  {
+    id: 'ln-eminence-in-shadow',
+    title: 'The Eminence in Shadow',
+    author: 'Daisuke Aizawa',
+    format: 'Light Novel',
+    genre: 'Action, Comedy, Fantasy',
+    cover: 'https://images.mangapill.com/mangas/kage-no-jitsuryokusha-ni-naritakute.jpg',
+    image: 'https://images.mangapill.com/mangas/kage-no-jitsuryokusha-ni-naritakute.jpg',
+    synopsis: 'Cid Kagenou wants neither to be the protagonist nor the final boss—he wants to operate entirely from the shadows as a puppet mastermind.'
+  },
+
+  // ── WEB NOVELS ──
+  {
+    id: 'royalroad-mother-of-learning',
+    title: 'Mother of Learning',
+    author: 'Nobody103',
+    format: 'Web Novel',
+    genre: 'Progression Fantasy, Time Loop, Magic',
+    cover: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=500&auto=format&fit=crop',
+    synopsis: 'Zorian is a cynical teenage mage trapped in a month-long time loop right before a catastrophic invasion.'
+  },
+  {
+    id: 'royalroad-shadow-slave',
+    title: 'Shadow Slave',
+    author: 'Guiltythree',
+    format: 'Web Novel',
+    genre: 'Dark Fantasy, Progression, Supernatural',
+    cover: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=500&auto=format&fit=crop',
+    synopsis: 'Sunny is thrust by the Nightmare Spell into a ruined realm filled with eldritch horrors, where cunning is the only path to survival.'
+  },
+  {
+    id: 'royalroad-lord-of-the-mysteries',
+    title: 'Lord of the Mysteries',
+    author: 'Cuttlefish That Loves Diving',
+    format: 'Web Novel',
+    genre: 'Steampunk, Eldritch Fantasy, Mystery',
+    cover: 'https://images.unsplash.com/photo-1514539079130-25950c84af65?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1514539079130-25950c84af65?w=500&auto=format&fit=crop',
+    synopsis: 'In a Victorian steampunk world filled with potions, tarot divination, and eldritch horrors, Klein Moretti builds the mysterious Tarot Club.'
+  },
+  {
+    id: 'royalroad-primal-hunter',
+    title: 'The Primal Hunter',
+    author: 'Zogarth',
+    format: 'Web Novel',
+    genre: 'LitRPG, Progression Fantasy, Action',
+    cover: 'https://images.unsplash.com/photo-1511447333015-45b65e60f6d5?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1511447333015-45b65e60f6d5?w=500&auto=format&fit=crop',
+    synopsis: 'When Earth is integrated into the multiverse, Jake Thayne discovers an ancient hunter bloodline that thrives on danger and survival.'
+  },
+  {
+    id: 'royalroad-defiance-of-the-fall',
+    title: 'Defiance of the Fall',
+    author: 'TheFirstDefier',
+    format: 'Web Novel',
+    genre: 'LitRPG, Cultivation, Apocalypse',
+    cover: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=500&auto=format&fit=crop',
+    synopsis: 'Facing demonic incursions on a secluded island, Zac picks up an axe and begins his path toward cosmic defiance.'
+  },
+
+  // ── NOVELS ──
+  {
+    id: 'novel-great-gatsby',
+    title: 'The Great Gatsby',
+    author: 'F. Scott Fitzgerald',
+    format: 'Novels',
+    genre: 'Classic Literature, Tragedy',
+    cover: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop',
+    synopsis: 'A critique of the American Dream in the Roaring Twenties, chronicling mysterious millionaire Jay Gatsby and his obsession with Daisy Buchanan.'
+  },
+  {
+    id: 'novel-1984',
+    title: '1984',
+    author: 'George Orwell',
+    format: 'Novels',
+    genre: 'Dystopian, Political Fiction, Classic',
+    cover: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=500&auto=format&fit=crop',
+    synopsis: 'In a totalitarian superstate where Big Brother watches every move and history is continuously rewritten, Winston Smith dares to commit thoughtcrime.'
+  },
+  {
+    id: 'novel-crime-and-punishment',
+    title: 'Crime and Punishment',
+    author: 'Fyodor Dostoevsky',
+    format: 'Novels',
+    genre: 'Psychological Fiction, Russian Classic',
+    cover: 'https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=500&auto=format&fit=crop',
+    synopsis: 'An impoverished ex-student devises a theory of extraordinary men, then faces the agonizing psychological aftermath of murder.'
+  },
+  {
+    id: 'novel-frankenstein',
+    title: 'Frankenstein',
+    author: 'Mary Shelley',
+    format: 'Novels',
+    genre: 'Gothic Horror, Science Fiction',
+    cover: 'https://images.unsplash.com/photo-1516979187457-637abb4f9353?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1516979187457-637abb4f9353?w=500&auto=format&fit=crop',
+    synopsis: 'Victor Frankenstein discovers the secret of imparting life to inanimate matter, only to be horrified by the creature he creates.'
+  },
+
+  // ── BOOKS (NON-FICTION) ──
+  {
+    id: 'book-meditations',
+    title: 'Meditations',
+    author: 'Marcus Aurelius',
+    format: 'Books',
+    genre: 'Stoic Philosophy, Ancient Wisdom',
+    cover: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=500&auto=format&fit=crop',
+    synopsis: 'The private personal reflections of Roman Emperor Marcus Aurelius, offering timeless Stoic exercises on duty and emotional equanimity.'
+  },
+  {
+    id: 'book-art-of-war',
+    title: 'The Art of War',
+    author: 'Sun Tzu',
+    format: 'Books',
+    genre: 'Military Strategy, Ancient Philosophy',
+    cover: 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=500&auto=format&fit=crop',
+    synopsis: 'An ancient Chinese treatise detailing principles of strategy, tactical psychology, and conflict resolution.'
+  },
+  {
+    id: 'book-beyond-good-and-evil',
+    title: 'Beyond Good and Evil',
+    author: 'Friedrich Nietzsche',
+    format: 'Books',
+    genre: 'Philosophy, Intellectual Critique',
+    cover: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=500&auto=format&fit=crop',
+    image: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=500&auto=format&fit=crop',
+    synopsis: 'Nietzsche dissects traditional morality and dogmatism, introducing concepts of the will to power.'
+  },
+
+  // ── MANHWA ──
+  {
+    id: 'manhwa18-solo-leveling',
+    title: 'Solo Leveling',
+    author: 'Chugong / DUBU',
+    format: 'Manhwa',
+    genre: 'Action, Supernatural, Fantasy, Manhwa',
+    cover: 'https://images.mangapill.com/mangas/solo-leveling.jpg',
+    image: 'https://images.mangapill.com/mangas/solo-leveling.jpg',
+    synopsis: 'Sung Jinwoo, the weakest E-rank hunter, discovers a mysterious quest log that allows him to level up without limits.'
+  },
+  {
+    id: 'manhwa18-tower-of-god',
+    title: 'Tower of God',
+    author: 'SIU',
+    format: 'Manhwa',
+    genre: 'Fantasy, Adventure, Mystery, Manhwa',
+    cover: 'https://images.mangapill.com/mangas/tower-of-god.jpg',
+    image: 'https://images.mangapill.com/mangas/tower-of-god.jpg',
+    synopsis: 'Whatever you desire is atop the Tower. Twenty-Fifth Baam enters the Tower in search of his closest friend, Rachel.'
+  },
+  {
+    id: 'manhwa18-omniscient-reader',
+    title: "Omniscient Reader's Viewpoint",
+    author: 'Sing Shong / Sleepy-C',
+    format: 'Manhwa',
+    genre: 'Action, Supernatural, Apocalypse, Manhwa',
+    cover: 'https://images.mangapill.com/mangas/omniscient-reader-s-viewpoint.jpg',
+    image: 'https://images.mangapill.com/mangas/omniscient-reader-s-viewpoint.jpg',
+    synopsis: 'When a web novel becomes reality, Kim Dokja is the sole person who read all 3,149 chapters to know how the world ends.'
+  },
+  {
+    id: 'manhwa18-the-boxer',
+    title: 'The Boxer',
+    author: 'JH',
+    format: 'Manhwa',
+    genre: 'Sports, Psychological, Drama, Manhwa',
+    cover: 'https://images.mangapill.com/mangas/the-boxer.jpg',
+    image: 'https://images.mangapill.com/mangas/the-boxer.jpg',
+    synopsis: 'Legendary trainer K discovers Yu, an abused boy with supernatural reflexes and a heart void of emotion.'
+  }
+];
+
+// Seed curated items into BOOKS array
+CURATED_EXPLORE_TITLES.forEach(item => {
+  if (!BOOKS.some(b => b.id === item.id)) {
+    BOOKS.push(item);
+  }
+});
+
+function getFormatInfo(b) {
+  if (!b) return { type: 'books', flag: '📚', label: 'Book' };
+  const id = (b.id || '').toLowerCase();
+  const format = (b.format || '').toLowerCase();
+  const genre = (b.genre || '').toLowerCase();
+  const genres = (Array.isArray(b.genres) ? b.genres.join(' ') : '').toLowerCase();
+  const allText = `${id} ${format} ${genre} ${genres}`;
+
+  if (id.startsWith('manhwa18-') || allText.includes('manhwa') || allText.includes('webtoon')) {
+    return { type: 'manhwa', flag: '🇰🇷', label: 'Manhwa' };
+  }
+  if (allText.includes('light novel') || allText.includes('lightnovel') || id.startsWith('ln-')) {
+    return { type: 'lightnovel', flag: '📗', label: 'Light Novel' };
+  }
+  if (id.startsWith('royalroad-') || allText.includes('web novel') || allText.includes('webnovel') || id.startsWith('wn-')) {
+    return { type: 'webnovel', flag: '📖', label: 'Web Novel' };
+  }
+  if (id.startsWith('mangapill-') || id.startsWith('mangadna-') || id.startsWith('mb-') || allText.includes('manga')) {
+    return { type: 'manga', flag: '🇯🇵', label: 'Manga' };
+  }
+  if (format === 'novels' || allText.includes('classic gothic') || allText.includes('sea classic') || allText.includes('literary') || allText.includes('mystery') || allText.includes('historical fiction') || allText.includes('fiction')) {
+    return { type: 'novel', flag: '📕', label: 'Novel' };
+  }
+  return { type: 'books', flag: '📚', label: 'Book' };
+}
+
+let currentExploreGenre = 'all';
+
+function renderExplore(selectedGenre) {
+  const grid = document.getElementById('explore-catalog-grid');
+  if (!grid) return;
+
+  if (selectedGenre) currentExploreGenre = selectedGenre.toLowerCase();
+
+  const categoryNames = {
+    all: { icon: '🌐', label: 'All Categories' },
+    manga: { icon: '🇯🇵', label: 'Manga' },
+    manhwa: { icon: '🇰🇷', label: 'Manhwa' },
+    webnovel: { icon: '📖', label: 'Web Novels' },
+    lightnovel: { icon: '📗', label: 'Light Novels' },
+    novel: { icon: '📕', label: 'Novels' },
+    books: { icon: '📚', label: 'Books' }
+  };
+  const activeMeta = categoryNames[currentExploreGenre] || categoryNames.all;
+  const activeLabelEl = document.getElementById('explore-active-label');
+  if (activeLabelEl) {
+    activeLabelEl.innerHTML = `<span class="dropdown-active-icon">${activeMeta.icon}</span> ${activeMeta.label}`;
+  }
+  document.querySelectorAll('.dropdown-option-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.genre === currentExploreGenre);
+  });
+
+  // Collect all unique books from BOOKS array
+  const allBooks = [];
+  const seenIds = new Set();
+
+  if (Array.isArray(BOOKS)) {
+    for (const b of BOOKS) {
+      if (b && b.id && !seenIds.has(b.id)) {
+        seenIds.add(b.id);
+        allBooks.push(b);
+      }
+    }
+  }
+
+  // Filter books strictly by category
+  let filtered = allBooks;
+  if (currentExploreGenre && currentExploreGenre !== 'all') {
+    filtered = allBooks.filter(b => {
+      const info = getFormatInfo(b);
+      return info.type === currentExploreGenre;
+    });
+  }
+
+  const countPill = document.getElementById('explore-count-pill');
+  if (countPill) countPill.textContent = `${filtered.length} Titles`;
+
+  if (filtered.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-gallery-state">
+        <h3>No titles found for category: ${activeMeta.label}</h3>
+        <p>Try switching to another category or browse All titles.</p>
+        <button type="button" class="empty-gallery-btn" onclick="renderExplore('all')">Show All Titles</button>
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = filtered.slice(0, 100).map(b => {
+    const coverSrc = (b.cover && typeof b.cover === 'string' && (b.cover.startsWith('http') || b.cover.startsWith('/'))) 
+      ? b.cover 
+      : ((b.image && typeof b.image === 'string' && (b.image.startsWith('http') || b.image.startsWith('/'))) ? b.image : '');
+    const firstChar = (b.title || 'M').charAt(0).toUpperCase();
+    const fallbackBg = '#141a26';
+    const thumbHtml = coverSrc 
+      ? `<img src="${coverSrc}" alt="" loading="eager" decoding="async" onerror="this.onerror=null;this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;background:${fallbackBg};display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#94a3b8;\\'>${firstChar}</div>';" />`
+      : `<div style="width:100%;height:100%;background:${fallbackBg};display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#94a3b8;">${firstChar}</div>`;
+
+    const info = getFormatInfo(b);
+    const isBookSaved = saved(b.id);
+    const isBookLiked = liked(b.id);
+
+    // Classic vector SVG icons
+    const bookmarkSvg = isBookSaved
+      ? `<svg viewBox="0 0 24 24" width="13" height="13" fill="#ff3e55" stroke="#ff3e55" stroke-width="1.5"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`
+      : `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
+
+    const heartSvg = isBookLiked
+      ? `<svg viewBox="0 0 24 24" width="13" height="13" fill="#ff3e55" stroke="#ff3e55" stroke-width="1.2"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`
+      : `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`;
+
+    const readSvg = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`;
+
+    return `
+      <article class="md-poster-card" data-book="${b.id}">
+        <div class="md-poster-wrap" data-action="open-book" data-book="${b.id}">
+          ${thumbHtml}
+          <div class="md-poster-actions" onclick="event.stopPropagation()">
+            <button type="button" class="md-card-action-btn ${isBookSaved ? 'active' : ''}" data-action="save" data-book="${b.id}" title="${isBookSaved ? 'Remove Bookmark' : 'Bookmark'}">
+              ${bookmarkSvg}
+            </button>
+            <button type="button" class="md-card-action-btn ${isBookLiked ? 'active' : ''}" data-action="like" data-book="${b.id}" title="${isBookLiked ? 'Unlike' : 'Favorite'}">
+              ${heartSvg}
+            </button>
+            <button type="button" class="md-card-action-btn md-read-btn" data-action="read" data-book="${b.id}" title="Read Now">
+              ${readSvg}
+            </button>
+          </div>
+          <div class="md-title-overlay">
+            <div class="md-title-flag-row">
+              <span class="md-card-flag">${info.flag}</span>
+              <span class="md-title-text">${b.title || 'Untitled'}</span>
+            </div>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
 function renderAll(){renderReadingList();renderFeatured();renderRecent();renderSidebarStats();renderDetail();renderReader();renderLibrary();renderProfile();renderExplore();renderSettings();applyAppTheme();}
-function setNav(v){navLinks.forEach(a=>a.removeAttribute('aria-current'));searchButton?.removeAttribute('aria-current');document.querySelector('[data-open-settings]')?.removeAttribute('aria-current');if(v==='home')document.querySelector('.nav a[href="#explore"]')?.setAttribute('aria-current','page');if(v==='library-view')document.querySelector('.nav a[href="#library"]')?.setAttribute('aria-current','page');if(v==='explore-view')document.querySelector('.nav a[href="#explore"]')?.setAttribute('aria-current','page');if(v==='reader')document.querySelector('.nav a[href="#reading-now"]')?.setAttribute('aria-current','page');if(v==='profile')document.querySelector('.nav a[href="#profile"]')?.setAttribute('aria-current','page');if(v==='settings')document.querySelector('[data-open-settings]')?.setAttribute('aria-current','page');if(v==='search')searchButton?.setAttribute('aria-current','page')}
+function setNav(v){navLinks.forEach(a=>a.removeAttribute('aria-current'));searchButton?.removeAttribute('aria-current');document.querySelector('[data-open-settings]')?.removeAttribute('aria-current');if(v==='home')document.querySelector('.nav a[href="#explore"]')?.setAttribute('aria-current','page');if(v==='library-view')document.querySelector('.nav a[href="#library"]')?.setAttribute('aria-current','page');if(v==='explore-view')document.querySelector('.nav a[href="#explore"]')?.setAttribute('aria-current','page');if(v==='profile')document.querySelector('.nav a[href="#profile"]')?.setAttribute('aria-current','page');if(v==='settings')document.querySelector('[data-open-settings]')?.setAttribute('aria-current','page');if(v==='search')searchButton?.setAttribute('aria-current','page')}
 function showView(v='home',push=true){
   sections.forEach(s=>s.classList.remove('active-view'));
   if (v !== 'reader') {
@@ -1258,7 +1879,11 @@ function showView(v='home',push=true){
   document.body.classList.toggle('detail-active', v==='book-detail');
   document.body.classList.toggle('reader-focus', v==='reader' && !!state.reader.focus);
   if(v==='home'){app.classList.remove('view-mode');setNav('home');if(push)history.pushState({v},'','/#');scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});return}
-  const target=document.getElementById(v);
+  if(v==='reading-now'){
+    return showView('library-view', push);
+  }
+  const viewId = (v === 'explore') ? 'explore-view' : (v === 'library' ? 'library-view' : v);
+  const target=document.getElementById(viewId);
   if(!target)return showView('home',push);
   app.classList.add('view-mode');
   target.classList.add('active-view');
@@ -1268,14 +1893,20 @@ function showView(v='home',push=true){
       history.pushState({v},'',`#/book/${state.currentBook}`);
     } else if(v==='reader' && state.currentBook){
       history.pushState({v},'',`#/read/${state.currentBook}/${(state.activeChapter||0)+1}`);
-    } else if(v==='explore-view'){
-      history.pushState({v},'','#explore');
+    } else if(v==='explore'||v==='explore-view'){
+      history.pushState({v:'explore-view'},'','#explore');
+    } else if(v==='library'||v==='library-view'){
+      history.pushState({v:'library-view'},'','#library');
     } else {
       history.pushState({v},'',`#${v}`);
     }
   }
   scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});
-  if(v==='search')setTimeout(()=>document.querySelector('#book-search')?.focus(),300)
+  if(v==='search')setTimeout(()=>document.querySelector('#book-search')?.focus(),300);
+  if(v==='library'||v==='library-view') renderLibrary();
+  if(v==='profile') renderProfile();
+  if(v==='settings') renderSettings();
+  if(v==='explore'||v==='explore-view') renderExplore();
 }
 function openBook(id){
   if(!id)return;
@@ -1292,20 +1923,35 @@ function openBook(id){
   document.body.classList.remove('md-search-active');
   state.currentBook=id;
   state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);
+
+  // Instant Client Chapter Cache Check (0ms loading if already visited or preloaded!)
+  state.cachedChapters = state.cachedChapters || {};
+  const b = book(id);
+  if (state.cachedChapters[id] && state.cachedChapters[id].chapters?.length > 0) {
+    b.chapters = state.cachedChapters[id].chapters;
+    if (state.cachedChapters[id].source) b.source = state.cachedChapters[id].source;
+    if (state.cachedChapters[id].metadata) {
+      Object.assign(b, state.cachedChapters[id].metadata);
+    }
+  }
+
   saveState();
-  renderDetail(); // Direct render to guarantee current title and cover are displayed
+  renderDetail(); // Direct render to guarantee current title, cover, and cached chapters are displayed instantly!
   showView('book-detail');
 
-  // Auto-prefetch chapters for external items if not loaded yet
-  const b = book(id);
+  // Auto-prefetch or refresh chapters in background
   const isExternal = b && (b.id.startsWith('mangadna-') || b.id.startsWith('manhwa18-') || b.id.startsWith('mangabuddy-') || b.id.startsWith('mangapill-') || b.id.startsWith('divascans-') || b.id.startsWith('madara-') || b.id.startsWith('temple-') || b.id.startsWith('mangadex-') || b.id.startsWith('private-tg-') || b.id.startsWith('telegram-') || b.id.startsWith('royalroad-') || b.id.startsWith('itunes-') || (b.genre || '').toLowerCase().includes('manga') || (b.genre || '').toLowerCase().includes('novel'));
-  if (isExternal) {
-    fetch(`/api/books/${id}/chapters?q=${encodeURIComponent(b.title)}&_cb=${Date.now()}`)
+  if (isExternal && (!b.chapters || b.chapters.length === 0)) {
+    fetch(`/api/books/${id}/chapters?q=${encodeURIComponent(b.title)}`)
       .then(r => r.json())
       .then(data => {
         if (data.chapters && data.chapters.length > 0) {
           b.chapters = data.chapters;
           b.isFallback = !!data.isFallback;
+          if (data.source) {
+            b.source = data.source;
+            b._source = data.source;
+          }
           if (data.metadata) {
             const meta = data.metadata;
             if (meta.synopsis && meta.synopsis.length > 10) b.synopsis = meta.synopsis;
@@ -1318,6 +1964,7 @@ function openBook(id){
               b.cover = meta.image;
             }
           }
+          state.cachedChapters[id] = { chapters: data.chapters, source: data.source, metadata: data.metadata };
           saveState();
           if(state.currentBook === id) {
             renderDetail();
@@ -1482,15 +2129,15 @@ document.addEventListener('click',e=>{
 if(a==='scroll-top'){window.scrollTo({top:0,behavior:'smooth'});document.querySelector('.reader-paper')?.scrollIntoView({behavior:'smooth'});return;}
 if(a==='next-page'){state.progress[id]=Math.min(100,pct(id)+Math.ceil(100/Math.max(1,(book(id).chapters||[]).length)));state.activeChapter=Math.min(((book(id).chapters||[]).length-1), (state.activeChapter||0)+1);state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,6);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100);toast(`${book(id).title} is now ${pct(id)}% complete.`)}
 if(a==='prev-page'){state.activeChapter=Math.max(0,(state.activeChapter||0)-1);state.progress[id]=Math.max(0,pct(id)-8);saveState();renderAll();setTimeout(()=>scrollReaderChapter(state.activeChapter),100)}
-if(a==='font-up'){state.reader.font=Math.min(28, (state.reader.font||19)+1);saveState();renderReader();return;}
-if(a==='font-down'){state.reader.font=Math.max(14, (state.reader.font||19)-1);saveState();renderReader();return;}
+if(a==='font-up' || a==='setting-font-up'){applyGlobalFontSize((state.reader.font||19) + 1);if(document.querySelector('#reader.active-view'))renderReader();return;}
+if(a==='font-down' || a==='setting-font-down'){applyGlobalFontSize((state.reader.font||19) - 1);if(document.querySelector('#reader.active-view'))renderReader();return;}
 if(a==='theme'){const chosenTheme = action.dataset.theme || 'paper'; state.reader.theme=chosenTheme; saveState(); const paper = document.querySelector('.reader-paper'); if(paper){paper.className = paper.className.replace(/\btheme-\w+/g, '') + ` theme-${chosenTheme}`;} renderReader(); toast(`Theme set to ${chosenTheme}`); return;}
 if(a==='reader-mode'){state.reader.mode=action.dataset.mode;saveState();renderReader();setTimeout(()=>scrollReaderChapter(state.activeChapter||0),80)}
 if(a==='focus-reader'){state.reader.focus=!state.reader.focus;saveState();renderReader();document.body.classList.toggle('reader-focus',!!state.reader.focus);toast(state.reader.focus?'Focus reading on.':'Focus reading off.')}
 if(a==='fullscreen-reader'){if(!document.fullscreenElement){if(document.documentElement.requestFullscreen){document.documentElement.requestFullscreen();}else if(document.body.requestFullscreen){document.body.requestFullscreen();}}else{if(document.exitFullscreen){document.exitFullscreen();}}return;}
 if(a==='highlight'){state.highlighted[id]=!state.highlighted[id];saveState();renderReader()}
 if(a==='open-chapter'){state.currentBook=id;const chIdx=Number(action.dataset.chapterIndex||0);openReader(id, chIdx);return;}
-if(a==='signin-local'){const name=document.querySelector('#account-name')?.value.trim();state.account=name||'Local reader';saveState();renderAll();toast('Signed in locally.')}if(a==='signout-local'){state.account=null;saveState();renderAll();toast('Signed out locally.')}if(a==='export-state'){exportState()}if(a==='app-theme'){state.appTheme=action.dataset.themeChoice||'system';saveState();applyAppTheme();renderSettings();toast(`Theme set to ${state.appTheme}.`)}if(a==='save-note'){const text=document.querySelector('#reader-note')?.value.trim();if(text){state.notes[id]=[...(state.notes[id]||[]),{text,at:new Date().toISOString()}];saveState();renderAll();toast('Margin note saved.')}}return}const view=e.target.closest('[data-view]');if(view){e.preventDefault();showView(view.dataset.view);return}const shelf=e.target.closest('.shelf-tabs button');if(shelf){state.activeShelf=shelf.dataset.shelf;saveState();renderLibrary();return}const exp=e.target.closest('.explore-controls button');if(exp){state.exploreFilter=exp.dataset.exploreFilter;saveState();renderExplore();return}const themeChoice=e.target.closest('[data-theme-choice]');if(themeChoice){state.appTheme=themeChoice.dataset.themeChoice;saveState();renderSettings();applyAppTheme();return}const filter=e.target.closest('.filter-row button');if(filter){state.searchFilter=filter.dataset.filter;saveState();renderSearch();return}const author=e.target.closest('[data-author]');if(author){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${author.dataset.author}</h3><p>Author shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.author===author.dataset.author).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.genre}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const mood=e.target.closest('[data-mood]');if(mood){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${mood.dataset.mood}</h3><p>Mood shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.mood===mood.dataset.mood).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const cat=e.target.closest('[data-category]');if(cat){const name=cat.dataset.category;document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${name}</h3><p>Dedicated shelf for ${name.toLowerCase()} only.</p></header><div class="explore-books">${BOOKS.filter(b=>(b.format||inferFormat(b))===name).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author} · ${b.mood}</p><span class="book-type-badge">${b.format||inferFormat(b)}</span>${actions(b.id)}</article>`).join('')||'<div class="empty-state"><h3>No titles yet.</h3><p>This shelf is ready for future catalogue items.</p></div>'}</div></section>`;return}const cover=e.target.closest('[data-book]');if(cover&&!e.target.closest('button'))openBook(cover.dataset.book)});
+if(a==='signin-local'){const name=document.querySelector('#account-name')?.value.trim();state.account=name||'Local reader';saveState();renderAll();toast('Signed in locally.')}if(a==='signout-local'){state.account=null;saveState();renderAll();toast('Signed out locally.')}if(a==='export-state'){exportState()}if(a==='app-theme'){state.appTheme=action.dataset.themeChoice||'system';saveState();applyAppTheme();renderSettings();toast(`Theme set to ${state.appTheme}.`)}if(a==='save-note'){const text=document.querySelector('#reader-note')?.value.trim();if(text){state.notes[id]=[...(state.notes[id]||[]),{text,at:new Date().toISOString()}];saveState();renderAll();toast('Margin note saved.')}}return}if(e.target?.id==='btn-clear-server-cache'){fetch('/api/clear-cache',{method:'POST'}).then(r=>r.json()).then(()=>{toast('Server cache fully cleared & re-indexed!');}).catch(()=>toast('Could not reach server'));return;}const dropdownBtn = e.target.closest('#explore-filter-dropdown-btn');if(dropdownBtn){e.preventDefault();e.stopPropagation();const menu=document.getElementById('explore-filter-dropdown-menu');if(menu){const isOpen=menu.classList.toggle('active');dropdownBtn.setAttribute('aria-expanded',isOpen?'true':'false');}return;}const optItem = e.target.closest('.dropdown-option-item');if(optItem){e.preventDefault();e.stopPropagation();const genre=optItem.dataset.genre||'all';const menu=document.getElementById('explore-filter-dropdown-menu');const btn=document.getElementById('explore-filter-dropdown-btn');if(menu)menu.classList.remove('active');if(btn)btn.setAttribute('aria-expanded','false');renderExplore(genre);return;}const selectWrap = e.target.closest('.explore-filter-select-wrap');if(!selectWrap){const menu=document.getElementById('explore-filter-dropdown-menu');const btn=document.getElementById('explore-filter-dropdown-btn');if(menu&&menu.classList.contains('active')){menu.classList.remove('active');if(btn)btn.setAttribute('aria-expanded','false');}}const view=e.target.closest('[data-view]');if(view){e.preventDefault();showView(view.dataset.view);return}const shelf=e.target.closest('.shelf-tabs button');if(shelf){state.activeShelf=shelf.dataset.shelf;saveState();renderLibrary();return}const exp=e.target.closest('.explore-controls button');if(exp){state.exploreFilter=exp.dataset.exploreFilter;saveState();renderExplore();return}const themeChoice=e.target.closest('[data-theme-choice]');if(themeChoice){state.appTheme=themeChoice.dataset.themeChoice;saveState();renderSettings();applyAppTheme();return}const filter=e.target.closest('.filter-row button');if(filter){state.searchFilter=filter.dataset.filter;saveState();renderSearch();return}const author=e.target.closest('[data-author]');if(author){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${author.dataset.author}</h3><p>Author shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.author===author.dataset.author).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.genre}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const mood=e.target.closest('[data-mood]');if(mood){document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${mood.dataset.mood}</h3><p>Mood shelf</p></header><div class="explore-books">${BOOKS.filter(b=>b.mood===mood.dataset.mood).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author}</p>${actions(b.id)}</article>`).join('')}</div></section>`;return}const cat=e.target.closest('[data-category]');if(cat){const name=cat.dataset.category;document.querySelector('.explore-content').innerHTML=`<section class="explore-block"><header><h3>${name}</h3><p>Dedicated shelf for ${name.toLowerCase()} only.</p></header><div class="explore-books">${BOOKS.filter(b=>(b.format||inferFormat(b))===name).map(b=>`<article class="explore-book">${coverHTML(b,'feature')}<h4>${b.title}</h4><p>${b.author} · ${b.mood}</p><span class="book-type-badge">${b.format||inferFormat(b)}</span>${actions(b.id)}</article>`).join('')||'<div class="empty-state"><h3>No titles yet.</h3><p>This shelf is ready for future catalogue items.</p></div>'}</div></section>`;return}const cover=e.target.closest('[data-book]');if(cover&&!e.target.closest('button'))openBook(cover.dataset.book)});
 document.addEventListener('change',e=>{if(e.target?.dataset.action==='line'){state.reader.line=Number(e.target.value);saveState();renderReader()}if(e.target?.id==='setting-line'){state.reader.line=Number(e.target.value);saveState();renderAll()}if(e.target?.id==='import-state'){const file=e.target.files[0];if(file){file.text().then(txt=>{state={...DEFAULT_STATE,...JSON.parse(txt)};saveState();renderAll();toast('Sync file imported.')}).catch(()=>toast('Import failed.'))}}});
 function inferFormat(b) {
   if (!b) return 'Books';
@@ -1502,12 +2149,26 @@ function inferFormat(b) {
   return 'Books';
 }
 
-function renderSettings() {
-  const fontInput = document.querySelector('#setting-font');
+function applyGlobalFontSize(size) {
+  const fontVal = Math.max(14, Math.min(28, Number(size) || 19));
+  state.reader.font = fontVal;
+  document.documentElement.style.setProperty('--reader-font', `${fontVal}px`);
+  document.querySelectorAll('.reader-paper, .reading-prose, .stolen-prose').forEach(el => {
+    el.style.setProperty('--reader-font', `${fontVal}px`);
+    el.style.fontSize = `${fontVal}px`;
+  });
   const fontOut = document.querySelector('#setting-font-out');
+  if (fontOut) fontOut.textContent = `${fontVal}px`;
+  const fontSlider = document.querySelector('#setting-font');
+  if (fontSlider && Number(fontSlider.value) !== fontVal) fontSlider.value = fontVal;
+  const quickDisp = document.querySelector('#quick-font-display');
+  if (quickDisp) quickDisp.textContent = `${fontVal}px`;
+  saveState();
+}
+
+function renderSettings() {
+  applyGlobalFontSize(state.reader.font || 19);
   const lineInput = document.querySelector('#setting-line');
-  if (fontInput) fontInput.value = state.reader.font || 19;
-  if (fontOut) fontOut.textContent = `${state.reader.font || 19}px`;
   if (lineInput) lineInput.value = state.reader.line || 1.85;
 
   document.querySelectorAll('[data-theme-choice]').forEach(btn => {
@@ -1643,21 +2304,19 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   if (e.target?.id === 'book-search') {
     clearTimeout(searchInputTimer);
-    searchInputTimer = setTimeout(() => renderSearch(), 260);
+    searchInputTimer = setTimeout(() => renderSearch(), 180);
   }
   if (e.target?.id === 'md-search-input') {
     const val = e.target.value;
     clearTimeout(liveSearchDebounceTimer);
+    // Instant Continuous Search while typing (0ms latency!)
+    renderInstantContinuousSearch(val);
     liveSearchDebounceTimer = setTimeout(() => {
       handleLiveSearchInput(val);
-    }, 180);
+    }, 140);
   }
   if (e.target?.id === 'setting-font') {
-    state.reader.font = Number(e.target.value);
-    const out = document.querySelector('#setting-font-out');
-    if (out) out.textContent = `${state.reader.font}px`;
-    saveState();
-    renderSettings();
+    applyGlobalFontSize(e.target.value);
   }
 });
 
@@ -1780,7 +2439,7 @@ function handleRouting() {
       } else {
         showView('search', false);
       }
-    } else if (raw === 'explore-view') {
+    } else if (raw === 'explore' || raw === 'explore-view') {
       showView('explore-view', false);
     } else {
       showView('home', false);
@@ -1833,6 +2492,10 @@ function renderMangaDexHome() {
     ).join('');
     const coverImg = m.banner || m.cover || m.image || '';
 
+    const rawAlt = (m.altTitle || '').trim();
+    const hasForbiddenChars = /[\uac00-\ud7af\u1100-\u11ff\u0400-\u04ff]/u.test(rawAlt);
+    const cleanAlt = (!hasForbiddenChars && rawAlt && rawAlt.toLowerCase() !== m.title.toLowerCase()) ? rawAlt : '';
+
     return `
       <div class="md-panoramic-slide ${activeClass}" data-slide-index="${idx}">
         ${coverImg ? `<img class="md-panoramic-bg-img" src="${coverImg}" alt="" loading="lazy" />` : ''}
@@ -1843,7 +2506,10 @@ function renderMangaDexHome() {
             <img class="md-hero-flag-icon inline-block select-none absolute right-2 bottom-1.5" title="Japanese" src="https://flagcdn.com/w40/jp.png" alt="Japanese flag icon" width="24" height="16" loading="lazy" style="z-index: 1;" />
           </div>
           <div class="md-hero-details-grid">
-            <h2 class="md-hero-title-h2 font-bold text-xl line-clamp-5 sm:line-clamp-2 lg:text-4xl overflow-hidden" style="line-height: 2.75rem; cursor: pointer;" data-action="open-book" data-book="${m.id}">${m.title}</h2>
+            <div class="md-hero-titles-wrap" style="display:flex;flex-direction:column;gap:2px;">
+              <h2 class="md-hero-title-h2 font-bold text-xl line-clamp-5 sm:line-clamp-2 lg:text-4xl overflow-hidden" style="line-height: 2.2rem; cursor: pointer; margin:0;" data-action="open-book" data-book="${m.id}">${m.title}</h2>
+              ${cleanAlt ? `<span class="md-hero-alt-sub" style="font-size:0.85rem;color:#94a3b8;font-weight:400;letter-spacing:0.01em;opacity:0.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">${cleanAlt}</span>` : ''}
+            </div>
             <div class="md-hero-tags-row">
               ${tagsHtml}
             </div>
@@ -1905,6 +2571,26 @@ function renderMangaDexHome() {
   }
 
   setupHeroCarouselEvents();
+  prefetchTrendingChapters();
+}
+
+function prefetchTrendingChapters() {
+  if (!TRENDING_MANGA_LIST || !TRENDING_MANGA_LIST.length) return;
+  state.cachedChapters = state.cachedChapters || {};
+  TRENDING_MANGA_LIST.slice(0, 10).forEach((item, idx) => {
+    setTimeout(() => {
+      if (state.cachedChapters[item.id]) return;
+      fetch(`/api/books/${item.id}/chapters?q=${encodeURIComponent(item.title)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.chapters && data.chapters.length > 0) {
+            state.cachedChapters[item.id] = { chapters: data.chapters, source: data.source, metadata: data.metadata };
+            const b = BOOKS.find(x => x.id === item.id);
+            if (b) b.chapters = data.chapters;
+          }
+        }).catch(() => {});
+    }, (idx + 1) * 350);
+  });
 }
 
 function setupHeroCarouselEvents() {
@@ -2033,6 +2719,7 @@ document.addEventListener('click', e => {
 });
 
 // Initialize application
+applyGlobalFontSize(state.reader?.font || 19);
 renderAll();
 handleRouting();
 fetchLiveTrendingManga();

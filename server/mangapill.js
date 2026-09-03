@@ -175,6 +175,7 @@ async function searchMangapill(query) {
             synopsis: `${s.title}${s.altTitle ? ` (${s.altTitle})` : ''}. Format: ${s.genre}, Status: ${s.status || 'Available'}. High-resolution scanlations from Mangapill.`,
             hasEpub: false,
             format: s.genre || 'MANGA',
+            _source: 'Mangapill',
             _isDirectSearchMatch: true
         };
     });
@@ -258,8 +259,12 @@ async function fetchMangapillChapters(seriesId) {
 
         if (chaptersList.length === 0) return null;
 
-        // Mangapill lists chapters newest-first, reverse to show Chapter 1 first
-        chaptersList.reverse();
+        // Strictly sort chapters in ascending numerical order (Chapter 1, 2, ..., N)
+        chaptersList.sort((a, b) => {
+            const numA = parseFloat((a.chName.match(/(?:chapter|ch\.?)\s*([\d\.]+)/i) || [])[1]) || 0;
+            const numB = parseFloat((b.chName.match(/(?:chapter|ch\.?)\s*([\d\.]+)/i) || [])[1]) || 0;
+            return numA - numB;
+        });
 
         const formatted = chaptersList.map((ch, idx) => {
             const chNumMatch = ch.chName.match(/(?:Chapter|Ch\.?)\s*(\d+(?:\.\d+)?)/i);
@@ -292,23 +297,34 @@ async function fetchMangapillChapters(seriesId) {
             if (t.startsWith('Genres')) genres = t.replace(/^Genres\s*/i, '').split(/\s+/).filter(Boolean);
         });
 
-        const synopsis = $('p.text--secondary, p[class*="text--secondary"], p.text-sm').map((i, el) => $(el).text().trim()).get().find(t => 
-            t.length > 30 && 
-            !t.toLowerCase().includes('discontinue') && 
+        const finalAuthor = author || artist || 'Manga Artist';
+
+        // Extract synopsis from bottom of title details (p.text--secondary or div.mb-3 p)
+        const synopsisCandidate = $('div.flex-col p.text-sm, p.text--secondary, p[class*="text--secondary"], div.mb-3 p, p').map((i, el) => $(el).text().trim()).get().find(t => 
+            t.length > 25 && 
+            !t.toLowerCase().includes('discontinue supporting manhwa') && 
             !t.toLowerCase().includes('mangapill') &&
-            !t.toLowerCase().includes('chapter not found')
+            !t.toLowerCase().includes('chapter not found') &&
+            !t.toLowerCase().includes('clear search')
         ) || '';
 
-        const finalAuthor = author || artist || 'Manga Artist';
+        let altTitle = $('div.text-sm.text-secondary, .alt-title').first().text().trim() || '';
+
+        const coverEl = $('img[data-src], img.lazy, div.flex img, img[src*="cover"]').first();
+        const rawCover = coverEl.attr('data-src') || coverEl.attr('src') || '';
+        const proxiedCover = rawCover ? `/api/proxy/image?url=${encodeURIComponent(rawCover)}` : null;
 
         const metadata = {
             title: metaTitle,
+            altTitle: altTitle,
             author: finalAuthor,
             artist: artist,
             year: year,
             status: status || 'Publishing',
             genres: genres,
-            synopsis: synopsis
+            synopsis: synopsisCandidate,
+            cover: proxiedCover,
+            image: proxiedCover
         };
 
         formatted.metadata = metadata;
@@ -444,6 +460,7 @@ async function fetchMangapillPopular() {
                     if (detRes && detRes.status === 200 && detRes.text) {
                         const $d = cheerio.load(detRes.text);
                         const realSynopsis = $d('p.text--secondary, p[class*="text--secondary"], .description').first().text().trim();
+                        const realAlt = $d('div.text-sm.text-secondary, .alt-title').first().text().trim() || '';
                         let realType = '';
                         let realStatus = '';
                         let realYear = '';
@@ -463,6 +480,7 @@ async function fetchMangapillPopular() {
 
                         return {
                             ...item,
+                            altTitle: realAlt || item.altTitle || '',
                             synopsis: (realSynopsis && realSynopsis.length > 30) ? realSynopsis : item.synopsis,
                             tags: realGenres.length > 0 ? realGenres : item.tags,
                             year: realYear || item.year,

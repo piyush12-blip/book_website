@@ -10,6 +10,7 @@ const { searchMangapill, fetchMangapillChapters, getMangapillChapterImages, fetc
 const { searchMangaBuddy, fetchMangaBuddyChapters } = require('./mangabuddy');
 const { searchMangaDNA, fetchMangaDNAChapters, getMangaDNAChapterPanels } = require('./mangadna');
 const { searchRoyalRoad, getRoyalRoadChapters } = require('./royalroad');
+const { searchAppleBooks } = require('./appleBooks');
 const { 
     indexTelegramChannels, 
     searchTelegramIndex, 
@@ -23,18 +24,46 @@ app.disable('x-powered-by');
 app.use(cors());
 app.use(express.json());
 
-const publicPath = path.join(__dirname, '../public');
+const publicPath = path.resolve(__dirname, '../public');
 app.use(express.static(publicPath));
 
 // Start background indexer on boot and every 10 minutes
 indexTelegramChannels();
 setInterval(indexTelegramChannels, 10 * 60 * 1000);
 
-// Ultra-Fast In-Memory LRU Cache (<10ms repeat loads)
+// Ultra-Fast In-Memory + Persistent Disk Cache (<1ms repeat loads)
 const MEMORY_CACHE = {
     search: new Map(),
     chapters: new Map()
 };
+
+const CHAPTERS_CACHE_DIR = path.join(__dirname, '.cache/chapters');
+if (!fs.existsSync(CHAPTERS_CACHE_DIR)) {
+    try { fs.mkdirSync(CHAPTERS_CACHE_DIR, { recursive: true }); } catch(e) {}
+}
+
+function getCachedChapters(key) {
+    if (MEMORY_CACHE.chapters.has(key)) return MEMORY_CACHE.chapters.get(key);
+    const safeKey = key.replace(/[^a-zA-Z0-9_\-\.]/g, '_').slice(0, 120);
+    const safeFile = path.join(CHAPTERS_CACHE_DIR, `${safeKey}.json`);
+    if (fs.existsSync(safeFile)) {
+        try {
+            const data = JSON.parse(fs.readFileSync(safeFile, 'utf8'));
+            MEMORY_CACHE.chapters.set(key, data);
+            return data;
+        } catch(e) {}
+    }
+    return null;
+}
+
+function setCachedChapters(key, data) {
+    MEMORY_CACHE.chapters.set(key, data);
+    const safeKey = key.replace(/[^a-zA-Z0-9_\-\.]/g, '_').slice(0, 120);
+    const safeFile = path.join(CHAPTERS_CACHE_DIR, `${safeKey}.json`);
+    try {
+        fs.writeFile(safeFile, JSON.stringify(data), () => {});
+    } catch(e) {}
+}
 
 function volumeNumber(title) {
     const m = title.match(/vol(?:ume)?\.?\s*(\d+)/i) || title.match(/#(\d+)/);
@@ -96,28 +125,47 @@ function scoreSingleTitle(cleanQ, title, cleanSlug, candidateSynopsis, isDirectM
 
     // Rank 1: Exact title match (with or without spaces)
     if (cleanT === cleanQ || (noSpaceQ.length > 2 && noSpaceT === noSpaceQ)) {
-        return 10000;
+        return 30000;
+    }
+
+    // Rank 2: Title begins with query word as the first word or strict prefix
+    // e.g. "Hidden Fire", "Hidden Scars", "Hidden Room" when searching "hidden"
+    const tFirstWord = cleanT.split(/\s+/)[0] || '';
+    if (tFirstWord === cleanQ || cleanT.startsWith(cleanQ + ' ')) {
+        // High priority! Titles that genuinely start with the searched term take 1st/2nd place
+        return 20000 - Math.min(Math.abs(noSpaceT.length - noSpaceQ.length) * 2, 2000);
+    }
+
+    // Strict prefix match (title starts with cleanQ)
+    if (cleanT.startsWith(cleanQ) || (noSpaceQ.length > 2 && noSpaceT.startsWith(noSpaceQ))) {
+        return 18000 - Math.min(Math.abs(noSpaceT.length - noSpaceQ.length) * 2, 2000);
     }
 
     // Fuzzy Full Title similarity (e.g. 1-2 letter typos across full title)
     const fullSim = Math.max(wordSimilarity(cleanQ, cleanT), wordSimilarity(noSpaceQ, noSpaceT));
     if (fullSim >= 0.85) {
-        return Math.round(9500 * fullSim);
+        return Math.round(16000 * fullSim);
     }
 
-    // Rank 2: Prefix match
-    if (cleanT.startsWith(cleanQ) || (noSpaceQ.length > 2 && noSpaceT.startsWith(noSpaceQ))) {
-        return 9000 - Math.min(Math.abs(noSpaceT.length - noSpaceQ.length), 500);
+    // Rank 3: Exact phrase anywhere inside the title as an isolated word/phrase
+    const wordBoundaryRegex = new RegExp(`\\b${cleanQ}\\b`, 'i');
+    if (wordBoundaryRegex.test(cleanT)) {
+        return 12000 - Math.min(Math.abs(noSpaceT.length - noSpaceQ.length) * 2, 2000);
     }
 
-    // Rank 3: Exact phrase inside title or title inside query
+    // Substring inside title or query
     if (cleanT.includes(cleanQ) || cleanQ.includes(cleanT) || (noSpaceQ.length > 2 && (noSpaceT.includes(noSpaceQ) || noSpaceQ.includes(noSpaceT)))) {
-        return 8000 - Math.min(Math.abs(noSpaceT.length - noSpaceQ.length), 500);
+        return 9000 - Math.min(Math.abs(noSpaceT.length - noSpaceQ.length), 1000);
     }
 
-    // Slug or synopsis match
-    if (cleanSlug.includes(cleanQ) || (noSpaceQ.length > 2 && noSpaceSlug.includes(noSpaceQ)) || (candidateSynopsis && candidateSynopsis.toLowerCase().includes(cleanQ))) {
-        return 7800;
+    // Slug match
+    if (cleanSlug.includes(cleanQ) || (noSpaceQ.length > 2 && noSpaceSlug.includes(noSpaceQ))) {
+        return 7000;
+    }
+
+    // Synopsis-only match: lower priority so it never overtakes genuine title matches
+    if (candidateSynopsis && candidateSynopsis.toLowerCase().includes(cleanQ)) {
+        return 4500;
     }
 
     // Rank 4: Keyword & Typo matching
@@ -155,7 +203,7 @@ function scoreSingleTitle(cleanQ, title, cleanSlug, candidateSynopsis, isDirectM
     const qRatio = qMatchCount / qTokens.length;
     const tRatio = tTokensArray.length > 0 ? (tMatchCount / tTokensArray.length) : 0;
     const bestRatio = Math.max(qRatio, tRatio * 0.95);
-    return Math.round(7500 * Math.pow(bestRatio, 1.2));
+    return Math.round(6000 * Math.pow(bestRatio, 1.2));
 }
 
 function calculateSearchRelevanceScore(query, candidateItem) {
@@ -356,11 +404,13 @@ app.get('/api/books/search', async (req, res) => {
         const mangaBuddyPromises = [withTimeout(searchMangaBuddy(cleanQuery).catch(() => []), 5500)];
         const mangaDNAPromises = [withTimeout(searchMangaDNA(cleanQuery).catch(() => []), 5500)];
         const royalRoadPromises = [withTimeout(searchRoyalRoad(cleanQuery).catch(() => []), 4500)];
+        const appleBooksPromises = [withTimeout(searchAppleBooks(cleanQuery).catch(() => []), 4500)];
 
         if (primaryVariants.length > 1) {
             manhwa18Promises.push(withTimeout(searchManhwa18(primaryVariants[1]).catch(() => []), 5500));
             mangaBuddyPromises.push(withTimeout(searchMangaBuddy(primaryVariants[1]).catch(() => []), 5500));
             mangaDNAPromises.push(withTimeout(searchMangaDNA(primaryVariants[1]).catch(() => []), 5500));
+            appleBooksPromises.push(withTimeout(searchAppleBooks(primaryVariants[1]).catch(() => []), 4500));
         }
 
         const [
@@ -368,13 +418,15 @@ app.get('/api/books/search', async (req, res) => {
             m18VariantResults,
             mbVariantResults,
             mdnaVariantResults,
-            rrVariantResults
+            rrVariantResults,
+            appleVariantResults
         ] = await Promise.all([
             Promise.all(mangapillPromises),
             Promise.all(manhwa18Promises),
             Promise.all(mangaBuddyPromises),
             Promise.all(mangaDNAPromises),
-            Promise.all(royalRoadPromises)
+            Promise.all(royalRoadPromises),
+            Promise.all(appleBooksPromises)
         ]);
 
         const mangapillRaw = [...instantIndexMatches, ...mangapillVariantResults.flat()];
@@ -382,6 +434,7 @@ app.get('/api/books/search', async (req, res) => {
         const mangaBuddyRaw = mbVariantResults.flat();
         const mangaDNARaw = mdnaVariantResults.flat();
         const royalRoadRaw = rrVariantResults.flat();
+        const appleBooksRaw = appleVariantResults.flat();
 
         const candidateList = [];
         // GLOBAL DEDUPLICATION: Normalize title across all scrapers to prevent duplicate 2x cards
@@ -403,6 +456,8 @@ app.get('/api/books/search', async (req, res) => {
                 .replace(/\b(that's)\b/g, 'thatis')
                 .replace(/\b(what's)\b/g, 'whatis')
                 .replace(/\b(let's)\b/g, 'letus')
+                .replace(/\s*[,.:;-]?\s*(?:a\s+novel\s*)?[,.:;-]?\s*vol(?:ume)?\.?\s*[0-9ivxlcdm]+/gi, '')
+                .replace(/\s*\(?(?:book|vol(?:ume)?|part)\s*[0-9ivxlcdm]+\)?/gi, '')
                 .replace(/\s*(?:manga|manhwa|webtoon|comic|novel|scanlation|scans|official|raw)\s*$/i, '')
                 .replace(/\s+(?:vol(?:ume)?\.?\s*\d+|\d+)$/i, '')
                 .replace(/[^a-z0-9]/g, '');
@@ -492,19 +547,25 @@ app.get('/api/books/search', async (req, res) => {
 
         // 1. Process Mangapill Series (1st Priority - High-Speed Direct Scans)
         for (const item of (mangapillRaw || [])) {
+            item.source = item.source || item._source || 'Mangapill';
             addCandidate(item, 100);
         }
 
         // 2. Process Manhwa18 Series (Priority 96 for Full +18 Color Manhwa Archives)
         for (const item of (manhwa18Raw || [])) {
+            item.source = item.source || item._source || 'Manhwa18';
             addCandidate(item, 96);
         }
 
-        // 3. Process MangaBuddy Series (High Priority Full Catalog)
+        // 3. Process MangaDNA Series (Priority 94 - Fast Direct Scans & Clean Metadata)
         for (const item of (mangaDNARaw || [])) {
-            addCandidate(item, 85);
+            item.source = item.source || item._source || 'MangaDNA';
+            addCandidate(item, 94);
         }
+
+        // 4. Process MangaBuddy Series (Priority 90 Full Catalog)
         for (const item of (mangaBuddyRaw || [])) {
+            item.source = item.source || item._source || 'MangaBuddy';
             addCandidate(item, 90);
         }
 
@@ -512,7 +573,14 @@ app.get('/api/books/search', async (req, res) => {
         for (const item of (royalRoadRaw || [])) {
             item.format = item.format || 'Web Novel';
             item.genre = item.genre || 'Web Novel';
+            item.source = item.source || item._source || 'Royal Road';
             addCandidate(item, 80);
+        }
+
+        // 6. Process Apple Books (Real Published Books, Bestsellers, Nonfiction, Fiction)
+        for (const item of (appleBooksRaw || [])) {
+            item.source = item.source || item._source || 'Apple Books';
+            addCandidate(item, 75);
         }
 
         // Score and rank all candidate results hierarchically
@@ -687,8 +755,9 @@ app.get('/api/books/:id/chapters', async (req, res) => {
         .replace(/\s+/g, ' ')
         .trim() || rawQuery || 'Book';
     const cacheKey = `${id}:${cleanQuery}`;
-    if (MEMORY_CACHE.chapters.has(cacheKey)) {
-        return res.json(MEMORY_CACHE.chapters.get(cacheKey));
+    const cachedChapters = getCachedChapters(cacheKey);
+    if (cachedChapters) {
+        return res.json(cachedChapters);
     }
 
     const getUniversalChapters = require('./universalNovelEngine');
@@ -704,9 +773,36 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             if (rrChapters && rrChapters.length > 0) {
                 console.log(`[CHAPTERS] RoyalRoad Engine served ${rrChapters.length} genuine web novel chapters for fiction "${fictionId}"`);
                 const payload = { chapters: rrChapters, metadata: rrChapters.metadata || {}, type: 'webnovel', format: 'Web Novel', source: 'RoyalRoadEngine' };
-                MEMORY_CACHE.chapters.set(cacheKey, payload);
+                setCachedChapters(cacheKey, payload);
                 return res.json(payload);
             }
+        }
+
+        // --- PUBLISHED BOOK HANDLER (Apple Books & Digital Vault) ---
+        if (id.startsWith('itunes-') || id.startsWith('book-')) {
+            const payload = {
+                chapters: [
+                    {
+                        title: `${cleanQuery} (Complete Edition)`,
+                        chapterNum: 1,
+                        chapterId: `${id}-full`,
+                        html: null,
+                        isBook: true
+                    }
+                ],
+                metadata: {
+                    title: cleanQuery,
+                    author: 'Author',
+                    status: 'Completed',
+                    type: 'Book',
+                    format: 'Book'
+                },
+                type: 'book',
+                format: 'Book',
+                source: 'AppleBooksVault'
+            };
+            setCachedChapters(cacheKey, payload);
+            return res.json(payload);
         }
 
         // ── 0.1 GOD-LEVEL ASSASSIN DEDICATED OFFLINE & STREAMING ENGINE ──
@@ -718,17 +814,17 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             const chapters = getGodLevelAssassinChapters(133);
             console.log(`[CHAPTERS] Served ${chapters.length} chapters (offline downloaded + full list) for God-level Assassin`);
             const payload = { chapters, type: 'manga', format: 'Manga & Manhwa', source: 'RealImageEngine' };
-            MEMORY_CACHE.chapters.set(cacheKey, payload);
+            setCachedChapters(cacheKey, payload);
             return res.json(payload);
         }
 
-        if (isManga || id.startsWith('mangapill-') || id.startsWith('mangabuddy-') || id.startsWith('manhwa18-')) {
+        if (isManga || id.startsWith('mangapill-') || id.startsWith('mangabuddy-') || id.startsWith('mangadna-') || id.startsWith('manhwa18-')) {
             // --- 0.25 MANGADNA HANDLER ---
             if (id.startsWith('mangadna-')) {
                 const dnaChapters = await fetchMangaDNAChapters(id);
                 if (dnaChapters && dnaChapters.length > 0) {
-                    const payload = { chapters: dnaChapters, metadata: dnaChapters.metadata || {}, type: 'manga', format: 'Manga & Manhwa', source: 'MangaDNA Engine' };
-                    MEMORY_CACHE.chapters.set(cacheKey, payload);
+                    const payload = { chapters: dnaChapters, metadata: dnaChapters.metadata || {}, type: 'manga', format: 'Manga & Manhwa', source: 'MangaDNA' };
+                    setCachedChapters(cacheKey, payload);
                     return res.json(payload);
                 }
             }
@@ -739,8 +835,8 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 const mbChapters = await fetchMangaBuddyChapters(id);
                 if (mbChapters && mbChapters.length > 0) {
                     console.log(`[CHAPTERS] MangaBuddy Engine served ${mbChapters.length} genuine chapters for "${id}"`);
-                    const payload = { chapters: mbChapters, metadata: mbChapters.metadata || {}, type: 'manga', format: 'Manga & Manhwa', source: 'MangaBuddyEngine' };
-                    MEMORY_CACHE.chapters.set(cacheKey, payload);
+                    const payload = { chapters: mbChapters, metadata: mbChapters.metadata || {}, type: 'manga', format: 'Manga & Manhwa', source: 'MangaBuddy' };
+                    setCachedChapters(cacheKey, payload);
                     return res.json(payload);
                 }
             }
@@ -751,8 +847,8 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 const mangapillChapters = await fetchMangapillChapters(id);
                 if (mangapillChapters && mangapillChapters.length > 0) {
                     console.log(`[CHAPTERS] Mangapill Engine served ${mangapillChapters.length} genuine chapters for "${id}"`);
-                    const payload = { chapters: mangapillChapters, metadata: mangapillChapters.metadata || {}, type: 'manga', format: 'Manga & Manhwa', source: 'MangapillEngine' };
-                    MEMORY_CACHE.chapters.set(cacheKey, payload);
+                    const payload = { chapters: mangapillChapters, metadata: mangapillChapters.metadata || {}, type: 'manga', format: 'Manga & Manhwa', source: 'Mangapill' };
+                    setCachedChapters(cacheKey, payload);
                     return res.json(payload);
                 }
             }
@@ -763,8 +859,8 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 const m18Chapters = await fetchManhwa18Chapters(id);
                 if (m18Chapters && m18Chapters.length > 0) {
                     console.log(`[CHAPTERS] Manhwa18 Engine served ${m18Chapters.length} genuine chapters for "${id}"`);
-                    const payload = { chapters: m18Chapters, metadata: m18Chapters.metadata || {}, type: 'manga', format: 'Manga & Manhwa', source: 'Manhwa18Engine' };
-                    MEMORY_CACHE.chapters.set(cacheKey, payload);
+                    const payload = { chapters: m18Chapters, metadata: m18Chapters.metadata || {}, type: 'manga', format: 'Manga & Manhwa', source: 'Manhwa18' };
+                    setCachedChapters(cacheKey, payload);
                     return res.json(payload);
                 }
             }
@@ -786,7 +882,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                     type: 'manga', 
                     source: 'TelegramRAMIndex' 
                 };
-                MEMORY_CACHE.chapters.set(cacheKey, payload);
+                setCachedChapters(cacheKey, payload);
                 return res.json(payload);
             }
 
@@ -807,7 +903,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                     type: 'manga', 
                     source: 'MasterManhwaEngine' 
                 };
-                MEMORY_CACHE.chapters.set(cacheKey, payload);
+                setCachedChapters(cacheKey, payload);
                 return res.json(payload);
             }
 
@@ -822,10 +918,8 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             const path = require('path');
             const home = require('os').homedir();
             const targetDirs = [
-                path.join(home, 'Downloads'),
-                path.join(home, 'Music'),
-                path.join(home, 'Desktop'),
-                path.join(home, 'Documents')
+                path.join(__dirname, '../public/epubs'),
+                path.join(home, 'Downloads')
             ];
             
             const titleParts = cleanQuery.split(' ');
@@ -897,7 +991,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 mainCharacters: aiBookData.mainCharacters,
                 isFallback: false
             };
-            MEMORY_CACHE.chapters.set(cacheKey, payload);
+            setCachedChapters(cacheKey, payload);
             return res.json(payload);
         }
 
@@ -907,7 +1001,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
 
         if (autoResult.chapters && autoResult.chapters.length > 0) {
             const payload = { chapters: autoResult.chapters, type: autoResult.type || 'book', source: autoResult.source, isFallback: false };
-            MEMORY_CACHE.chapters.set(cacheKey, payload);
+            setCachedChapters(cacheKey, payload);
             return res.json(payload);
         }
 
@@ -923,7 +1017,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 if (extractedChapters && extractedChapters.length > 0) {
                     console.log(`[SERVER] Successfully extracted ${extractedChapters.length} real chapters from Internet Archive EPUB for: "${cleanQuery}"`);
                     const payload = { chapters: extractedChapters, type: 'book', source: 'InternetArchive', isFallback: false };
-                    MEMORY_CACHE.chapters.set(cacheKey, payload);
+                    setCachedChapters(cacheKey, payload);
                     return res.json(payload);
                 }
             } catch(err) {
@@ -937,7 +1031,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
         if (gutenbergRes && gutenbergRes.chapters && gutenbergRes.chapters.length > 0) {
             console.log(`[SERVER] Gutenberg served ${gutenbergRes.chapters.length} authentic chapters for: "${cleanQuery}"`);
             const payload = { chapters: gutenbergRes.chapters, type: 'book', source: 'Gutenberg', isFallback: false };
-            MEMORY_CACHE.chapters.set(cacheKey, payload);
+            setCachedChapters(cacheKey, payload);
             return res.json(payload);
         }
 
@@ -1021,28 +1115,43 @@ app.get('/api/manga/chapter/:chapterId', async (req, res) => {
         }
 
         // 2.8 MangaBuddy Direct Chapter Trigger (mb-{slug}-ch-{chNum} or mangabuddy-ch-{encodedUrl})
+        // 2.7 MangaDNA Direct Chapter Trigger (mdna-{slug}-ch-{chNum} or mangadna-ch-{encodedUrl})
         if (chapterId.startsWith('mdna-') || chapterId.startsWith('mangadna-')) {
             let chapterUrl = '';
-            if (chapterId.startsWith('mangadna-ch-')) chapterUrl = decodeURIComponent(chapterId.replace('mangadna-ch-', ''));
-            if (chapterUrl || req.query.url) {
-                const url = chapterUrl || decodeURIComponent(req.query.url);
-                const panelsHtml = await getMangaDNAChapterPanels(url);
+            if (req.query.url) {
+                chapterUrl = decodeURIComponent(req.query.url);
+            } else if (chapterId.startsWith('mangadna-ch-')) {
+                chapterUrl = decodeURIComponent(chapterId.replace('mangadna-ch-', ''));
+            } else {
+                const m = chapterId.match(/^mdna-(.+)-ch-([\d\.]+)$/);
+                if (m) {
+                    const slug = m[1];
+                    const chNum = parseFloat(m[2]);
+                    chapterUrl = `https://mangadna.com/manga/${slug}/chapter-${chNum}`;
+                }
+            }
+            if (chapterUrl) {
+                const { getMangaDNAChapterPanels } = require('./mangadna');
+                const panelsHtml = await getMangaDNAChapterPanels(chapterUrl);
                 if (panelsHtml) return res.json({ html: panelsHtml });
             }
         }
 
+        // 2.8 MangaBuddy Direct Chapter Trigger (mb-{slug}-ch-{chNum} or mangabuddy-ch-{encodedUrl})
         if (chapterId.startsWith('mb-') || chapterId.startsWith('mangabuddy-')) {
             const { getMangaBuddyChapterPanels, fetchMangaBuddyChapters } = require('./mangabuddy');
             let chapterUrl = null;
-            if (chapterId.startsWith('mangabuddy-ch-')) {
+            if (req.query.url) {
+                chapterUrl = decodeURIComponent(req.query.url);
+            } else if (chapterId.startsWith('mangabuddy-ch-')) {
                 chapterUrl = decodeURIComponent(chapterId.replace('mangabuddy-ch-', ''));
             } else {
-                const m = chapterId.match(/^mb-(.+)-ch-([\d\.]+)$/);
+                const m = chapterId.match(/^mb-(.+)-(?:chapter|ch)-([\d\.]+)$/);
                 if (m) {
                     const slug = m[1];
                     const chNum = parseFloat(m[2]);
                     const chapters = await fetchMangaBuddyChapters(`mangabuddy-${slug}`);
-                    const targetCh = chapters.find(c => c.chNum === chNum || String(c.chNum) === String(chNum));
+                    const targetCh = chapters.find(c => c.id === chapterId || c.chapterId === chapterId || c.chNum === chNum || String(c.chNum) === String(chNum));
                     if (targetCh) chapterUrl = targetCh.url;
                 }
             }
@@ -1193,10 +1302,14 @@ app.get('/api/proxy/image', async (req, res) => {
 });
 
 // SPA fallback
-const indexPath = path.join(publicPath, 'index.html');
+const indexPath = path.resolve(publicPath, 'index.html');
 app.use((req, res) => {
     if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
+        res.sendFile(indexPath, (err) => {
+            if (err && !res.headersSent) {
+                res.status(404).end();
+            }
+        });
     } else {
         res.status(404).send('Not found');
     }

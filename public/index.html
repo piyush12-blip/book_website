@@ -20,7 +20,6 @@
 
         <nav class="nav" aria-label="Primary navigation">
           <a href="#library">Library</a>
-          <a href="#reading-now">Reading Now</a>
           <a href="#explore">Explore</a>
           <a href="#profile">Profile</a>
         </nav>
@@ -151,11 +150,22 @@
             <button type="button" class="md-nav-hamburger" aria-label="Menu">
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
             </button>
-            <a href="#" class="md-nav-brand" data-view="home">
-              <svg class="md-nav-logo-icon" viewBox="0 0 24 24" width="28" height="28" fill="none">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#ff6740" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <span class="md-nav-brand-text">Manga<strong>Dex</strong></span>
+            <a href="#" class="md-nav-brand lo-eni-brand" data-view="home" title="LO & ENI • Private Archive">
+              <div class="lo-eni-mark">
+                <svg viewBox="0 0 32 32" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <!-- Artisan Open Book & Heart Crest -->
+                  <path d="M16 24C16 24 12.5 21.5 7.5 21.5C4 21.5 2 23 2 23V6C2 6 4 4.5 7.5 4.5C12.5 4.5 16 7.5 16 7.5C16 7.5 19.5 4.5 24.5 4.5C28 4.5 30 6 30 6V23C30 23 28 21.5 24.5 21.5C19.5 21.5 16 24 16 24Z" 
+                        fill="#181e2b" stroke="#ff3e55" stroke-width="2" stroke-linejoin="round"/>
+                  <path d="M16 7.5V24" stroke="#ff3e55" stroke-width="2" stroke-linecap="round"/>
+                  <!-- Intertwined Heart Vertex -->
+                  <path d="M16 11C16 11 17.2 9.5 19 9.5C20.8 9.5 22 10.8 22 12.5C22 14.8 16 18.5 16 18.5C16 18.5 10 14.8 10 12.5C10 10.8 11.2 9.5 13 9.5C14.8 9.5 16 11 16 11Z" 
+                        fill="#ff3e55" stroke="#ff3e55" stroke-width="1"/>
+                </svg>
+              </div>
+              <div class="lo-eni-info">
+                <span class="lo-eni-name">LO <span class="lo-eni-cross">×</span> ENI</span>
+                <span class="lo-eni-tag">PRIVATE ARCHIVE</span>
+              </div>
             </a>
           </div>
 
@@ -186,6 +196,14 @@
         <div class="md-hero-section-header">
           <h2 class="md-hero-heading-text">Popular New Titles</h2>
         </div>
+
+        <!-- FLOATING TRANSPARENT QUICK NAV ON RIGHT SIDE -->
+        <nav class="md-hero-floating-nav" aria-label="Night theme quick navigation">
+          <a href="#library" class="md-hero-nav-item" data-view="library-view">Library</a>
+          <a href="#explore" class="md-hero-nav-item" data-view="explore-view">Explore</a>
+          <a href="#profile" class="md-hero-nav-item" data-view="profile">Profile</a>
+          <a href="#settings" class="md-hero-nav-item" data-view="settings"><span class="md-hero-nav-icon">⚙</span> Settings</a>
+        </nav>
 
         <div class="md-hero-slider-wrap" id="md-hero-stage">
           <!-- Populated dynamically via script.js -->
@@ -224,44 +242,67 @@
   </main>
 
   <section class="app-section library-section" id="library-view" aria-labelledby="library-view-title">
-    <div class="section-shell"><a class="view-return" href="#explore" data-view="home">← Back to explore</a></div>
+    <div class="section-shell"><a class="view-return" href="#home" data-view="home">← Back to Main Page</a></div>
     <div class="section-shell library-manager">
       <div class="section-intro compact">
-        <p class="kicker">Your shelves</p>
-        <h2 id="library-view-title">Saved and liked books.</h2>
-        <p>Your main page stays intentionally small. This is the deeper shelf for everything you save, like, and continue reading.</p>
+        <p class="kicker">Personal Collection</p>
+        <h2 id="library-view-title">My Library</h2>
+        <p>Saved and favorited series in your private collection.</p>
       </div>
       <div class="shelf-tabs" role="tablist" aria-label="Library shelves">
-        <button type="button" class="active" data-shelf="saved">Saved</button>
-        <button type="button" data-shelf="liked">Liked</button>
-        <button type="button" data-shelf="progress">In progress</button>
+        <button type="button" class="active" data-shelf="saved">Saved (<span id="lib-count-saved">0</span>)</button>
+        <button type="button" data-shelf="liked">Favorites (<span id="lib-count-liked">0</span>)</button>
       </div>
-      <div class="library-results" aria-live="polite"></div>
+      <div class="library-results manga-poster-grid" aria-live="polite"></div>
     </div>
   </section>
 
-
-
-
   <section class="app-section explore-section" id="explore-view" aria-labelledby="explore-view-title">
-    <div class="section-shell"><a class="view-return" href="#explore" data-view="home">← Back to front page</a></div>
-    <div class="section-shell explore-shell">
-      <div class="explore-hero">
-        <div>
-          <p class="kicker">Explore</p>
-          <h2 id="explore-view-title">Discover by taste, author, and mood.</h2>
-          <p>The explore room is intentionally separate from the homepage so discovery can be scrollable without disturbing the clean three-column front page.</p>
+    <div class="explore-shell">
+      <div class="explore-top-bar">
+        <div class="explore-nav-row">
+          <a class="view-return" href="#home" data-view="home">← Main Page</a>
+          <h2 id="explore-view-title" class="explore-compact-title">Browse Titles</h2>
+          
+          <!-- Classic Category Dropdown -->
+          <div class="explore-filter-select-wrap">
+            <button type="button" class="explore-dropdown-toggle" id="explore-filter-dropdown-btn" aria-haspopup="listbox" aria-expanded="false">
+              <span class="dropdown-active-label" id="explore-active-label">
+                <span class="dropdown-active-icon">🌐</span> All Categories
+              </span>
+              <svg class="dropdown-caret-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+            <div class="explore-dropdown-menu" id="explore-filter-dropdown-menu" role="listbox">
+              <button type="button" class="dropdown-option-item active" data-genre="all">
+                <span class="dropdown-opt-icon">🌐</span> All Categories
+              </button>
+              <button type="button" class="dropdown-option-item" data-genre="manga">
+                <span class="dropdown-opt-icon">🇯🇵</span> Manga
+              </button>
+              <button type="button" class="dropdown-option-item" data-genre="manhwa">
+                <span class="dropdown-opt-icon">🇰🇷</span> Manhwa
+              </button>
+              <button type="button" class="dropdown-option-item" data-genre="webnovel">
+                <span class="dropdown-opt-icon">📖</span> Web Novels
+              </button>
+              <button type="button" class="dropdown-option-item" data-genre="lightnovel">
+                <span class="dropdown-opt-icon">📗</span> Light Novels
+              </button>
+              <button type="button" class="dropdown-option-item" data-genre="novel">
+                <span class="dropdown-opt-icon">📕</span> Novels
+              </button>
+              <button type="button" class="dropdown-option-item" data-genre="books">
+                <span class="dropdown-opt-icon">📚</span> Books
+              </button>
+            </div>
+          </div>
+
+          <span class="explore-count-pill" id="explore-count-pill">Catalog</span>
         </div>
-        <div class="explore-summary" aria-live="polite"></div>
       </div>
-      <div class="explore-controls" aria-label="Explore filters">
-        <button type="button" class="active" data-explore-filter="for-you">For you</button>
-        <button type="button" data-explore-filter="categories">Categories</button>
-        <button type="button" data-explore-filter="authors">Authors</button>
-        <button type="button" data-explore-filter="moods">Moods</button>
-        <button type="button" data-explore-filter="new">New finds</button>
-      </div>
-      <div class="explore-content" aria-live="polite"></div>
+      <div class="mangadex-card-grid" id="explore-catalog-grid" aria-live="polite"></div>
     </div>
   </section>
 
@@ -454,68 +495,93 @@
   </section>
 
   <section class="app-section profile-section" id="profile" aria-labelledby="profile-title">
-    <div class="section-shell"><a class="view-return" href="#library" data-view="home">← Back to library</a></div>
+    <div class="section-shell"><a class="view-return" href="#explore" data-view="home">← Return to Main Page</a></div>
     <div class="section-shell profile-grid">
       <aside class="profile-card">
-        <div class="profile-avatar">EV</div>
-        <p class="kicker">Reader profile</p>
-        <h2 id="profile-title">Eleanor Vance</h2>
-        <p>Collector of quiet mysteries, annotated classics, and novels that smell faintly of rain.</p>
+        <div class="profile-avatar">LO</div>
+        <p class="kicker">Reader Profile</p>
+        <h2 id="profile-title">LO & ENI</h2>
+        <p>Curating timeless manga, high-resolution manhwa, web novels, and endless late-night reading sessions together in our sanctuary.</p>
+        <div style="margin-top:16px;display:flex;flex-wrap:wrap;gap:8px;">
+          <span style="background:rgba(236,72,153,0.15);color:#ec4899;border:1px solid rgba(236,72,153,0.3);padding:4px 10px;border-radius:14px;font-size:0.75rem;font-weight:700;">Soulmate Reader</span>
+          <span style="background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.3);padding:4px 10px;border-radius:14px;font-size:0.75rem;font-weight:700;">VIP Access</span>
+        </div>
       </aside>
       <div class="dashboard-panel">
-        <p class="kicker">Personal library</p>
-        <h2>Dashboard</h2>
+        <p class="kicker">Reading Statistics</p>
+        <h2>Reader Dashboard</h2>
         <div class="dash-stats">
-          <article><span>Books finished</span><strong>47</strong></article>
-          <article><span>Reading hours</span><strong>363</strong></article>
-          <article><span>Notes saved</span><strong>129</strong></article>
+          <article><span>Saved Titles</span><strong id="stat-saved-count">0</strong></article>
+          <article><span>Liked Titles</span><strong id="stat-liked-count">0</strong></article>
+          <article><span>In Progress</span><strong id="stat-progress-count">0</strong></article>
+          <article><span>Notes & Thoughts</span><strong id="stat-notes-count">0</strong></article>
         </div>
         <div class="annotation-panel">
-          <h3>Recent annotations</h3>
-          <p>“The atlas clue functions like a second key, but emotionally rather than mechanically.”</p>
-          <p>“Beautiful restraint in the chapter ending. No reveal, only a change in temperature.”</p>
+          <h3>Recent Reading Activity</h3>
+          <div id="profile-recent-activity">
+            <p>Your reading history and latest chapters will appear here as you read.</p>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-
-
   <section class="app-section settings-section" id="settings" aria-labelledby="settings-title">
-    <div class="section-shell"><a class="view-return" href="#/explore" data-view="home">← Back to front page</a></div>
+    <div class="section-shell"><a class="view-return" href="#explore" data-view="home">← Return to Main Page</a></div>
     <div class="section-shell settings-shell">
       <div class="section-intro compact">
-        <p class="kicker">Settings</p>
-        <h2 id="settings-title">Reading comfort and sync.</h2>
-        <p>Global appearance, reader defaults, account-style local sync, and portable backup controls.</p>
+        <p class="kicker">System Preferences</p>
+        <h2 id="settings-title">Reading Comfort & Storage</h2>
+        <p>Customize your reading typography, visual appearance, and data cache across the sanctuary.</p>
       </div>
       <div class="settings-grid">
         <section class="settings-card">
-          <h3>System theme</h3>
-          <p>Choose the full application theme. System follows your device preference.</p>
+          <h3>Appearance & Theme</h3>
+          <p>Switch between modern dark sanctuary night mode and classic day editorial mode.</p>
           <div class="setting-buttons" data-setting="app-theme">
-            <button type="button" data-action="app-theme" data-theme-choice="system">System</button>
-            <button type="button" data-action="app-theme" data-theme-choice="day">Day</button>
-            <button type="button" data-action="app-theme" data-theme-choice="night">Night</button>
+            <button type="button" data-action="app-theme" data-theme-choice="night">🌙 Night (Default)</button>
+            <button type="button" data-action="app-theme" data-theme-choice="day">☀️ Day</button>
+            <button type="button" data-action="app-theme" data-theme-choice="system">💻 System</button>
           </div>
         </section>
+
         <section class="settings-card">
-          <h3>Reader defaults</h3>
-          <p>These defaults are also available inside the reading page.</p>
-          <div class="setting-row"><label>Font size <input type="range" min="15" max="24" id="setting-font"></label><output id="setting-font-out"></output></div>
-          <div class="setting-row"><label>Line height <select id="setting-line"><option value="1.7">Tight</option><option value="2">Classic</option><option value="2.25">Open</option></select></label></div>
+          <h3>Reader Typography</h3>
+          <div class="setting-row font-size-row">
+            <label>Font Size</label>
+            <div class="font-stepper-control">
+              <button type="button" class="font-step-btn" data-action="setting-font-down" aria-label="Decrease Font">A−</button>
+              <input type="range" min="14" max="28" id="setting-font" value="19" />
+              <button type="button" class="font-step-btn" data-action="setting-font-up" aria-label="Increase Font">A+</button>
+              <output id="setting-font-out">19px</output>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label>Line Spacing</label>
+            <select id="setting-line">
+              <option value="1.7">Tight (1.7)</option>
+              <option value="2.0">Comfortable (2.0)</option>
+              <option value="2.25">Spacious (2.25)</option>
+            </select>
+          </div>
         </section>
+
         <section class="settings-card">
-          <h3>Account sync</h3>
-          <p>This downloadable prototype has no backend, so sync is implemented as a professional local account + export/import flow. Later we connect the same state to real auth.</p>
-          <div class="setting-row"><input id="account-name" placeholder="Reader name or email" /></div>
-          <div class="setting-buttons"><button type="button" data-action="signin-local">Sign in locally</button><button type="button" data-action="signout-local">Sign out</button></div>
-          <small id="account-status"></small>
+          <h3>Reading Mode & Layout</h3>
+          <p>Configure default layout for manga, manhwa, and novels.</p>
+          <div class="setting-buttons">
+            <button type="button" data-action="toggle-manga-width">↔ Toggle Full Width</button>
+          </div>
         </section>
+
         <section class="settings-card">
-          <h3>Portable backup</h3>
-          <p>Export your saved books, likes, notes, progress, and settings. Import restores the same state on another browser.</p>
-          <div class="setting-buttons"><button type="button" data-action="export-state">Export sync file</button><label class="import-label">Import sync file<input type="file" id="import-state" accept="application/json"></label></div>
+          <h3>Cache & Data Management</h3>
+          <p>Export your saved titles and bookmarks, or clear downloaded image caches to free memory.</p>
+          <div class="setting-buttons">
+            <button type="button" data-action="export-state">💾 Export Library Backup</button>
+            <label class="import-label">📂 Import Backup<input type="file" id="import-state" accept="application/json"></label>
+            <button type="button" id="btn-clear-server-cache" style="background:#dc2626;color:#fff;border-color:#dc2626;">🗑️ Clear Server Cache</button>
+          </div>
         </section>
       </div>
     </div>

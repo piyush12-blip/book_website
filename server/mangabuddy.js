@@ -191,14 +191,20 @@ async function fetchMangaBuddyChapters(id) {
             try {
                 const json = JSON.parse(apiRes.text);
                 if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-                    json.data.sort((a, b) => (parseFloat(a.chapter_num) || 0) - (parseFloat(b.chapter_num) || 0));
+                    json.data.sort((a, b) => {
+                        const numA = (a.chapter_num !== undefined && a.chapter_num !== null && !isNaN(parseFloat(a.chapter_num))) ? parseFloat(a.chapter_num) : (parseFloat((a.chapter_name || '').match(/(?:chapter|ch\.?)\s*([\d\.]+)/i)?.[1]) || 0);
+                        const numB = (b.chapter_num !== undefined && b.chapter_num !== null && !isNaN(parseFloat(b.chapter_num))) ? parseFloat(b.chapter_num) : (parseFloat((b.chapter_name || '').match(/(?:chapter|ch\.?)\s*([\d\.]+)/i)?.[1]) || 0);
+                        return numA - numB;
+                    });
                     structuredChapters = json.data.map(ch => {
-                        const chNum = parseFloat(ch.chapter_num) || ch.chapter_id;
+                        const chNum = (ch.chapter_num !== undefined && ch.chapter_num !== null && !isNaN(parseFloat(ch.chapter_num)))
+                            ? parseFloat(ch.chapter_num)
+                            : (parseFloat((ch.chapter_name || '').match(/(?:chapter|ch\.?)\s*([\d\.]+)/i)?.[1]) ?? (ch.chapter_id || 1));
                         const chSlug = ch.chapter_slug || `chapter-${chNum}`;
                         const chUrl = `${BASE_URL}/series/${slugHash}/${chSlug}`;
                         return {
-                            id: `mb-${slugHash}-ch-${chNum}`,
-                            chapterId: `mb-${slugHash}-ch-${chNum}`,
+                            id: `mb-${slugHash}-${chSlug}`,
+                            chapterId: `mb-${slugHash}-${chSlug}`,
                             title: ch.chapter_name || `Chapter ${chNum}`,
                             chNum,
                             url: chUrl,
@@ -219,7 +225,7 @@ async function fetchMangaBuddyChapters(id) {
                 if (chHref.startsWith('/')) chHref = BASE_URL + chHref;
 
                 const numMatch = chHref.match(/(?:chapter|ch)-([\d\.]+)/i);
-                const chNum = numMatch ? parseFloat(numMatch[1]) : (rawChapters.length + 1);
+                const chNum = (numMatch && !isNaN(parseFloat(numMatch[1]))) ? parseFloat(numMatch[1]) : (rawChapters.length + 1);
 
                 let cleanTitle = `Chapter ${chNum}`;
                 if (text && text.toLowerCase().includes('chapter')) {
@@ -235,9 +241,13 @@ async function fetchMangaBuddyChapters(id) {
                     }
                 }
 
+                const slugPartMatch = chHref.match(/\/(chapter-[\d\.]+|ch-[\d\.]+)$/i);
+                const chSlugPart = slugPartMatch ? slugPartMatch[1] : `chapter-${chNum}`;
+
                 if (!rawChapters.some(c => c.url === chHref)) {
                     rawChapters.push({
                         chNum,
+                        chSlugPart,
                         title: cleanTitle,
                         url: chHref
                     });
@@ -246,8 +256,8 @@ async function fetchMangaBuddyChapters(id) {
 
             rawChapters.sort((a, b) => a.chNum - b.chNum);
             structuredChapters = rawChapters.map(ch => ({
-                id: `mb-${slugHash}-ch-${ch.chNum}`,
-                chapterId: `mb-${slugHash}-ch-${ch.chNum}`,
+                id: `mb-${slugHash}-${ch.chSlugPart}`,
+                chapterId: `mb-${slugHash}-${ch.chSlugPart}`,
                 title: ch.title,
                 chNum: ch.chNum,
                 url: ch.url,
@@ -262,12 +272,16 @@ async function fetchMangaBuddyChapters(id) {
         let type = '';
         const genres = [];
 
-        $('h1').each((i, el) => {
+        let altTitle = '';
+        $('h1, h2, div, p').each((i, el) => {
             const h = $(el).text().trim().toLowerCase();
             const parentText = $(el).parent().text().replace(/\s+/g, ' ').trim();
             if (h === 'author') author = parentText.replace(/^author\s*/i, '').trim();
             if (h === 'status') status = parentText.replace(/^status\s*/i, '').trim();
             if (h === 'type') type = parentText.replace(/^type\s*/i, '').trim();
+            if (h.includes('alternative') || h.includes('other name')) {
+                altTitle = parentText.replace(/^(?:alternative|other names?)\s*:?\s*/i, '').trim();
+            }
         });
 
         $('a[href*="/genres/"], a[href*="/genre/"]').each((i, el) => {
@@ -287,6 +301,7 @@ async function fetchMangaBuddyChapters(id) {
 
         const metadata = {
             title: metaTitle,
+            altTitle: altTitle,
             author: finalAuthor,
             status: status || 'Ongoing',
             type: type || 'Manga',

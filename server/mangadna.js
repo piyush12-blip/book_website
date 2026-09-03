@@ -173,6 +173,7 @@ async function fetchMangaDNAChapters(id) {
         let type = 'Manga';
         const genres = [];
 
+        let altTitle = '';
         // Parse key-value items from .post-content_item
         $('.post-content_item').each((i, el) => {
             const full = $(el).text().replace(/\s+/g, ' ').trim();
@@ -185,6 +186,8 @@ async function fetchMangaDNAChapters(id) {
                 status = full.replace(/^status:?\s*/i, '').trim();
             } else if (lower.includes('type')) {
                 type = full.replace(/^type:?\s*/i, '').trim();
+            } else if (lower.includes('alternative') || lower.includes('other name')) {
+                altTitle = full.replace(/^(?:alternative|other names?)\s*:?\s*/i, '').trim();
             }
         });
 
@@ -203,6 +206,7 @@ async function fetchMangaDNAChapters(id) {
 
         const metadata = {
             title: metaTitle,
+            altTitle: altTitle,
             author: (author && author !== 'Unknown') ? author : (artist || 'Manga Artist'),
             artist: artist || '',
             status: status || 'Ongoing',
@@ -228,9 +232,10 @@ async function getMangaDNAChapterPanels(chapterUrl) {
         const $ = cheerio.load(res.text);
         const images = [];
 
-        $('.chapter-content img, .reader-area img, .reading-content img').each((i, el) => {
+        $('.read-content img, .chapter-content img, .reader-area img, .reading-content img, img.loading').each((i, el) => {
             let src = $(el).attr('data-src') || $(el).attr('src') || $(el).attr('data-original');
             if (!src) return;
+            if (src.includes('logo') || src.includes('mangadna.png') || src.includes('search-loading') || src.endsWith('.gif') || src === 'https://mangadna.com/') return;
             if (src.startsWith('//')) src = 'https:' + src;
             else if (src.startsWith('/')) src = BASE_URL + src;
             if (!images.includes(src)) images.push(src);
@@ -240,13 +245,14 @@ async function getMangaDNAChapterPanels(chapterUrl) {
 
         return `
         <div class="manga-image-scroll" style="display:flex;flex-direction:column;align-items:center;background:#000;width:100%;margin:0 auto;">
-            ${images.map((img, idx) => `
-                <img src="${img}" 
+            ${images.map((img, idx) => {
+                const proxied = `/api/proxy/image?url=${encodeURIComponent(img)}`;
+                return `<img src="${proxied}" 
                      alt="Panel ${idx + 1}" 
                      loading="lazy"
                      style="width:100%;max-width:960px;height:auto;display:block;margin:0 auto;background:#050505;"
-                     onerror="this.style.display='none';">
-            `).join('')}
+                     onerror="this.style.display='none';">`;
+            }).join('')}
         </div>`;
     } catch(e) {
         return null;
