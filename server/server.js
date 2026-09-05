@@ -25,6 +25,21 @@ app.use(cors());
 app.use(express.json());
 
 const publicPath = path.resolve(__dirname, '../public');
+
+// Hard reload detector: When browser does Ctrl+F5, Cache-Control: no-cache is sent
+app.get(['/', '/index.html'], (req, res, next) => {
+    const isHardReload = (req.headers['cache-control'] && req.headers['cache-control'].includes('no-cache')) ||
+                         (req.headers['pragma'] && req.headers['pragma'].includes('no-cache'));
+    const indexPath = path.join(publicPath, 'index.html');
+    if (!fs.existsSync(indexPath)) return next();
+    
+    let html = fs.readFileSync(indexPath, 'utf8');
+    if (isHardReload) {
+        html = html.replace('<head>', '<head><script>window.isHardReload = true;</script>');
+    }
+    res.send(html);
+});
+
 app.use(express.static(publicPath));
 
 // Start background indexer on boot and every 10 minutes
@@ -366,6 +381,8 @@ app.get('/api/books/search', async (req, res) => {
         // 2. Automatically tests spaced variations for concatenated words
         // ─────────────────────────────────────────────────────────────────────
         const { searchCatalogIndex } = require('./mangaCatalogIndex');
+        const { searchMangaDex } = require('./mangadex');
+        const { searchTelegramIndex } = require('./telegramIndex');
         const instantIndexMatches = searchCatalogIndex(cleanQuery);
 
         // Generate cleaned queries
@@ -396,43 +413,44 @@ app.get('/api/books/search', async (req, res) => {
             }
         }
 
-        // Fast & Lean Scraper Dispatching (Guard with 3000ms timeouts on cold search)
+        // Multi-Source Scraper Dispatching (Resilient timeouts ensure full manhwa/manga retrieval)
         const primaryVariants = queryVariants.slice(0, 2);
 
-        const mangapillPromises = primaryVariants.map(q => withTimeout(searchMangapill(q).catch(() => []), 4500));
-        const manhwa18Promises = [withTimeout(searchManhwa18(cleanQuery).catch(() => []), 5500)];
-        const mangaBuddyPromises = [withTimeout(searchMangaBuddy(cleanQuery).catch(() => []), 5500)];
-        const mangaDNAPromises = [withTimeout(searchMangaDNA(cleanQuery).catch(() => []), 5500)];
-        const royalRoadPromises = [withTimeout(searchRoyalRoad(cleanQuery).catch(() => []), 4500)];
-        const appleBooksPromises = [withTimeout(searchAppleBooks(cleanQuery).catch(() => []), 4500)];
-
-        if (primaryVariants.length > 1) {
-            manhwa18Promises.push(withTimeout(searchManhwa18(primaryVariants[1]).catch(() => []), 5500));
-            mangaBuddyPromises.push(withTimeout(searchMangaBuddy(primaryVariants[1]).catch(() => []), 5500));
-            mangaDNAPromises.push(withTimeout(searchMangaDNA(primaryVariants[1]).catch(() => []), 5500));
-            appleBooksPromises.push(withTimeout(searchAppleBooks(primaryVariants[1]).catch(() => []), 4500));
-        }
+        const mangapillPromises = primaryVariants.map(q => withTimeout(searchMangapill(q).catch(() => []), 3000));
+        const mangadexPromises = [withTimeout(searchMangaDex(cleanQuery).catch(() => []), 3500)];
+        const manhwa18Promises = [withTimeout(searchManhwa18(cleanQuery).catch(() => []), 3500)];
+        const mangaBuddyPromises = [withTimeout(searchMangaBuddy(cleanQuery).catch(() => []), 4500)];
+        const mangaDNAPromises = [withTimeout(searchMangaDNA(cleanQuery).catch(() => []), 3000)];
+        const telegramPromises = [withTimeout(searchTelegramIndex(cleanQuery).catch(() => []), 2000)];
+        const royalRoadPromises = [withTimeout(searchRoyalRoad(cleanQuery).catch(() => []), 2500)];
+        const appleBooksPromises = [withTimeout(searchAppleBooks(cleanQuery).catch(() => []), 2500)];
 
         const [
             mangapillVariantResults, 
+            mangadexResults,
             m18VariantResults,
             mbVariantResults,
             mdnaVariantResults,
+            tgVariantResults,
             rrVariantResults,
             appleVariantResults
         ] = await Promise.all([
             Promise.all(mangapillPromises),
+            Promise.all(mangadexPromises),
             Promise.all(manhwa18Promises),
             Promise.all(mangaBuddyPromises),
             Promise.all(mangaDNAPromises),
+            Promise.all(telegramPromises),
             Promise.all(royalRoadPromises),
             Promise.all(appleBooksPromises)
         ]);
 
         const mangapillRaw = [...instantIndexMatches, ...mangapillVariantResults.flat()];
+        const mangadexRaw = mangadexResults.flat();
         const manhwa18Raw = m18VariantResults.flat();
         const mangaBuddyRaw = mbVariantResults.flat();
         const mangaDNARaw = mdnaVariantResults.flat();
+        const telegramRaw = tgVariantResults.flat();
         const royalRoadRaw = rrVariantResults.flat();
         const appleBooksRaw = appleVariantResults.flat();
 
@@ -545,28 +563,46 @@ app.get('/api/books/search', async (req, res) => {
             candidateList.push(item);
         }
 
-        // 1. Process Mangapill Series (1st Priority - High-Speed Direct Scans)
+        // 0. Process Instant Catalog Index Series (Highest Priority Master Catalog)
+        for (const item of (instantIndexMatches || [])) {
+            item.source = item.source || item._source || 'Master Catalog';
+            addCandidate(item, 110);
+        }
+
+        // 1. Process Mangapill Series (High-Speed Direct Scans)
         for (const item of (mangapillRaw || [])) {
             item.source = item.source || item._source || 'Mangapill';
             addCandidate(item, 100);
         }
 
-        // 2. Process Manhwa18 Series (Priority 96 for Full +18 Color Manhwa Archives)
+        // 1.5 Process MangaDex Series (Worldwide Premier Scans Database)
+        for (const item of (mangadexRaw || [])) {
+            item.source = item.source || item._source || 'MangaDex';
+            addCandidate(item, 98);
+        }
+
+        // 2. Process Manhwa18 Series (Priority for Full +18 Color Manhwa Archives)
         for (const item of (manhwa18Raw || [])) {
             item.source = item.source || item._source || 'Manhwa18';
             addCandidate(item, 96);
         }
 
-        // 3. Process MangaDNA Series (Priority 94 - Fast Direct Scans & Clean Metadata)
+        // 3. Process MangaDNA Series (Fast Direct Scans & Clean Metadata)
         for (const item of (mangaDNARaw || [])) {
             item.source = item.source || item._source || 'MangaDNA';
             addCandidate(item, 94);
         }
 
-        // 4. Process MangaBuddy Series (Priority 90 Full Catalog)
+        // 4. Process MangaBuddy Series (Complete Manhwa & Manga Vault)
         for (const item of (mangaBuddyRaw || [])) {
             item.source = item.source || item._source || 'MangaBuddy';
-            addCandidate(item, 90);
+            addCandidate(item, 92);
+        }
+
+        // 4.5 Process Telegram Index Series (Exclusive Community Vault)
+        for (const item of (telegramRaw || [])) {
+            item.source = item.source || item._source || 'Telegram';
+            addCandidate(item, 88);
         }
 
         // 5. Process RoyalRoad Web Novels (1st Priority for Web Novels)
@@ -580,7 +616,7 @@ app.get('/api/books/search', async (req, res) => {
         // 6. Process Apple Books (Real Published Books, Bestsellers, Nonfiction, Fiction)
         for (const item of (appleBooksRaw || [])) {
             item.source = item.source || item._source || 'Apple Books';
-            addCandidate(item, 75);
+            addCandidate(item, 65);
         }
 
         // Score and rank all candidate results hierarchically
@@ -614,6 +650,22 @@ app.get('/api/books/search', async (req, res) => {
                 .map(item => {
                     let baseScore = calculateSearchRelevanceScore(cleanQuery, item);
                     let score = baseScore + (item._priorityWeight || 0);
+
+                    // Boost Manga/Manhwa sources so they always take precedent over Apple Books
+                    const isMangaSource = item.id.startsWith('mangapill-') || item.id.startsWith('mangadex-') || item.id.startsWith('mangabuddy-') || item.id.startsWith('manhwa18-') || item.id.startsWith('mangadna-') || item.id.startsWith('telegram-');
+                    if (isMangaSource) {
+                        score += 1500;
+                    } else if (item.id.startsWith('itunes-')) {
+                        score -= 800;
+                    }
+
+                    // Exact match bonus (both spaced and unspaced)
+                    const normT = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const normQ = cleanQuery.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (normT === normQ) {
+                        score += 5000;
+                    }
+
                     return { item, score, baseScore };
                 })
                 .filter(r => r.score > 2500)   // Only genuinely relevant titles
@@ -621,7 +673,18 @@ app.get('/api/books/search', async (req, res) => {
                 .map(r => r.item);
 
             if (scored.length > 0) {
-                const finalResults = scored.slice(0, 20);
+                // If we have manga/manhwa results, cap Apple Books to at most 3 items so they don't drown out manga
+                const hasManga = scored.some(item => !item.id.startsWith('itunes-'));
+                let appleCount = 0;
+                const filteredResults = scored.filter(item => {
+                    if (item.id.startsWith('itunes-')) {
+                        if (hasManga && appleCount >= 3) return false;
+                        appleCount++;
+                    }
+                    return true;
+                });
+
+                const finalResults = filteredResults.slice(0, 25);
                 GLOBAL_SEARCH_CACHE.set(qLower, { results: finalResults, timestamp: Date.now() });
                 return res.json(finalResults);
             }
@@ -653,6 +716,74 @@ app.get('/api/books/search', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 1.5 REAL RATING ENDPOINT — Live MangaDex, MAL & Source Ratings
+// ─────────────────────────────────────────────────────────────────────────────
+const REAL_RATING_CACHE = new Map();
+
+app.get('/api/books/rating', async (req, res) => {
+    const rawTitle = (req.query.title || '').trim();
+    const id = (req.query.id || '').trim();
+    if (!rawTitle && !id) return res.json({ rating: null });
+
+    const cacheKey = (id || rawTitle).toLowerCase();
+    if (REAL_RATING_CACHE.has(cacheKey)) {
+        return res.json({ rating: REAL_RATING_CACHE.get(cacheKey) });
+    }
+
+    try {
+        const cleanTitle = rawTitle
+            .replace(/\s+(?:vol(?:ume)?\.?\s*\d+|\d+)$/i, '')
+            .replace(/\s*\(.*?\)/g, '')
+            .replace(/[^a-zA-Z0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        // 1. Query MangaDex API for genuine community score
+        const mdUrl = `https://api.mangadex.org/manga?title=${encodeURIComponent(cleanTitle)}&limit=1`;
+        const mdRes = await fetch(mdUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(2800)
+        }).catch(() => null);
+
+        if (mdRes && mdRes.ok) {
+            const mdData = await mdRes.json().catch(() => null);
+            if (mdData?.data?.[0]?.id) {
+                const mdId = mdData.data[0].id;
+                const statRes = await fetch(`https://api.mangadex.org/statistics/manga/${mdId}`, {
+                    headers: { 'User-Agent': 'Mozilla/5.0' },
+                    signal: AbortSignal.timeout(2400)
+                }).catch(() => null);
+
+                if (statRes && statRes.ok) {
+                    const statData = await statRes.json().catch(() => null);
+                    const score = statData?.statistics?.[mdId]?.rating?.bayesian || statData?.statistics?.[mdId]?.rating?.average;
+                    if (score && !isNaN(score)) {
+                        const formatted = Number(score).toFixed(2);
+                        REAL_RATING_CACHE.set(cacheKey, formatted);
+                        return res.json({ rating: formatted, source: 'MangaDex' });
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback to Jikan (MyAnimeList) public API
+        const jikanUrl = `https://api.jikan.moe/v4/manga?q=${encodeURIComponent(cleanTitle)}&limit=1`;
+        const jikanRes = await fetch(jikanUrl, { signal: AbortSignal.timeout(2800) }).catch(() => null);
+        if (jikanRes && jikanRes.ok) {
+            const jikanData = await jikanRes.json().catch(() => null);
+            const score = jikanData?.data?.[0]?.score;
+            if (score && !isNaN(score)) {
+                const formatted = Number(score).toFixed(2);
+                REAL_RATING_CACHE.set(cacheKey, formatted);
+                return res.json({ rating: formatted, source: 'MyAnimeList' });
+            }
+        }
+    } catch(e) {}
+
+    return res.json({ rating: null });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 2. CHAPTER LIST ENDPOINT
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/favicon.ico', (req, res) => res.status(204).end());
@@ -663,70 +794,135 @@ app.get('/api/private-chapters', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2.5 LOCAL DOWNLOAD POLLING ENDPOINT (Auto-load without refresh)
+// 2.5 LOCAL DOWNLOAD POLLING & AUTO-DETECTION ENGINE
 // ─────────────────────────────────────────────────────────────────────────────
-app.get('/api/check-local', async (req, res) => {
-    const query = req.query.q;
-    if (!query) return res.json({ found: false });
+const LOCAL_DOWNLOADS_DIR = path.join(__dirname, '../public/downloads');
+if (!fs.existsSync(LOCAL_DOWNLOADS_DIR)) {
+    try { fs.mkdirSync(LOCAL_DOWNLOADS_DIR, { recursive: true }); } catch(e) {}
+}
 
-    // Use ONLY the title portion (strip author name which is usually last 1-2 words)
-    const cleanQuery = query.replace(/^itunes-[^\s]+\s*/, '');
-    const parts = cleanQuery.split(' ');
-    const titleOnly = parts.length > 2 ? parts.slice(0, parts.length - 1).join(' ') : cleanQuery;
-    const rawTerms = titleOnly.toLowerCase().split(/\s+/).filter(t => t.length > 3);
-    
-    // Filter out common first/last names to prevent "John Green" matching "John Williams"
-    const COMMON_NAMES = new Set(['john', 'david', 'james', 'robert', 'michael', 'william', 'williams', 'richard', 'thomas', 'charles', 'paul', 'mark', 'george', 'steven', 'edward', 'brian', 'ronald', 'anthony', 'kevin', 'jason', 'matthew', 'gary', 'timothy', 'joseph', 'larry', 'jeffrey', 'frank', 'scott', 'eric', 'stephen', 'andrew', 'raymond', 'gregory', 'joshua', 'jerry', 'dennis', 'walter', 'patrick', 'peter', 'harold', 'douglas', 'henry', 'carl', 'arthur', 'ryan', 'roger', 'joe', 'jack', 'albert', 'jonathan', 'justin', 'samuel', 'harry', 'steve', 'louis', 'aaron', 'carlos', 'russell', 'martin', 'chris', 'green', 'smith']);
-    let titleTerms = [...new Set(rawTerms)].filter(t => !COMMON_NAMES.has(t));
-    if (titleTerms.length === 0) titleTerms = [...new Set(rawTerms)];
-    
-    try {
-        const fs = require('fs');
-        const path = require('path');
-        const home = require('os').homedir();
-        const targetDirs = [
-            path.join(home, 'Downloads'),
-            path.join(home, 'Music'),
-            path.join(home, 'Desktop'),
-            path.join(home, 'Documents')
-        ];
-        
-        let localEpubFile = null;
+function findMatchingLocalBook(query, bookId = '') {
+    if (!query && !bookId) return null;
+    const clean = (query || bookId)
+        .replace(/^itunes-\d+-?/, '')
+        .replace(/itunes-/g, '')
+        .replace(/book-/g, '')
+        .replace(/\s+by\s+.*/i, '')
+        .replace(/\bFull Chapter Set\b/gi, '')
+        .replace(/\bEnglish\b/gi, '')
+        .replace(/[^a-zA-Z0-9\s]/g, ' ')
+        .toLowerCase()
+        .trim();
 
-        for (const dir of targetDirs) {
-            if (!fs.existsSync(dir)) continue;
+    const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'book', 'novel', 'read', 'online', 'free', 'vol', 'volume', 'ch', 'chapter', 'edition', 'complete']);
+    const rawTokens = clean.split(/\s+/).filter(t => t.length >= 2 && !STOP_WORDS.has(t));
+    if (rawTokens.length === 0) return null;
+
+    const home = require('os').homedir();
+    const targetDirs = [
+        LOCAL_DOWNLOADS_DIR,
+        path.join(home, 'Downloads'),
+        path.join(home, 'Documents'),
+        path.join(home, 'Desktop'),
+        path.join(__dirname, '../public/epubs')
+    ];
+
+    let bestMatch = null;
+    let maxScore = 0;
+    const now = Date.now();
+
+    for (const dir of targetDirs) {
+        if (!fs.existsSync(dir)) continue;
+        try {
             const files = fs.readdirSync(dir);
-            
             for (const file of files) {
                 const fLower = file.toLowerCase();
                 if (!fLower.endsWith('.epub') && !fLower.endsWith('.pdf')) continue;
-                
-                let matches = 0;
-                for (const term of titleTerms) {
-                    if (fLower.includes(term)) matches++;
+                if (fLower.includes('.crdownload') || fLower.includes('.tmp') || fLower.includes('.part')) continue;
+
+                const filePath = path.join(dir, file);
+                let score = 0;
+
+                // Strip common download source prefixes: _oceanofpdf.com_, [annas_archive], etc.
+                const cleanName = fLower.replace(/^(_oceanofpdf\.com_|oceanofpdf|_annas_archive_|\[.*?\])/g, '');
+
+                for (const token of rawTokens) {
+                    if (cleanName.includes(token)) {
+                        score += token.length >= 4 ? 3 : 2;
+                    }
                 }
-                const requiredMatches = Math.min(titleTerms.length, 2);
-                if (matches >= requiredMatches && matches > 0) {
-                    localEpubFile = path.join(dir, file);
-                    break;
+
+                // If downloaded recently (within last 45 minutes), give a substantial recency boost
+                try {
+                    const stats = fs.statSync(filePath);
+                    const ageMinutes = (now - stats.mtimeMs) / (1000 * 60);
+                    if (ageMinutes < 45) {
+                        score += 3;
+                    }
+                } catch(e) {}
+
+                const minScore = rawTokens.length === 1 ? 2 : 3;
+                if (score >= minScore && score > maxScore) {
+                    maxScore = score;
+                    bestMatch = filePath;
                 }
             }
-            if (localEpubFile) break;
-        }
-        
-        if (localEpubFile) {
-            console.log(`[POLL] Found local file for "${cleanQuery}": ${localEpubFile}`);
+        } catch (err) {}
+    }
+
+    return bestMatch;
+}
+
+app.get('/api/check-local', async (req, res) => {
+    const query = req.query.q || '';
+    const id = req.query.id || '';
+    if (!query && !id) return res.json({ found: false });
+
+    try {
+        const localFile = findMatchingLocalBook(query, id);
+        if (localFile) {
+            console.log(`[POLL] Auto-detected local download for "${query}": ${localFile}`);
             const { extractChaptersFromFile } = require('./epubParser');
-            const chapters = await extractChaptersFromFile(localEpubFile);
-            if (chapters.length > 0) {
-                return res.json({ found: true, chapters });
+            const chapters = await extractChaptersFromFile(localFile);
+            if (chapters && chapters.length > 0) {
+                return res.json({
+                    found: true,
+                    filePath: localFile,
+                    fileName: path.basename(localFile),
+                    chapters,
+                    source: 'LocalDownload'
+                });
             }
         }
-    } catch(e) {
+    } catch (e) {
         console.error('[POLL] Error:', e.message);
     }
-    
+
     res.json({ found: false });
+});
+
+// ── 2.6 BOOK UPLOAD / DROP ENDPOINT ──
+// Allows dragging & dropping or choosing .epub/.pdf files directly in browser
+app.post('/api/upload-book', express.raw({ type: ['application/epub+zip', 'application/pdf', 'application/octet-stream', '*/*'], limit: '120mb' }), async (req, res) => {
+    try {
+        const originalName = req.query.name || `book_${Date.now()}.epub`;
+        const safeName = originalName.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+        const destPath = path.join(LOCAL_DOWNLOADS_DIR, `${Date.now()}_${safeName}`);
+
+        fs.writeFileSync(destPath, req.body);
+        console.log(`[UPLOAD] Saved uploaded book to: ${destPath}`);
+
+        const { extractChaptersFromFile } = require('./epubParser');
+        const chapters = await extractChaptersFromFile(destPath);
+
+        if (chapters && chapters.length > 0) {
+            return res.json({ success: true, fileName: safeName, chapters });
+        }
+        res.status(400).json({ success: false, error: 'Could not parse text chapters from this file.' });
+    } catch (err) {
+        console.error('[UPLOAD] Error processing file:', err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 app.get('/api/books/:id/chapters', async (req, res) => {
@@ -739,32 +935,62 @@ app.get('/api/books/:id/chapters', async (req, res) => {
         .replace(/@\w+/g, '')
         .replace(/via telegram/gi, '')
         .replace(/\btelegram\b/gi, '')
-        // ── STRIP AUTHOR NAME: anything after " by " or after known author patterns
         .replace(/\s+by\s+.*/i, '')
-        // Strip generic filler author labels we inject
         .replace(/\bManga Artist\b/gi, '')
         .replace(/\bEnglish[\s·]*Full Chapter Set\b/gi, '')
         .replace(/\bFull Chapter Set\b/gi, '')
         .replace(/\s+/g, ' ')
         .trim();
     let cleanQuery = (rawQuery || 'Book')
-        .replace(/[^\x00-\x7F]/g, '')  // strip non-ASCII (⤷, ↺, etc from Telegram bots)
-        .replace(/\s*\([^)]*\)\s*/g, ' ')  // strip (A), (⤷ A), (↺ A) bracketed noise
-        .replace(/\s*\[[^\]]*\]\s*/g, ' ')  // strip bracketed noise
-        .replace(/\s*\|+.*$/g, '')  // strip secondary pipe aliases like " | The Resurrection Boy"
+        .replace(/[^\x00-\x7F]/g, '')
+        .replace(/\s*\([^)]*\)\s*/g, ' ')
+        .replace(/\s*\[[^\]]*\]\s*/g, ' ')
+        .replace(/\s*\|+.*$/g, '')
         .replace(/\s+/g, ' ')
         .trim() || rawQuery || 'Book';
     const cacheKey = `${id}:${cleanQuery}`;
     const cachedChapters = getCachedChapters(cacheKey);
-    if (cachedChapters) {
+
+    const isManga = id.startsWith('mangadex-') || id.startsWith('mangapill-') || id.startsWith('mangabuddy-') || id.startsWith('mangadna-') || id.startsWith('manhwa18-') ||
+                    /manga|manhwa|manhua|webtoon|comic|spearman|resurrection|mount hua|solo leveling|jujutsu|demon slayer|chainsaw|blue lock|one piece|naruto|bleach|hero|leveling|assassin|swordmaster|borderland|dungeon|delicious|hidden fire|secret class|boarding diary|silent war|the boxer|lookism|nano machine|wind breaker|eleceed|tower of god|god of high school|omniscient/i.test(cleanQuery);
+
+    // ── 0. FIRST CHECK: Auto-Detect Local Downloaded EPUB or PDF (Top Priority for Novels & Books) ──
+    if (!isManga) {
+        const localBookFile = findMatchingLocalBook(cleanQuery, id);
+        if (localBookFile) {
+            console.log(`[CHAPTERS] Instant local EPUB/PDF match for "${cleanQuery}": ${localBookFile}`);
+            const { extractChaptersFromFile } = require('./epubParser');
+            const localChapters = await extractChaptersFromFile(localBookFile);
+            if (localChapters && localChapters.length > 0) {
+                const payload = {
+                    chapters: localChapters,
+                    metadata: {
+                        title: cleanQuery,
+                        author: 'Downloaded Book',
+                        status: 'Completed',
+                        type: 'Book',
+                        format: 'Book'
+                    },
+                    type: 'book',
+                    format: 'Book',
+                    source: 'LocalDownload',
+                    isLocal: true,
+                    fileName: path.basename(localBookFile)
+                };
+                setCachedChapters(cacheKey, payload);
+                return res.json(payload);
+            }
+        }
+    }
+
+    const hasValidCached = cachedChapters && Array.isArray(cachedChapters.chapters) && cachedChapters.chapters.length > 0 &&
+        (cachedChapters.type === 'manga' || isManga || cachedChapters.chapters.some(c => (c.html && c.html.length > 50) || c.url || c.images || c.pages || c.chUrl || c.chapterId));
+    if (hasValidCached) {
         return res.json(cachedChapters);
     }
 
     const getUniversalChapters = require('./universalNovelEngine');
     try {
-        const isManga = id.startsWith('mangapill-') || id.startsWith('mangabuddy-') || id.startsWith('mangadna-') || id.startsWith('manhwa18-') ||
-                        /manga|manhwa|manhua|webtoon|comic|spearman|resurrection|mount hua|solo leveling|jujutsu|demon slayer|chainsaw|blue lock|one piece|naruto|bleach|hero|leveling|assassin|swordmaster|borderland|dungeon|delicious/i.test(cleanQuery);
-
         // --- ROYAL ROAD WEB NOVEL HANDLER ---
         if (id.startsWith('royalroad-')) {
             const fictionId = id.replace(/^royalroad-/, '');
@@ -780,16 +1006,27 @@ app.get('/api/books/:id/chapters', async (req, res) => {
 
         // --- PUBLISHED BOOK HANDLER (Apple Books & Digital Vault) ---
         if (id.startsWith('itunes-') || id.startsWith('book-')) {
+            // Check public domain Gutenberg or Standard Ebooks before falling back
+            const { findEpubUrl, extractChaptersFromUrl } = require('./epubParser');
+            const onlineEpubUrl = await findEpubUrl(cleanQuery).catch(() => null);
+            if (onlineEpubUrl) {
+                const onlineChapters = await extractChaptersFromUrl(onlineEpubUrl).catch(() => []);
+                if (onlineChapters && onlineChapters.length > 0) {
+                    const payload = {
+                        chapters: onlineChapters,
+                        metadata: { title: cleanQuery, author: 'Author', status: 'Completed', type: 'Book', format: 'Book' },
+                        type: 'book',
+                        format: 'Book',
+                        source: 'OnlineEpub'
+                    };
+                    setCachedChapters(cacheKey, payload);
+                    return res.json(payload);
+                }
+            }
+
             const payload = {
-                chapters: [
-                    {
-                        title: `${cleanQuery} (Complete Edition)`,
-                        chapterNum: 1,
-                        chapterId: `${id}-full`,
-                        html: null,
-                        isBook: true
-                    }
-                ],
+                chapters: [],
+                isAwaitingDownload: true,
                 metadata: {
                     title: cleanQuery,
                     author: 'Author',
@@ -799,9 +1036,8 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 },
                 type: 'book',
                 format: 'Book',
-                source: 'AppleBooksVault'
+                source: 'AwaitingDownload'
             };
-            setCachedChapters(cacheKey, payload);
             return res.json(payload);
         }
 
@@ -818,7 +1054,19 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             return res.json(payload);
         }
 
-        if (isManga || id.startsWith('mangapill-') || id.startsWith('mangabuddy-') || id.startsWith('mangadna-') || id.startsWith('manhwa18-')) {
+        if (isManga || id.startsWith('mangadex-') || id.startsWith('mangapill-') || id.startsWith('mangabuddy-') || id.startsWith('mangadna-') || id.startsWith('manhwa18-')) {
+            // --- 0.2 MANGADEX DIRECT ID HANDLER ---
+            if (id.startsWith('mangadex-')) {
+                const { fetchRealMangaChaptersById } = require('./mangadex');
+                const mdChapters = await fetchRealMangaChaptersById(id.replace(/^mangadex-/, '')).catch(() => null);
+                if (mdChapters && mdChapters.length > 0) {
+                    console.log(`[CHAPTERS] MangaDex Engine served ${mdChapters.length} genuine chapters for "${id}"`);
+                    const payload = { chapters: mdChapters, metadata: mdChapters.metadata || {}, type: 'manga', format: 'Manga & Manhwa', source: 'MangaDex' };
+                    setCachedChapters(cacheKey, payload);
+                    return res.json(payload);
+                }
+            }
+
             // --- 0.25 MANGADNA HANDLER ---
             if (id.startsWith('mangadna-')) {
                 const dnaChapters = await fetchMangaDNAChapters(id);
@@ -865,7 +1113,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 }
             }
 
-            // 1. Check RAM Telegram index & per-title Telegram channels for instant chapter list (Top Priority)
+            // 1. Check RAM Telegram index for instant chapter list (Top Priority, 0ms)
             const { getTelegramIndexChapters } = require('./telegramIndex');
             const indexedChapters = await getTelegramIndexChapters(cleanQuery).catch(() => null);
             if (indexedChapters && indexedChapters.length > 0) {
@@ -886,7 +1134,91 @@ app.get('/api/books/:id/chapters', async (req, res) => {
                 return res.json(payload);
             }
 
-            // 2. ── MASTER MANHWA/MANGA ENGINE (MangaKatana, Mgeko, Thunderscans) ──
+            // 2. High-Speed Parallel Multi-Mirror Race (Mangapill + MangaBuddy + MangaDex + Manhwa18)
+            const mirrorTasks = [
+                // Mirror A: Mangapill (blazing fast scraper)
+                (async () => {
+                    const { searchMangapill, fetchMangapillChapters } = require('./mangapill');
+                    const results = await searchMangapill(cleanQuery).catch(() => []);
+                    if (results && results.length > 0) {
+                        const top = results[0];
+                        const chapters = await fetchMangapillChapters(top.id).catch(() => null);
+                        if (chapters && chapters.length > 0) {
+                            return { chapters, metadata: chapters.metadata || top, source: 'Mangapill' };
+                        }
+                    }
+                    return null;
+                })(),
+                // Mirror B: MangaBuddy (huge catalog, fast API)
+                (async () => {
+                    const { searchMangaBuddy, fetchMangaBuddyChapters } = require('./mangabuddy');
+                    const results = await searchMangaBuddy(cleanQuery).catch(() => []);
+                    if (results && results.length > 0) {
+                        const top = results[0];
+                        const chapters = await fetchMangaBuddyChapters(top.id).catch(() => null);
+                        if (chapters && chapters.length > 0) {
+                            return { chapters, metadata: chapters.metadata || top, source: 'MangaBuddy' };
+                        }
+                    }
+                    return null;
+                })(),
+                // Mirror C: MangaDex (official clean scanlations)
+                (async () => {
+                    const { fetchRealMangaChapters } = require('./mangadex');
+                    const chapters = await fetchRealMangaChapters(cleanQuery).catch(() => null);
+                    if (chapters && chapters.length > 0) {
+                        return { chapters, metadata: chapters.metadata || {}, source: 'MangaDex' };
+                    }
+                    return null;
+                })(),
+                // Mirror D: Manhwa18 (manhwa & webtoon scanlations)
+                (async () => {
+                    const { searchManhwa18, fetchManhwa18Chapters } = require('./manhwa18');
+                    const results = await searchManhwa18(cleanQuery).catch(() => []);
+                    if (results && results.length > 0) {
+                        const top = results[0];
+                        const chapters = await fetchManhwa18Chapters(top.id).catch(() => null);
+                        if (chapters && chapters.length > 0) {
+                            return { chapters, metadata: chapters.metadata || top, source: 'Manhwa18' };
+                        }
+                    }
+                    return null;
+                })()
+            ];
+
+            // Resolve as soon as the first mirror returns valid chapters
+            const winner = await new Promise(resolve => {
+                let pending = mirrorTasks.length;
+                let resolved = false;
+                mirrorTasks.forEach(task => {
+                    task.then(res => {
+                        if (res && res.chapters && res.chapters.length > 0 && !resolved) {
+                            resolved = true;
+                            resolve(res);
+                        }
+                    }).catch(() => {}).finally(() => {
+                        pending--;
+                        if (pending === 0 && !resolved) {
+                            resolve(null);
+                        }
+                    });
+                });
+            });
+
+            if (winner && winner.chapters && winner.chapters.length > 0) {
+                console.log(`[CHAPTERS] Fast Mirror Race winner (${winner.source}) served ${winner.chapters.length} chapters for "${cleanQuery}"`);
+                const payload = {
+                    chapters: winner.chapters,
+                    metadata: winner.metadata || {},
+                    type: 'manga',
+                    format: 'Manga & Manhwa',
+                    source: winner.source
+                };
+                setCachedChapters(cacheKey, payload);
+                return res.json(payload);
+            }
+
+            // 3. ── MASTER MANHWA/MANGA ENGINE FALLBACK ──
             const { getMasterManhwaChapters } = require('./manhwaMasterEngine');
             const masterManhwaChapters = await getMasterManhwaChapters(cleanQuery).catch(() => null);
             if (masterManhwaChapters && masterManhwaChapters.length > 0) {
@@ -908,7 +1240,7 @@ app.get('/api/books/:id/chapters', async (req, res) => {
             }
 
             // Manga/Manhwa must NEVER return novel text paragraphs! Only real visual scanlations.
-            console.log(`[CHAPTERS] No real scanlation found for manga "${cleanQuery}". Retrying search...`);
+            console.log(`[CHAPTERS] No real scanlation found for manga "${cleanQuery}".`);
             return res.json({ chapters: [], type: 'manga', source: 'NoScansFound', isFallback: false });
         }
 
@@ -1093,6 +1425,17 @@ app.get('/api/manga/chapter/:chapterId', async (req, res) => {
             }
         }
 
+        // 0.2 MangaDex Direct Chapter Trigger (md-ch-{num}-{uuid})
+        if (chapterId.startsWith('md-ch-')) {
+            const m = chapterId.match(/^md-ch-[\d\.]+-([0-9a-fA-F-]+)$/);
+            const mdChapterId = m ? m[1] : chapterId.replace(/^md-ch-[\d\.]+-/, '');
+            const { getMangaDexChapterImages } = require('./mangadex');
+            const mdHtml = await getMangaDexChapterImages(mdChapterId);
+            if (mdHtml) {
+                return res.json({ html: mdHtml });
+            }
+        }
+
         // 1. Universal Webtoon & Manhwa Scanlation Mirror Engine (webtoon-ch-{num}-{title})
         if (chapterId.startsWith('webtoon-ch-')) {
             const parts = chapterId.split('-');
@@ -1242,12 +1585,24 @@ app.get('/api/manga/chapter/:chapterId', async (req, res) => {
 });
 
 // ── 5. SERVER-SIDE MANGA IMAGE PROXY (Bypasses all CDN 403 hotlinking blocks & cloaks identity) ──
+const NOCOVER_BUFFER = fs.existsSync(path.join(publicPath, 'nocover-new-min.png'))
+    ? fs.readFileSync(path.join(publicPath, 'nocover-new-min.png'))
+    : Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+const TRANSPARENT_1X1_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+
+function sendSafeFallbackImage(res) {
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.status(200).send(NOCOVER_BUFFER);
+}
+
+// ── 3. IMAGE PROXY & ASSET HANDLERS ──
 const IMAGE_CACHE = new Map();
 app.get('/api/proxy/image', async (req, res) => {
     try {
         const targetUrl = req.query.url;
         if (!targetUrl || !targetUrl.startsWith('http')) {
-            return res.status(400).send('Invalid URL');
+            return sendSafeFallbackImage(res);
         }
 
         if (IMAGE_CACHE.has(targetUrl)) {
@@ -1275,7 +1630,7 @@ app.get('/api/proxy/image', async (req, res) => {
         });
 
         if (response.status >= 400 || !response.buffer) {
-            return res.status(response.status || 502).send('Error fetching image');
+            return sendSafeFallbackImage(res);
         }
 
         const contentType = response.headers['content-type'] || (targetUrl.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
@@ -1292,13 +1647,56 @@ app.get('/api/proxy/image', async (req, res) => {
         res.setHeader('Cache-Control', 'public, max-age=604800');
         return res.send(buffer);
     } catch (e) {
-        console.error('[IMAGE PROXY] Error fetching image:', e.message);
-        // Redirect browser to load image directly if proxy fails
-        if (req.query.url && req.query.url.startsWith('http')) {
-            return res.redirect(302, req.query.url);
-        }
-        res.status(404).send('Image unavailable');
+        return sendSafeFallbackImage(res);
     }
+});
+
+// Favicon handler
+app.get('/favicon.ico', (req, res) => {
+    res.setHeader('Content-Type', 'image/x-icon');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.status(200).send(NOCOVER_BUFFER);
+});
+
+// Suppress source-map 404 warnings from DevTools
+app.get(/\.map$/, (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).json({});
+});
+
+// Catch-all cover / image routes — guarantees no 404s for any image format across the site
+app.get(['/assets/covers/:file', '/covers/:file', '/assets/:file', '/cover/:file'], (req, res) => {
+    const file = req.params.file;
+    const candidates = [
+        path.join(publicPath, 'assets/covers', file),
+        path.join(publicPath, 'covers', file),
+        path.join(publicPath, 'assets', file),
+        path.join(publicPath, file)
+    ];
+    for (const c of candidates) {
+        if (fs.existsSync(c)) {
+            try {
+                return res.status(200).send(fs.readFileSync(c));
+            } catch(e) {}
+        }
+    }
+    return sendSafeFallbackImage(res);
+});
+
+// Any requested static image that wasn't found on disk falls back cleanly to 200 OK fallback image
+app.get(/\.(png|jpe?g|webp|gif|svg|ico)$/i, (req, res) => {
+    const filePath = path.join(publicPath, req.path);
+    if (fs.existsSync(filePath)) {
+        try {
+            return res.status(200).send(fs.readFileSync(filePath));
+        } catch(e) {}
+    }
+    return sendSafeFallbackImage(res);
+});
+
+// API fallback (returns JSON 200 instead of 404)
+app.use('/api', (req, res) => {
+    res.status(200).json({ success: false, error: 'Endpoint not found' });
 });
 
 // SPA fallback
@@ -1307,11 +1705,11 @@ app.use((req, res) => {
     if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath, (err) => {
             if (err && !res.headersSent) {
-                res.status(404).end();
+                res.status(200).end();
             }
         });
     } else {
-        res.status(404).send('Not found');
+        res.status(200).send('<!DOCTYPE html><html><body><h1>Bibliothèque</h1></body></html>');
     }
 });
 

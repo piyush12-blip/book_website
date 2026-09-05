@@ -643,12 +643,13 @@ async function getMangaDexChapterImages(chapterId) {
             return `<div style="padding:2rem;text-align:center;color:#94a3b8;"><p>Panels temporarily loading. Click to retry.</p></div>`;
         }
 
-        const imgs = pageUrls.map((src, i) =>
-            `<div style="text-align:center;margin:0;padding:0;line-height:0;background:#000;width:100%;">` +
-            `<img src="${src}" alt="Page ${i+1}" loading="lazy" decoding="async" ` +
-            `style="width:100%;max-width:900px;display:block;margin:0 auto;height:auto;">` +
-            `</div>`
-        ).join('');
+        const imgs = pageUrls.map((src, i) => {
+            const proxied = `/api/proxy/image?url=${encodeURIComponent(src)}`;
+            return `<div style="text-align:center;margin:0;padding:0;line-height:0;background:#000;width:100%;">` +
+                `<img src="${proxied}" alt="Page ${i+1}" loading="lazy" decoding="async" referrerpolicy="no-referrer" ` +
+                `style="width:100%;max-width:900px;display:block;margin:0 auto;height:auto;min-height:400px;background:#05070a;object-fit:contain;">` +
+                `</div>`;
+        }).join('');
 
         return `
             <div style="background:#000;min-height:100vh;padding:0;margin:0 0 4rem 0;">

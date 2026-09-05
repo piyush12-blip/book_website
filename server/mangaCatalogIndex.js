@@ -277,6 +277,54 @@ const POPULAR_MANGA_CATALOG = [
         status: 'Publishing',
         year: '2005',
         synopsis: 'Thorfinn pursues vengeance against Askeladd, his father’s killer, while dreaming of finding the peaceful land of Vinland.'
+    },
+    {
+        id: 'mangabuddy-hidden-fire.ZDIUlQ',
+        title: 'Hidden Fire',
+        altTitle: 'Secret Fire · 숨겨진 불',
+        author: 'Lee Yeonwoo',
+        slug: 'hidden-fire.ZDIUlQ',
+        coverImage: 'https://cdn1.love4awalk.xyz/thumb/hidden-fire.webp',
+        genre: 'MANHWA (+18)',
+        status: 'Ongoing',
+        year: '2025',
+        synopsis: 'Seo Doyoon welcomes his young stepmother Lee Yeonwoo into their home following his father’s remarriage. While they appear to be a harmonious family on the surface, a hidden fire of forbidden attraction and intense tension begins to spark between them.'
+    },
+    {
+        id: 'mangabuddy-secret-class.Yf0t1Y',
+        title: 'Secret Class',
+        altTitle: 'Bimil Su-eop · 비밀수업',
+        author: 'Wang Gang Cheol · Minchan',
+        slug: 'secret-class.Yf0t1Y',
+        coverImage: 'https://cdn1.love4awalk.xyz/thumb/secret-class.webp',
+        genre: 'MANHWA (+18)',
+        status: 'Ongoing',
+        year: '2020',
+        synopsis: 'Daeho became an orphan at age 13 and was taken in by his father’s friend. As an adult, Daeho knows nothing about relationships until his foster family starts giving him secret lessons.'
+    },
+    {
+        id: 'mangabuddy-boarding-diary.5E2Q1A',
+        title: 'Boarding Diary',
+        altTitle: 'Hasukilgi · 하숙일기',
+        author: 'Kim Junshik · Park Hyeong-jun',
+        slug: 'boarding-diary.5E2Q1A',
+        coverImage: 'https://cdn1.love4awalk.xyz/thumb/boarding-diary.webp',
+        genre: 'MANHWA (+18)',
+        status: 'Completed',
+        year: '2020',
+        synopsis: 'Jun-woo moves to Seoul for college and boards at his mom’s friend’s house, only to discover unexpected charms and daily excitement with the family.'
+    },
+    {
+        id: 'mangabuddy-silent-war.lF2M1Q',
+        title: 'Silent War',
+        altTitle: 'My Kingdom · 조용한 전쟁',
+        author: 'Tharchin',
+        slug: 'silent-war.lF2M1Q',
+        coverImage: 'https://cdn1.love4awalk.xyz/thumb/silent-war.webp',
+        genre: 'MANHWA (+18)',
+        status: 'Completed',
+        year: '2019',
+        synopsis: 'Hyun-soo was an ordinary guy who was bullied and humiliated by his wealthy peers until he discovered their deepest secrets and turned the tables.'
     }
 ];
 

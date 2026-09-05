@@ -99,13 +99,44 @@ async function findEpubUrl(query) {
     return null;
 }
 
-// ─── EPUB Parser ─────────────────────────────────────────────────────────────
+// ─── PDF & EPUB Unified Parser ──────────────────────────────────────────────
+const { execFile } = require('child_process');
+
+function extractChaptersFromPdf(filePath) {
+    return new Promise((resolve) => {
+        const scriptPath = path.join(__dirname, 'extract_pdf_text.py');
+        console.log(`[PDF_PARSER] Extracting text & chapters from PDF: ${filePath}`);
+        execFile('python', [scriptPath, filePath], { maxBuffer: 30 * 1024 * 1024 }, (err, stdout, stderr) => {
+            if (err) {
+                console.error('[PDF_PARSER] Error executing extract_pdf_text.py:', err.message, stderr);
+                return resolve([]);
+            }
+            try {
+                const data = JSON.parse(stdout);
+                if (data && data.chapters && Array.isArray(data.chapters) && data.chapters.length > 0) {
+                    console.log(`[PDF_PARSER] Successfully extracted ${data.chapters.length} clean text chapters from PDF!`);
+                    return resolve(data.chapters);
+                }
+                console.warn('[PDF_PARSER] No text chapters returned from PDF:', data?.error || 'Empty');
+                resolve([]);
+            } catch (e) {
+                console.error('[PDF_PARSER] JSON parse error:', e.message);
+                resolve([]);
+            }
+        });
+    });
+}
+
 async function extractChaptersFromFile(filePath) {
     try {
         console.log(`[PARSER] Extracting chapters from local file: ${filePath}`);
+        const ext = path.extname(filePath).toLowerCase();
+        if (ext === '.pdf') {
+            return await extractChaptersFromPdf(filePath);
+        }
         const AdmZip = require('adm-zip');
         const zip = new AdmZip(filePath);
-        return parseEpubBuffer(zip);
+        return await parseEpubBuffer(zip);
     } catch (e) {
         console.error('[PARSER] Error parsing local file:', e.message);
         return [];
@@ -177,14 +208,114 @@ async function parseEpubBuffer(zip) {
 
     console.log(`[PARSER] ${chapterFiles.length} spine items`);
 
+    // Extract book title from OPF metadata if available
+    const bookTitleMatch = opf.match(/<dc:title[^>]*>([\s\S]*?)<\/dc:title>/i);
+    const bookMainTitle = bookTitleMatch ? bookTitleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+    function isFrontOrBackMatter(href, body) {
+        const cleanText = body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+        const lowerHref = href.toLowerCase();
+
+        // 1. Promotional pages (OceanofPDF, Anna's Archive, ads, watermarks)
+        if (cleanText.includes('oceanofpdf.com') && cleanText.length < 3500) return 'PROMO_OCEANOFPDF';
+        if (cleanText.includes('annas-archive') && cleanText.length < 3500) return 'PROMO_ANNAS';
+        if (lowerHref.includes('promo') || lowerHref.includes('advert') || lowerHref.includes('discover-page') || lowerHref.includes('discoverpage')) return 'PROMO_PAGE';
+
+        // 2. Cover
+        if (lowerHref.includes('cover') || body.includes('epub:type="cover"') || (cleanText.length < 200 && body.includes('<img'))) return 'COVER';
+
+        // 3. Copyright & legal notices
+        if (lowerHref.includes('copyright') || lowerHref.includes('cop.') || 
+            (cleanText.includes('all rights reserved') && cleanText.length < 3500) || 
+            (cleanText.includes('isbn') && cleanText.length < 2500) || 
+            (cleanText.includes('cataloging-in-publication') && cleanText.length < 2500)) {
+            return 'COPYRIGHT';
+        }
+
+        // 4. Table of Contents
+        if (lowerHref.includes('toc') || lowerHref.includes('contents') || 
+            (cleanText.startsWith('contents') && cleanText.length < 3500) || 
+            (cleanText.startsWith('table of contents') && cleanText.length < 3500)) {
+            return 'TOC';
+        }
+
+        // 5. Title Page / Halftitle / Imprint / Author name cards
+        if ((lowerHref.includes('titlepage') || lowerHref.includes('title_page') || lowerHref.includes('halftitle') || lowerHref.includes('imprint')) && cleanText.length < 1500) {
+            return 'TITLEPAGE';
+        }
+
+        // 6. Dedication / Epigraph (short non-story dedication cards)
+        if ((lowerHref.includes('dedication') || lowerHref.includes('epigraph')) && cleanText.length < 1000) {
+            return 'DEDICATION';
+        }
+
+        // 7. Blurb / Advance Praise / Other Books by Author
+        if ((cleanText.includes('praise for') || cleanText.includes('advance praise') || cleanText.includes('also by') || cleanText.includes('other books by')) && cleanText.length < 2200) {
+            return 'PRAISE_BLURB';
+        }
+
+        // 8. Footnotes / Endnotes lists
+        if (lowerHref.includes('footnote') && cleanText.length < 3000) {
+            return 'FOOTNOTES';
+        }
+
+        return false;
+    }
+
+    function extractSmartTitle(body, bookTitle, fallbackIndex) {
+        // Look for headings h1, h2, h3
+        const headings = [...body.matchAll(/<h([1-3])[^>]*>([\s\S]*?)<\/h\1>/gi)]
+            .map(m => m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
+            .filter(t => t && t.length > 0 && t.length < 120);
+
+        const cleanBookTitle = (bookTitle || '').toLowerCase().trim();
+
+        for (const h of headings) {
+            const hLower = h.toLowerCase();
+            // Skip if heading is just the book title or generic boilerplate
+            if (cleanBookTitle && hLower === cleanBookTitle) continue;
+            if (hLower.includes('oceanofpdf') || hLower === 'table of contents' || hLower === 'contents') continue;
+            return h;
+        }
+
+        // Search bold tags e.g. <span class="bold">1. A woman named Thursday Next</span>
+        const boldMatch = body.match(/<(?:span|p|div)[^>]*(?:class="[^"]*bold[^"]*"|style="[^"]*font-weight:\s*bold[^"]*")[^>]*>([\s\S]*?)<\/(?:span|p|div)>/i);
+        if (boldMatch) {
+            const candidate = boldMatch[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+            if (candidate && candidate.length > 2 && candidate.length < 80 && !cleanBookTitle.includes(candidate.toLowerCase())) {
+                return candidate;
+            }
+        }
+
+        // Search first few paragraphs for "Chapter X" or "Law X"
+        const paraMatch = body.match(/<(?:p|div|span)[^>]*>\s*(?:<strong>|<b>)?\s*((?:Chapter|LAW|Act|Part|Book|Prologue|Epilogue)\s+[0-9IVXLCDM\w\s:—–-]+)(?:<\/strong>|<\/b>)?\s*<\/(?:p|div|span)>/i);
+        if (paraMatch && paraMatch[1].length < 80) {
+            return paraMatch[1].replace(/<[^>]+>/g, '').trim();
+        }
+
+        return `Chapter ${fallbackIndex}`;
+    }
+
     const chapters = [];
-    for (let i = 0; i < Math.min(chapterFiles.length, 60); i++) {
+    for (let i = 0; i < Math.min(chapterFiles.length, 120); i++) {
         const href = chapterFiles[i];
         const fullPath = opfBasePath ? `${opfBasePath}/${href}` : href;
         const entry = zip.getEntry(fullPath) || zip.getEntry(href);
         if (!entry) continue;
 
         let body = entry.getData().toString('utf8');
+
+        // Check if item is promotional or front/back matter
+        const skipReason = isFrontOrBackMatter(href, body);
+        if (skipReason) {
+            console.log(`[PARSER] Skipping non-story spine item [${skipReason}]: ${href}`);
+            continue;
+        }
+
+        // Strip promotional footer links (e.g. OceanofPDF banner link)
+        body = body.replace(/<div[^>]*>\s*<p>\s*<a[^>]*oceanofpdf\.com[^>]*>[\s\S]*?<\/a>\s*<\/p>\s*<\/div>/gi, '');
+        body = body.replace(/<p[^>]*>\s*<a[^>]*oceanofpdf\.com[^>]*>[\s\S]*?<\/a>\s*<\/p>/gi, '');
+        body = body.replace(/<a[^>]*oceanofpdf\.com[^>]*>[\s\S]*?<\/a>/gi, '');
 
         // Strip boilerplate
         body = body.replace(/<head[\s\S]*?<\/head>/gi, '');
@@ -196,23 +327,28 @@ async function parseEpubBuffer(zip) {
         body = body.replace(/<\?xml[^>]*>/gi, '');
         body = body.replace(/xmlns[^"]*"[^"]*"/g, '');
 
-        // Extract chapter title
-        const titleMatch = body.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i);
-        let title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : `Chapter ${i + 1}`;
-        if (!title) title = `Chapter ${i + 1}`;
+        // Sanitize inline styles: remove fixed positioning and hardcoded colors so reader themes apply cleanly
+        body = body.replace(/style="([^"]*)"/gi, (match, styleContent) => {
+            let cleanStyle = styleContent
+                .replace(/color\s*:\s*[^;"]+;?/gi, '')
+                .replace(/background(?:-color)?\s*:\s*[^;"]+;?/gi, '')
+                .replace(/position\s*:\s*(?:absolute|fixed);?/gi, 'position:static;')
+                .replace(/float\s*:\s*(?:left|right);?/gi, '')
+                .replace(/height\s*:\s*\d+px;?/gi, '')
+                .trim();
+            return cleanStyle ? `style="${cleanStyle}"` : '';
+        });
+
+        // Extract clean chapter title
+        const title = extractSmartTitle(body, bookMainTitle, chapters.length + 1);
 
         // Fix images: Convert internal EPUB images to Base64 data URIs so they render perfectly inline
         body = body.replace(/<img([^>]*)src="([^"]*)"([^>]*)>/gi, (match, before, src, after) => {
             if (src.startsWith('http') || src.startsWith('data:')) return match;
             
-            // Resolve the relative path of the image inside the EPUB
             let imgPath = href.split('/').slice(0, -1).join('/');
             let resolvedPath = imgPath ? `${imgPath}/${src}` : src;
-            
-            // Handle OPF base paths (if chapter is inside an OEBPS folder)
             let fullImgPath = opfBasePath ? `${opfBasePath}/${resolvedPath}` : resolvedPath;
-            
-            // Clean up relative pathing like ../images/
             fullImgPath = require('path').normalize(fullImgPath).replace(/\\/g, '/');
             
             const imgEntry = zip.getEntry(fullImgPath) || zip.getEntry(resolvedPath) || zip.getEntry(src);
@@ -234,7 +370,7 @@ async function parseEpubBuffer(zip) {
         }
     }
 
-    console.log(`[PARSER] Extracted ${chapters.length} readable chapters`);
+    console.log(`[PARSER] Extracted ${chapters.length} genuine story chapters (clean Chapter 1 starting point)`);
     return chapters;
 }
 
