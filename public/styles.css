@@ -3873,3 +3873,475 @@ body.theme-night .setting-row select:focus {
   border-color: #ff3e55 !important;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   FULL RESPONSIVE DESIGN SYSTEM — puddIng
+   Breakpoints: xs≤480  sm≤640  md≤900  lg≤1200
+   Strategy: fluid clamp() everywhere, auto-fill grids, hamburger nav on xs/sm
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Hamburger Button (hidden on desktop) ── */
+.hamburger-btn {
+  display: none;
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: inherit;
+  flex-shrink: 0;
+  transition: background 0.18s ease;
+}
+.hamburger-btn:hover { background: rgba(0,0,0,0.08); }
+.hamburger-btn svg { display: block; }
+
+/* ── Mobile Nav Drawer (slides down from topbar) ── */
+.mobile-nav-drawer {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: rgba(247,240,228,0.98);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--line);
+  padding: 8px 0 12px;
+  box-shadow: 0 12px 28px rgba(42,31,21,.15);
+}
+.mobile-nav-drawer a {
+  display: block;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+.mobile-nav-drawer a:last-child { border-bottom: none; }
+.mobile-nav-drawer a:hover { background: rgba(122,86,57,.08); color: #7a5639; }
+/* Night theme drawer */
+body.theme-night .mobile-nav-drawer {
+  background: rgba(25,28,32,0.98) !important;
+  border-bottom-color: rgba(255,255,255,0.08) !important;
+}
+body.theme-night .mobile-nav-drawer a { color: #f8fafc !important; border-bottom-color: rgba(255,255,255,0.07) !important; }
+body.theme-night .hamburger-btn { color: #f8fafc; }
+body.theme-night .hamburger-btn:hover { background: rgba(255,255,255,0.08); }
+
+/* nav-open state: show drawer, classic topbar needs position:relative */
+.bibliotheque.nav-open .mobile-nav-drawer { display: block; }
+.bibliotheque.nav-open .topbar { position: relative; z-index: 201; }
+/* Overlay to close drawer on outside click */
+.nav-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  background: rgba(0,0,0,0);
+}
+.bibliotheque.nav-open .nav-overlay { display: block; }
+
+/* ── Global touch-target safety ── */
+@media (max-width: 900px) {
+  button, .action-btn, .warm-button, .shelf-tabs button,
+  .explore-controls button, .filter-row button, .md-btn-primary {
+    min-height: 44px;
+  }
+}
+
+/* ══════════════════════════════════════════════
+   LG  ≤ 1200px  — tighten desktop columns
+   ══════════════════════════════════════════════ */
+@media (max-width: 1200px) {
+  .bibliotheque { width: 100%; max-width: none; }
+  .main-grid {
+    grid-template-columns: clamp(300px,26vw,380px) minmax(420px,1fr) clamp(160px,14vw,220px);
+    min-height: calc(100vh - 107px);
+  }
+  .featured-grid { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
+  .feature-card .feature { width: min(100%, 162px); aspect-ratio: 162/243; height: auto; }
+  .library-results { grid-template-columns: repeat(auto-fill, minmax(190px,1fr)); }
+  .explore-books  { grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); }
+}
+
+/* ══════════════════════════════════════════════
+   MD  ≤ 900px  — sidebar drops, 2-col main
+   ══════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  /* Topbar: brand + tools on row 1, nav on row 2 */
+  .topbar {
+    grid-template-columns: 1fr auto !important;
+    grid-template-rows: auto auto;
+    height: auto;
+    padding: 18px 24px;
+    row-gap: 8px;
+  }
+  .nav {
+    grid-column: 1 / -1;
+    order: 3;
+    justify-content: flex-start;
+    overflow-x: auto;
+    gap: 22px;
+    padding: 0;
+    font-size: 13px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .tools { border-left: none; padding-left: 12px; }
+
+  /* Main grid → 2-col: reading + featured, sidebar full-width below */
+  .main-grid {
+    grid-template-columns: 1fr 1.5fr;
+    min-height: 0;
+    height: auto;
+  }
+  .sidebar {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--line);
+    border-right: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    padding: 24px;
+  }
+  .recent { border-right: 1px solid var(--line-dark); border-bottom: none; }
+
+  /* Detail page: cover top, info below */
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .detail-cover-wrap {
+    position: static;
+    max-width: 280px;
+    margin: 0 auto;
+  }
+
+  /* Reader grid: no side sidebar */
+  .reader-grid {
+    grid-template-columns: 1fr !important;
+    padding: 16px 18px 60px;
+  }
+  .chapter-list.compact-list {
+    position: static;
+    max-height: 200px;
+  }
+  .reader-notes { grid-column: 1/-1; position: static; max-height: none; }
+
+  /* Two-column sections stack */
+  .two-column { grid-template-columns: 1fr; }
+  .profile-grid { grid-template-columns: 1fr; }
+
+  /* Explorer hero */
+  .explore-hero { grid-template-columns: 1fr; }
+  .explore-books { grid-template-columns: repeat(auto-fill, minmax(140px,1fr)); }
+
+  /* Side rail: hide fixed rail, show inline */
+  .reader-side-rail-toggle { display: none !important; }
+  .reader-side-rail {
+    position: static !important;
+    transform: none !important;
+    width: 100% !important;
+    max-height: none !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    padding: 10px !important;
+    gap: 6px !important;
+    border-radius: 0 !important;
+    border: none !important;
+    border-bottom: 1px solid rgba(255,255,255,0.08) !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    display: flex !important;
+  }
+  .side-rail-group { flex-direction: row; flex-wrap: wrap; gap: 5px; padding-bottom: 0; border-bottom: none; }
+
+  /* Manga pill: move to bottom on tablet */
+  .manga-top-pill { top: auto; bottom: 16px; right: 16px; }
+
+  /* Settings grid */
+  .settings-grid { grid-template-columns: 1fr !important; }
+
+  /* App sections */
+  .app-section.active-view { min-height: calc(100vh - 90px); }
+}
+
+/* ══════════════════════════════════════════════
+   SM  ≤ 640px  — single col, 2-col cards
+   ══════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /* Topbar: hamburger appears, nav hidden */
+  .hamburger-btn { display: inline-flex; }
+  .nav { display: none !important; } /* hidden — use mobile drawer */
+
+  .brand { font-size: clamp(22px, 7vw, 32px); }
+  .topbar { padding: 14px 16px; }
+  .tools { gap: 8px; padding-left: 8px; }
+
+  /* Main grid → single column */
+  .main-grid { display: block; }
+  .reading-list, .featured, .sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding: 22px 16px;
+  }
+  .sidebar {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 0;
+    border-top: none;
+  }
+  .recent { border-right: none; border-bottom: 1px solid var(--line-dark); padding: 20px 16px; }
+  .stats { padding: 20px 16px; }
+
+  /* Mini book grid: 2 columns, no horizontal overflow */
+  .mini-grid {
+    grid-template-columns: repeat(2, 1fr);
+    column-gap: 14px;
+    row-gap: 18px;
+  }
+  .mini { width: 100%; max-width: none; height: auto; aspect-ratio: 94/138; }
+
+  /* Featured grid: 2 columns */
+  .featured-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+  .feature-card .feature { width: 100%; max-width: none; aspect-ratio: 162/243; height: auto; }
+  .feature-card { padding-bottom: 0; }
+  .feature-card .card-actions { position: static; }
+
+  /* Library & explore: 2-col auto grid */
+  .library-results { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .library-book { grid-template-columns: 60px 1fr; gap: 10px; }
+  .explore-books { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+
+  /* Detail page */
+  .detail-grid { grid-template-columns: 1fr; }
+  .detail-cover-wrap { max-width: 200px; }
+  .meta-list { grid-template-columns: 1fr; }
+  .meta-list div { border-right: none; border-bottom: 1px solid var(--line); }
+  .meta-list div:last-child { border-bottom: none; }
+  .detail-copy h2 { font-size: clamp(26px, 8vw, 42px); }
+  .lead { font-size: 18px; }
+
+  /* Reader */
+  .reader-section.active-view { padding-inline: 10px; }
+  .reader-paper { padding: 18px 14px; }
+  .reading-prose { font-size: 17px !important; line-height: 1.8 !important; }
+  .chapter-block h2 { font-size: clamp(28px, 7vw, 46px); }
+  .compact-reader-settings { display: grid; grid-template-columns: repeat(3,1fr); }
+  .compact-reader-settings button,
+  .compact-reader-settings select { width: 100%; padding: 0 4px; }
+  .reader-bottom { grid-template-columns: auto 1fr auto; gap: 10px; }
+
+  /* Search: full-width column */
+  .search-input-row { grid-template-columns: 1fr; gap: 8px; }
+  .search-results a { grid-template-columns: 42px 1fr; }
+  .search-results em { grid-column: 2; }
+
+  /* Manga end station */
+  .manga-chapter-end-station, .chapter-end-nav-station { padding: 24px 16px; }
+  .end-station-btn-row { flex-direction: column; align-items: stretch; }
+  .end-station-btn { width: 100%; justify-content: center; }
+
+  /* Toast */
+  .toast { left: 12px; right: 12px; bottom: 12px; max-width: none; }
+
+  /* Auth grid */
+  .author-grid, .mood-grid { grid-template-columns: 1fr; }
+  .category-grid { grid-template-columns: repeat(2,1fr); }
+
+  /* Sidebar stats 2-col */
+  .dash-stats { grid-template-columns: repeat(2,1fr); }
+}
+
+/* ══════════════════════════════════════════════
+   XS  ≤ 480px  — phones, single col everything
+   ══════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .brand { font-size: clamp(20px, 6vw, 28px); }
+  .topbar { padding: 12px 14px; }
+  .tools { gap: 6px; }
+
+  /* Single-col card grids */
+  .mini-grid { grid-template-columns: repeat(2, 1fr); column-gap: 10px; }
+  .featured-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .library-results { grid-template-columns: 1fr; }
+  .explore-books { grid-template-columns: repeat(2, 1fr); }
+  .category-grid { grid-template-columns: 1fr; }
+  .dash-stats { grid-template-columns: 1fr; }
+
+  /* Reader settings strip */
+  .compact-reader-settings { grid-template-columns: repeat(2,1fr); height: auto; padding: 8px 10px !important; }
+  .compact-reader-settings button:nth-of-type(n+5):not(.active),
+  .compact-reader-settings select { display: none; }
+
+  /* App section padding */
+  .app-section { padding: 28px 14px; }
+  .section-shell { padding-inline: 0; }
+
+  /* Side rail hidden on tiny phones */
+  .reader-side-rail { display: none !important; }
+
+  /* Manga pill: bottom center on xs */
+  .manga-top-pill {
+    top: auto;
+    bottom: 12px;
+    right: 50%;
+    transform: translateX(50%);
+  }
+
+  /* Novel top pill */
+  .novel-top-pill { padding: 4px 10px; gap: 4px; }
+  .novel-pill-btn { font-size: 0.78rem; padding: 4px 8px; }
+
+  /* MD Floating navbar search: shrink */
+  .md-nav-search-wrap { max-width: 140px; }
+  #md-search-input { font-size: 13px; }
+
+  /* Detail hero cover smaller */
+  .md-cover-container { height: 200px; }
+
+  /* Explorer */
+  .explore-controls { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .explore-block { padding: 14px; }
+  .explore-block > header { display: grid; gap: 6px; }
+}
+
+/* ══════════════════════════════════════════════
+   MangaDex Night Theme — Responsive Patches
+   ══════════════════════════════════════════════ */
+
+/* Hero slider responsive */
+@media (max-width: 900px) {
+  .md-hero-content { padding: 70px 18px 40px; }
+  .md-hero-top-row { flex-direction: column; gap: 16px; }
+  .md-cover-container { height: 220px; align-self: center; }
+  .md-title-text { font-size: clamp(1.4rem, 4vw, 2.2rem); }
+  .md-floating-navbar .md-navbar-inner { padding: 0 16px; }
+}
+
+@media (max-width: 640px) {
+  .md-hero-content { padding: 64px 14px 30px; }
+  .md-cover-container { height: 180px; }
+  .md-title-text { font-size: 1.35rem; }
+  .md-actions-bar { flex-wrap: wrap; gap: 6px; }
+  .md-btn-primary { width: 100%; min-width: 0; justify-content: center; }
+  .md-hero-floating-nav { display: none; }
+  .md-feed-section { padding-inline: 14px; }
+}
+
+@media (max-width: 480px) {
+  .md-panoramic-hero { padding-bottom: 20px; }
+  .md-cover-container { height: 160px; }
+  .md-title-text { font-size: 1.2rem; }
+  .md-tags-bar { gap: 4px; }
+  .md-stats-bar { gap: 8px; font-size: 0.7rem; }
+  .md-nav-search-wrap { max-width: 120px; }
+  .md-search-pill-kbd { display: none; }
+}
+
+/* MangaDex card grid (manga-poster-grid & mangadex-card-grid) */
+@media (max-width: 900px) {
+  .mangadex-card-grid,
+  .manga-poster-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important;
+    gap: 14px !important;
+  }
+}
+@media (max-width: 640px) {
+  .mangadex-card-grid,
+  .manga-poster-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)) !important;
+    gap: 10px !important;
+  }
+  .md-feed-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px,1fr)) !important;
+    gap: 10px !important;
+  }
+}
+@media (max-width: 480px) {
+  .mangadex-card-grid,
+  .manga-poster-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+  }
+  .md-feed-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+  }
+}
+
+/* ══════════════════════════════════════════════
+   Manga Reader Responsive
+   ══════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  body.is-manga-mode .native-reader { max-width: 100vw !important; }
+  body.is-manga-mode .manga-image-scroll img { max-width: 100vw !important; }
+  .manga-discrete-container { padding-bottom: 80px; }
+  .manga-chapter-header {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .manga-top-pill { right: 12px; bottom: 12px; top: auto; }
+}
+@media (max-width: 480px) {
+  .manga-ch-nav-mini { width: 100%; justify-content: space-between; }
+  .manga-ch-btn-mini { padding: 6px 14px; font-size: 0.78rem; }
+}
+
+/* ══════════════════════════════════════════════
+   Detail Page Responsive (MD book detail view)
+   ══════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .md-detail-wrapper { min-height: auto; }
+  .md-hero-top-row { flex-direction: column; }
+  .md-cover-container { align-self: center; }
+  .md-glassy-bottom-palette { top: 200px; }
+}
+@media (max-width: 640px) {
+  body.detail-active .topbar { padding: 0 16px !important; height: 50px !important; }
+  .md-palette-controls { padding-top: 12px; }
+  .md-actions-bar { flex-wrap: wrap; }
+}
+
+/* ══════════════════════════════════════════════
+   Explore Page Responsive
+   ══════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .explore-shell { padding: 20px 18px; }
+  .explore-top-bar { padding: 16px 0; }
+  .explore-nav-row { flex-wrap: wrap; gap: 10px; }
+}
+@media (max-width: 640px) {
+  .explore-compact-title { font-size: clamp(22px, 6vw, 32px); }
+  .explore-filter-select-wrap { width: 100%; }
+  .explore-dropdown-toggle { width: 100%; justify-content: space-between; }
+}
+
+/* ══════════════════════════════════════════════
+   Section shells — fluid padding
+   ══════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .app-section { padding: clamp(28px, 5vw, 60px) clamp(16px, 4vw, 48px); }
+  .section-shell { padding-inline: 0; }
+  .library-manager { gap: 16px; }
+  .shelf-tabs { flex-wrap: wrap; gap: 8px; }
+}
+
+/* ══════════════════════════════════════════════
+   Utility: prevent horizontal body overflow
+   ══════════════════════════════════════════════ */
+html, body {
+  overflow-x: hidden;
+}
+.bibliotheque {
+  overflow-x: hidden;
+}

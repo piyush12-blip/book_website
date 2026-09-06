@@ -3126,3 +3126,44 @@ if (window.isHardReload) {
 
 fetchLiveTrendingManga();
 
+// ── HAMBURGER NAV TOGGLE (Mobile responsive) ──────────────────────────────
+(function initHamburger() {
+  const hamburgerBtn = document.getElementById('hamburger-btn');
+  const mobileDrawer = document.getElementById('mobile-nav-drawer');
+  const navOverlay   = document.getElementById('nav-overlay');
+
+  if (!hamburgerBtn || !mobileDrawer) return;
+
+  function openNav() {
+    app.classList.add('nav-open');
+    hamburgerBtn.setAttribute('aria-expanded', 'true');
+    mobileDrawer.setAttribute('aria-hidden', 'false');
+    hamburgerBtn.innerHTML = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+  }
+
+  function closeNav() {
+    app.classList.remove('nav-open');
+    hamburgerBtn.setAttribute('aria-expanded', 'false');
+    mobileDrawer.setAttribute('aria-hidden', 'true');
+    hamburgerBtn.innerHTML = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
+  }
+
+  hamburgerBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    app.classList.contains('nav-open') ? closeNav() : openNav();
+  });
+
+  if (navOverlay) navOverlay.addEventListener('click', closeNav);
+
+  mobileDrawer.querySelectorAll('a').forEach(link => {
+    link.addEventListener('click', () => {
+      closeNav();
+      const view = link.dataset.view;
+      if (view) showView(view, true);
+    });
+  });
+
+  const mq = window.matchMedia('(min-width: 641px)');
+  mq.addEventListener('change', e => { if (e.matches) closeNav(); });
+})();
+
